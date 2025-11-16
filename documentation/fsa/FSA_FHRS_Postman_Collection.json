@@ -1,0 +1,823 @@
+{
+  "info": {
+    "name": "FSA FHRS API - RightCareHome",
+    "description": "Тестовые запросы для FSA Food Hygiene Rating Scheme API для поиска домов престарелых",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "https://api.ratings.food.gov.uk",
+      "type": "string"
+    },
+    {
+      "key": "care_home_business_type_id",
+      "value": "7835",
+      "type": "string",
+      "description": "ID для типа 'Hospitals/Childcare/Caring Premises'"
+    },
+    {
+      "key": "birmingham_lat",
+      "value": "52.4862",
+      "type": "string"
+    },
+    {
+      "key": "birmingham_lon",
+      "value": "-1.8904",
+      "type": "string"
+    },
+    {
+      "key": "birmingham_authority_id",
+      "value": "197",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "📋 Справочники",
+      "item": [
+        {
+          "name": "1. Получить типы бизнеса (Basic)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-api-version",
+                "value": "2",
+                "type": "text",
+                "description": "ОБЯЗАТЕЛЬНО!"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/BusinessTypes/basic",
+              "host": ["{{base_url}}"],
+              "path": ["BusinessTypes", "basic"]
+            },
+            "description": "Получить список всех типов бизнеса. Нам нужен ID=7835 для 'Hospitals/Childcare/Caring Premises'"
+          }
+        },
+        {
+          "name": "2. Получить типы бизнеса (Detailed)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-api-version",
+                "value": "2",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/BusinessTypes",
+              "host": ["{{base_url}}"],
+              "path": ["BusinessTypes"]
+            }
+          }
+        },
+        {
+          "name": "3. Получить справочник рейтингов",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-api-version",
+                "value": "2",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/Ratings",
+              "host": ["{{base_url}}"],
+              "path": ["Ratings"]
+            },
+            "description": "Получить описание всех возможных рейтингов (0-5, Pass/Improvement Required)"
+          }
+        },
+        {
+          "name": "4. Получить список органов власти",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-api-version",
+                "value": "2",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/Authorities/basic",
+              "host": ["{{base_url}}"],
+              "path": ["Authorities", "basic"]
+            },
+            "description": "Получить список всех местных органов власти (Birmingham ID=197)"
+          }
+        }
+      ]
+    },
+    {
+      "name": "🔍 Поиск домов престарелых",
+      "item": [
+        {
+          "name": "1. Поиск по названию (Manor House)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-api-version",
+                "value": "2",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/Establishments?name=Manor House&businessTypeId={{care_home_business_type_id}}&pageNumber=1&pageSize=10",
+              "host": ["{{base_url}}"],
+              "path": ["Establishments"],
+              "query": [
+                {
+                  "key": "name",
+                  "value": "Manor House",
+                  "description": "Часть названия дома престарелых"
+                },
+                {
+                  "key": "businessTypeId",
+                  "value": "{{care_home_business_type_id}}",
+                  "description": "Фильтр по типу - care homes"
+                },
+                {
+                  "key": "pageNumber",
+                  "value": "1"
+                },
+                {
+                  "key": "pageSize",
+                  "value": "10"
+                }
+              ]
+            },
+            "description": "Поиск домов престарелых с названием 'Manor House'"
+          }
+        },
+        {
+          "name": "2. Поиск по почтовому индексу",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-api-version",
+                "value": "2",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/Establishments?address=B15 2TT&businessTypeId={{care_home_business_type_id}}&pageSize=20",
+              "host": ["{{base_url}}"],
+              "path": ["Establishments"],
+              "query": [
+                {
+                  "key": "address",
+                  "value": "B15 2TT",
+                  "description": "Почтовый индекс Birmingham"
+                },
+                {
+                  "key": "businessTypeId",
+                  "value": "{{care_home_business_type_id}}"
+                },
+                {
+                  "key": "pageSize",
+                  "value": "20"
+                }
+              ]
+            },
+            "description": "Поиск care homes в конкретном postcode"
+          }
+        },
+        {
+          "name": "3. Поиск по координатам (Birmingham, 2 miles)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-api-version",
+                "value": "2",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/Establishments?latitude={{birmingham_lat}}&longitude={{birmingham_lon}}&maxDistanceLimit=2&businessTypeId={{care_home_business_type_id}}&pageSize=20",
+              "host": ["{{base_url}}"],
+              "path": ["Establishments"],
+              "query": [
+                {
+                  "key": "latitude",
+                  "value": "{{birmingham_lat}}",
+                  "description": "Широта центра Birmingham"
+                },
+                {
+                  "key": "longitude",
+                  "value": "{{birmingham_lon}}",
+                  "description": "Долгота"
+                },
+                {
+                  "key": "maxDistanceLimit",
+                  "value": "2",
+                  "description": "Радиус в МИЛЯХ (не км!)"
+                },
+                {
+                  "key": "businessTypeId",
+                  "value": "{{care_home_business_type_id}}"
+                },
+                {
+                  "key": "pageSize",
+                  "value": "20"
+                }
+              ]
+            },
+            "description": "⭐ КЛЮЧЕВОЙ ЗАПРОС для RightCareHome: поиск ближайших домов престарелых"
+          }
+        },
+        {
+          "name": "4. Поиск по координатам (5 miles radius)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-api-version",
+                "value": "2",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/Establishments?latitude={{birmingham_lat}}&longitude={{birmingham_lon}}&maxDistanceLimit=5&businessTypeId={{care_home_business_type_id}}&pageSize=50",
+              "host": ["{{base_url}}"],
+              "path": ["Establishments"],
+              "query": [
+                {
+                  "key": "latitude",
+                  "value": "{{birmingham_lat}}"
+                },
+                {
+                  "key": "longitude",
+                  "value": "{{birmingham_lon}}"
+                },
+                {
+                  "key": "maxDistanceLimit",
+                  "value": "5",
+                  "description": "Расширенный радиус"
+                },
+                {
+                  "key": "businessTypeId",
+                  "value": "{{care_home_business_type_id}}"
+                },
+                {
+                  "key": "pageSize",
+                  "value": "50"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "5. Поиск по местному органу власти (Birmingham)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-api-version",
+                "value": "2",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/Establishments?localAuthorityId={{birmingham_authority_id}}&businessTypeId={{care_home_business_type_id}}&pageSize=50",
+              "host": ["{{base_url}}"],
+              "path": ["Establishments"],
+              "query": [
+                {
+                  "key": "localAuthorityId",
+                  "value": "{{birmingham_authority_id}}",
+                  "description": "Birmingham = 197"
+                },
+                {
+                  "key": "businessTypeId",
+                  "value": "{{care_home_business_type_id}}"
+                },
+                {
+                  "key": "pageSize",
+                  "value": "50",
+                  "description": "Больше результатов"
+                }
+              ]
+            },
+            "description": "Все care homes в Birmingham"
+          }
+        }
+      ]
+    },
+    {
+      "name": "🎯 Фильтрованный поиск",
+      "item": [
+        {
+          "name": "1. Только рейтинг 5/5 (Excellent)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-api-version",
+                "value": "2",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/Establishments?latitude={{birmingham_lat}}&longitude={{birmingham_lon}}&maxDistanceLimit=5&businessTypeId={{care_home_business_type_id}}&ratingKey=fhrs_5_en-gb&pageSize=50",
+              "host": ["{{base_url}}"],
+              "path": ["Establishments"],
+              "query": [
+                {
+                  "key": "latitude",
+                  "value": "{{birmingham_lat}}"
+                },
+                {
+                  "key": "longitude",
+                  "value": "{{birmingham_lon}}"
+                },
+                {
+                  "key": "maxDistanceLimit",
+                  "value": "5"
+                },
+                {
+                  "key": "businessTypeId",
+                  "value": "{{care_home_business_type_id}}"
+                },
+                {
+                  "key": "ratingKey",
+                  "value": "fhrs_5_en-gb",
+                  "description": "Только отличные рейтинги"
+                },
+                {
+                  "key": "pageSize",
+                  "value": "50"
+                }
+              ]
+            },
+            "description": "⭐ Для PREMIUM отчётов - только лучшие care homes"
+          }
+        },
+        {
+          "name": "2. Рейтинг 4-5 (Good to Excellent)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-api-version",
+                "value": "2",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/Establishments?latitude={{birmingham_lat}}&longitude={{birmingham_lon}}&maxDistanceLimit=5&businessTypeId={{care_home_business_type_id}}&ratingKey=fhrs_4_en-gb,fhrs_5_en-gb&pageSize=50",
+              "host": ["{{base_url}}"],
+              "path": ["Establishments"],
+              "query": [
+                {
+                  "key": "latitude",
+                  "value": "{{birmingham_lat}}"
+                },
+                {
+                  "key": "longitude",
+                  "value": "{{birmingham_lon}}"
+                },
+                {
+                  "key": "maxDistanceLimit",
+                  "value": "5"
+                },
+                {
+                  "key": "businessTypeId",
+                  "value": "{{care_home_business_type_id}}"
+                },
+                {
+                  "key": "ratingKey",
+                  "value": "fhrs_4_en-gb,fhrs_5_en-gb",
+                  "description": "Множественный фильтр"
+                },
+                {
+                  "key": "pageSize",
+                  "value": "50"
+                }
+              ]
+            },
+            "description": "Для FREE tier - показываем только хорошие дома"
+          }
+        },
+        {
+          "name": "3. ALERT - Низкие рейтинги (0-2)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-api-version",
+                "value": "2",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/Establishments?localAuthorityId={{birmingham_authority_id}}&businessTypeId={{care_home_business_type_id}}&ratingKey=fhrs_0_en-gb,fhrs_1_en-gb,fhrs_2_en-gb&pageSize=50",
+              "host": ["{{base_url}}"],
+              "path": ["Establishments"],
+              "query": [
+                {
+                  "key": "localAuthorityId",
+                  "value": "{{birmingham_authority_id}}"
+                },
+                {
+                  "key": "businessTypeId",
+                  "value": "{{care_home_business_type_id}}"
+                },
+                {
+                  "key": "ratingKey",
+                  "value": "fhrs_0_en-gb,fhrs_1_en-gb,fhrs_2_en-gb",
+                  "description": "Критические рейтинги"
+                },
+                {
+                  "key": "pageSize",
+                  "value": "50"
+                }
+              ]
+            },
+            "description": "🚨 Для системы алертов - дома с проблемами"
+          }
+        }
+      ]
+    },
+    {
+      "name": "🔬 Детальная информация",
+      "item": [
+        {
+          "name": "1. Детали конкретного дома (by FHRSID)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-api-version",
+                "value": "2",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/Establishments/123456",
+              "host": ["{{base_url}}"],
+              "path": ["Establishments", "123456"]
+            },
+            "description": "Получить полную информацию включая scores (Hygiene, Structural, Management)"
+          }
+        }
+      ]
+    },
+    {
+      "name": "📊 Сортировка",
+      "item": [
+        {
+          "name": "1. Сортировка по рейтингу",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-api-version",
+                "value": "2",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/Establishments?localAuthorityId={{birmingham_authority_id}}&businessTypeId={{care_home_business_type_id}}&sortOptionKey=rating&pageSize=50",
+              "host": ["{{base_url}}"],
+              "path": ["Establishments"],
+              "query": [
+                {
+                  "key": "localAuthorityId",
+                  "value": "{{birmingham_authority_id}}"
+                },
+                {
+                  "key": "businessTypeId",
+                  "value": "{{care_home_business_type_id}}"
+                },
+                {
+                  "key": "sortOptionKey",
+                  "value": "rating",
+                  "description": "Сортировка: rating, alpha, inspection, distance"
+                },
+                {
+                  "key": "pageSize",
+                  "value": "50"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "2. Сортировка по дате инспекции",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-api-version",
+                "value": "2",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/Establishments?localAuthorityId={{birmingham_authority_id}}&businessTypeId={{care_home_business_type_id}}&sortOptionKey=inspection&pageSize=50",
+              "host": ["{{base_url}}"],
+              "path": ["Establishments"],
+              "query": [
+                {
+                  "key": "localAuthorityId",
+                  "value": "{{birmingham_authority_id}}"
+                },
+                {
+                  "key": "businessTypeId",
+                  "value": "{{care_home_business_type_id}}"
+                },
+                {
+                  "key": "sortOptionKey",
+                  "value": "inspection",
+                  "description": "Новейшие инспекции первыми"
+                },
+                {
+                  "key": "pageSize",
+                  "value": "50"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "3. Сортировка по расстоянию",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-api-version",
+                "value": "2",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/Establishments?latitude={{birmingham_lat}}&longitude={{birmingham_lon}}&maxDistanceLimit=5&businessTypeId={{care_home_business_type_id}}&sortOptionKey=distance&pageSize=50",
+              "host": ["{{base_url}}"],
+              "path": ["Establishments"],
+              "query": [
+                {
+                  "key": "latitude",
+                  "value": "{{birmingham_lat}}"
+                },
+                {
+                  "key": "longitude",
+                  "value": "{{birmingham_lon}}"
+                },
+                {
+                  "key": "maxDistanceLimit",
+                  "value": "5"
+                },
+                {
+                  "key": "businessTypeId",
+                  "value": "{{care_home_business_type_id}}"
+                },
+                {
+                  "key": "sortOptionKey",
+                  "value": "distance",
+                  "description": "Ближайшие первыми"
+                },
+                {
+                  "key": "pageSize",
+                  "value": "50"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "🇬🇧 Региональные запросы",
+      "item": [
+        {
+          "name": "1. London care homes",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-api-version",
+                "value": "2",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/Establishments?latitude=51.5074&longitude=-0.1278&maxDistanceLimit=5&businessTypeId={{care_home_business_type_id}}&pageSize=50",
+              "host": ["{{base_url}}"],
+              "path": ["Establishments"],
+              "query": [
+                {
+                  "key": "latitude",
+                  "value": "51.5074",
+                  "description": "London centre"
+                },
+                {
+                  "key": "longitude",
+                  "value": "-0.1278"
+                },
+                {
+                  "key": "maxDistanceLimit",
+                  "value": "5"
+                },
+                {
+                  "key": "businessTypeId",
+                  "value": "{{care_home_business_type_id}}"
+                },
+                {
+                  "key": "pageSize",
+                  "value": "50"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "2. Manchester care homes",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-api-version",
+                "value": "2",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/Establishments?latitude=53.4808&longitude=-2.2426&maxDistanceLimit=5&businessTypeId={{care_home_business_type_id}}&pageSize=50",
+              "host": ["{{base_url}}"],
+              "path": ["Establishments"],
+              "query": [
+                {
+                  "key": "latitude",
+                  "value": "53.4808",
+                  "description": "Manchester centre"
+                },
+                {
+                  "key": "longitude",
+                  "value": "-2.2426"
+                },
+                {
+                  "key": "maxDistanceLimit",
+                  "value": "5"
+                },
+                {
+                  "key": "businessTypeId",
+                  "value": "{{care_home_business_type_id}}"
+                },
+                {
+                  "key": "pageSize",
+                  "value": "50"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "3. Scotland (FHIS) - Edinburgh",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-api-version",
+                "value": "2",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/Establishments?latitude=55.9533&longitude=-3.1883&maxDistanceLimit=5&businessTypeId={{care_home_business_type_id}}&pageSize=50",
+              "host": ["{{base_url}}"],
+              "path": ["Establishments"],
+              "query": [
+                {
+                  "key": "latitude",
+                  "value": "55.9533",
+                  "description": "Edinburgh"
+                },
+                {
+                  "key": "longitude",
+                  "value": "-3.1883"
+                },
+                {
+                  "key": "maxDistanceLimit",
+                  "value": "5"
+                },
+                {
+                  "key": "businessTypeId",
+                  "value": "{{care_home_business_type_id}}"
+                },
+                {
+                  "key": "pageSize",
+                  "value": "50"
+                }
+              ]
+            },
+            "description": "⚠️ Шотландия использует FHIS: Pass/Improvement Required (не 0-5)"
+          }
+        }
+      ]
+    }
+  ]
+}

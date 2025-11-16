@@ -1,0 +1,21 @@
+home_id,name,address,city,postcode,cqc_rating,beds,location_type,known_issues
+1,Brambles Care Home,123 High Street,London,SW1A 1AA,Outstanding,45,urban,none
+2,Oaklands Nursing Home,456 Park Road,Manchester,M1 1AD,Good,32,urban,none
+3,Riverside Care,789 River Lane,Devon,EX1 1AB,Requires Improvement,25,rural,recent_complaints
+4,Meadowview Residence,321 Green Avenue,Birmingham,B1 2AB,Good,58,urban,staff_turnover
+5,Sunset Manor,654 Sunset Drive,Leeds,LS1 3CD,Outstanding,52,urban,none
+6,Greenwood House,987 Woodland Road,Bristol,BS1 4EF,Good,38,urban,none
+7,Hillside Nursing,147 Hill Street,Liverpool,L1 5GH,Requires Improvement,42,urban,financial_issues
+8,Parkview Lodge,258 Park Lane,Sheffield,S1 6IJ,Good,35,urban,none
+9,Willow Tree Care,369 Willow Road,Nottingham,NG1 7KL,Outstanding,48,urban,none
+10,Maple Leaf Manor,741 Maple Avenue,Cambridge,CB1 8MN,Good,29,urban,none
+11,Cedar House,852 Cedar Street,Oxford,OX1 9OP,Inadequate,33,urban,multiple_issues
+12,Pine Grove Residence,963 Pine Road,Reading,RG1 0QR,Good,44,urban,none
+13,Ashwood Nursing Home,159 Ash Lane,York,YO1 1ST,Good,37,urban,none
+14,Beechwood Care,357 Beech Drive,Newcastle,NE1 2UV,Requires Improvement,41,urban,inspection_pending
+15,Holly House,468 Holly Street,Plymouth,PL1 3WX,Good,31,urban,none
+16,Ivy Gardens,579 Ivy Road,Norwich,NR1 4YZ,Outstanding,55,urban,none
+17,Lavender Lodge,681 Lavender Lane,Exeter,EX2 5AB,Good,36,rural,none
+18,Rose Manor,792 Rose Avenue,Canterbury,CT1 6CD,Requires Improvement,28,rural,staff_shortage
+19,Bluebell House,813 Bluebell Close,Bath,BA1 7EF,Good,40,urban,none
+20,Daisy Cottage,924 Daisy Lane,Winchester,SO23 8GH,Inadequate,22,rural,closure_risk

@@ -1,0 +1,75 @@
+{
+  "fsa_test_care_homes": [
+    {
+      "name": "Kinross Residential Care Home",
+      "address": "201 Havant Road, Drayton, Portsmouth, Hampshire, PO6 1EE",
+      "city": "Portsmouth",
+      "postcode": "PO6 1EE",
+      "county": "Hampshire",
+      "source": "CQC Official Registry"
+    },
+    {
+      "name": "Meadows House Residential and Nursing Home",
+      "address": "Cullum Welch Court, London, SE3 0PW",
+      "city": "London",
+      "postcode": "SE3 0PW",
+      "county": "Greater London",
+      "source": "CQC Official Registry"
+    },
+    {
+      "name": "Roborough House",
+      "address": "Tamerton Road, Woolwell, Plymouth, Devon, PL6 7BQ",
+      "city": "Plymouth",
+      "postcode": "PL6 7BQ",
+      "county": "Devon",
+      "source": "CQC Official Registry"
+    },
+    {
+      "name": "Westgate House",
+      "address": "178 Romford Road, Forest Gate, London, E7 9HY",
+      "city": "London",
+      "postcode": "E7 9HY",
+      "county": "Greater London",
+      "source": "Top UK Care Home Operators - Barchester Healthcare",
+      "coordinates": {
+        "latitude": 51.5412,
+        "longitude": -0.0185
+      }
+    },
+    {
+      "name": "Trowbridge Oaks",
+      "address": "West Ashton Road, Trowbridge, Wiltshire, BA14 6DW",
+      "city": "Trowbridge",
+      "postcode": "BA14 6DW",
+      "county": "Wiltshire",
+      "source": "Top UK Care Home Operators - Bupa",
+      "coordinates": {
+        "latitude": 51.3343,
+        "longitude": -2.1877
+      }
+    }
+  ],
+  "companies_house_test_companies": [
+    {
+      "name": "Kinross Residential Care Home",
+      "company_number": null,
+      "address": "201 Havant Road, Drayton, Portsmouth, Hampshire, PO6 1EE",
+      "note": "Search by name to find company number"
+    },
+    {
+      "name": "Meadows House Residential and Nursing Home",
+      "company_number": null,
+      "address": "Cullum Welch Court, London, SE3 0PW",
+      "note": "Search by name to find company number"
+    },
+    {
+      "name": "Roborough House",
+      "company_number": null,
+      "address": "Tamerton Road, Woolwell, Plymouth, Devon, PL6 7BQ",
+      "note": "Search by name to find company number"
+    }
+  ],
+  "description": "Real UK care homes from CQC official registry for API testing",
+  "last_updated": "2025-01-27"
+}
+
