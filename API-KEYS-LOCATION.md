@@ -125,3 +125,4 @@ BESTTIME_PUBLIC_KEY=your-besttime-public-key
 **Текущее расположение файла с ключами:**
 `/Users/alexandertryvailo/Documents/Products/RCH-playground/api-testing-suite/backend/config.json`
 
+
