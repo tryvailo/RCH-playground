@@ -1,0 +1,218 @@
+{
+  "timestamp": "2025-11-19T17:15:37.920968",
+  "total_questionnaires": 6,
+  "successful": 6,
+  "results": [
+    {
+      "questionnaire": "questionnaire_1.json",
+      "postcode": "SW1A 1AA",
+      "care_type": "residential",
+      "budget": 1200.0,
+      "success": true,
+      "total_homes": 3,
+      "scenarios": {
+        "safe_bet": {
+          "name": "Safe Care Home SW1A",
+          "postcode": "SW1A 1AA",
+          "distance_km": 2.5,
+          "weekly_cost": 1140.0,
+          "rating": "Good",
+          "location_id": "LOC_SW1A_001"
+        },
+        "best_value": {
+          "name": "Value Care Home SW1A",
+          "postcode": "SW1A 1AA",
+          "distance_km": 3.8,
+          "weekly_cost": 1020.0,
+          "rating": "Good",
+          "location_id": "LOC_SW1A_002"
+        },
+        "premium": {
+          "name": "Premium Care Home SW1A",
+          "postcode": "SW1A 1AA",
+          "distance_km": 5.2,
+          "weekly_cost": 1380.0,
+          "rating": "Outstanding",
+          "location_id": "LOC_SW1A_003"
+        }
+      },
+      "local_authority": "Mock Authority"
+    },
+    {
+      "questionnaire": "questionnaire_2.json",
+      "postcode": "M1 1AA",
+      "care_type": "nursing",
+      "budget": 1500.0,
+      "success": true,
+      "total_homes": 3,
+      "scenarios": {
+        "safe_bet": {
+          "name": "Safe Care Home M1",
+          "postcode": "M1 1AA",
+          "distance_km": 2.5,
+          "weekly_cost": 1425.0,
+          "rating": "Good",
+          "location_id": "LOC_M1_001"
+        },
+        "best_value": {
+          "name": "Value Care Home M1",
+          "postcode": "M1 1AA",
+          "distance_km": 3.8,
+          "weekly_cost": 1275.0,
+          "rating": "Good",
+          "location_id": "LOC_M1_002"
+        },
+        "premium": {
+          "name": "Premium Care Home M1",
+          "postcode": "M1 1AA",
+          "distance_km": 5.2,
+          "weekly_cost": 1724.9999999999998,
+          "rating": "Outstanding",
+          "location_id": "LOC_M1_003"
+        }
+      },
+      "local_authority": "Mock Authority"
+    },
+    {
+      "questionnaire": "questionnaire_3.json",
+      "postcode": "B1 1AA",
+      "care_type": "dementia",
+      "budget": 1000.0,
+      "success": true,
+      "total_homes": 3,
+      "scenarios": {
+        "safe_bet": {
+          "name": "Safe Care Home B1",
+          "postcode": "B1 1AA",
+          "distance_km": 2.5,
+          "weekly_cost": 950.0,
+          "rating": "Good",
+          "location_id": "LOC_B1_001"
+        },
+        "best_value": {
+          "name": "Value Care Home B1",
+          "postcode": "B1 1AA",
+          "distance_km": 3.8,
+          "weekly_cost": 850.0,
+          "rating": "Good",
+          "location_id": "LOC_B1_002"
+        },
+        "premium": {
+          "name": "Premium Care Home B1",
+          "postcode": "B1 1AA",
+          "distance_km": 5.2,
+          "weekly_cost": 1150.0,
+          "rating": "Outstanding",
+          "location_id": "LOC_B1_003"
+        }
+      },
+      "local_authority": "Mock Authority"
+    },
+    {
+      "questionnaire": "questionnaire_4.json",
+      "postcode": "B44 8DD",
+      "care_type": "residential",
+      "budget": 950.0,
+      "success": true,
+      "total_homes": 3,
+      "scenarios": {
+        "safe_bet": {
+          "name": "Safe Care Home B44",
+          "postcode": "B44 8DD",
+          "distance_km": 2.5,
+          "weekly_cost": 902.5,
+          "rating": "Good",
+          "location_id": "LOC_B44_001"
+        },
+        "best_value": {
+          "name": "Value Care Home B44",
+          "postcode": "B44 8DD",
+          "distance_km": 3.8,
+          "weekly_cost": 807.5,
+          "rating": "Good",
+          "location_id": "LOC_B44_002"
+        },
+        "premium": {
+          "name": "Premium Care Home B44",
+          "postcode": "B44 8DD",
+          "distance_km": 5.2,
+          "weekly_cost": 1092.5,
+          "rating": "Outstanding",
+          "location_id": "LOC_B44_003"
+        }
+      },
+      "local_authority": "Mock Authority"
+    },
+    {
+      "questionnaire": "questionnaire_5.json",
+      "postcode": "B31 2TX",
+      "care_type": "dementia",
+      "budget": 1200.0,
+      "success": true,
+      "total_homes": 3,
+      "scenarios": {
+        "safe_bet": {
+          "name": "Safe Care Home B31",
+          "postcode": "B31 2TX",
+          "distance_km": 2.5,
+          "weekly_cost": 1140.0,
+          "rating": "Good",
+          "location_id": "LOC_B31_001"
+        },
+        "best_value": {
+          "name": "Value Care Home B31",
+          "postcode": "B31 2TX",
+          "distance_km": 3.8,
+          "weekly_cost": 1020.0,
+          "rating": "Good",
+          "location_id": "LOC_B31_002"
+        },
+        "premium": {
+          "name": "Premium Care Home B31",
+          "postcode": "B31 2TX",
+          "distance_km": 5.2,
+          "weekly_cost": 1380.0,
+          "rating": "Outstanding",
+          "location_id": "LOC_B31_003"
+        }
+      },
+      "local_authority": "Mock Authority"
+    },
+    {
+      "questionnaire": "questionnaire_6.json",
+      "postcode": "B72 1DU",
+      "care_type": "nursing",
+      "budget": 1400.0,
+      "success": true,
+      "total_homes": 3,
+      "scenarios": {
+        "safe_bet": {
+          "name": "Safe Care Home B72",
+          "postcode": "B72 1DU",
+          "distance_km": 2.5,
+          "weekly_cost": 1330.0,
+          "rating": "Good",
+          "location_id": "LOC_B72_001"
+        },
+        "best_value": {
+          "name": "Value Care Home B72",
+          "postcode": "B72 1DU",
+          "distance_km": 3.8,
+          "weekly_cost": 1190.0,
+          "rating": "Good",
+          "location_id": "LOC_B72_002"
+        },
+        "premium": {
+          "name": "Premium Care Home B72",
+          "postcode": "B72 1DU",
+          "distance_km": 5.2,
+          "weekly_cost": 1609.9999999999998,
+          "rating": "Outstanding",
+          "location_id": "LOC_B72_003"
+        }
+      },
+      "local_authority": "Mock Authority"
+    }
+  ],
+  "note": "Mock data - backend was unavailable"
+}

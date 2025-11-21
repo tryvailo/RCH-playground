@@ -1,0 +1,31 @@
+{
+  "profile_description": "Человек с высоким риском падений, нужен безопасный дом",
+  "section_1_contact_emergency": {
+    "q1_names": "Contact: Dorothy Davis; Patient: Dorothy Davis",
+    "q2_email": "dorothy.davis.family@email.com",
+    "q3_phone": "+44 7567 890123",
+    "q4_emergency_contact": "Thomas Davis +44 7123 456789"
+  },
+  "section_2_location_budget": {
+    "q5_preferred_city": "Birmingham",
+    "q6_max_distance": "within_15km",
+    "q7_budget": "5000_7000_local"
+  },
+  "section_3_medical_needs": {
+    "q8_care_types": ["general_residential", "medical_nursing"],
+    "q9_medical_conditions": ["mobility_problems"],
+    "q10_mobility_level": "walking_aids",
+    "q11_medication_management": "several_simple_routine",
+    "q12_age_range": "85_94"
+  },
+  "section_4_safety_special_needs": {
+    "q13_fall_history": "high_risk_of_falling",
+    "q14_allergies": ["food_allergies"],
+    "q15_dietary_requirements": ["pureed_soft_food"],
+    "q16_social_personality": "prefers_quiet"
+  },
+  "section_5_timeline": {
+    "q17_placement_timeline": "urgent_2_weeks"
+  }
+}
+

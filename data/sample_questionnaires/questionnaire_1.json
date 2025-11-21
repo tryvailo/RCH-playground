@@ -1,0 +1,14 @@
+{
+  "postcode": "SW1A 1AA",
+  "budget": 1200.0,
+  "care_type": "residential",
+  "chc_probability": 35.5,
+  "address": "Westminster",
+  "city": "London",
+  "preferences": {
+    "garden": true,
+    "activities": true,
+    "visiting_hours": "flexible"
+  }
+}
+

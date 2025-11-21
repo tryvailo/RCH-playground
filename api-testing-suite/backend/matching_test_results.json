@@ -1,0 +1,55 @@
+{
+  "timestamp": "2025-11-19T17:16:30.009301",
+  "total_questionnaires": 6,
+  "successful": 0,
+  "results": [
+    {
+      "questionnaire": "questionnaire_1.json",
+      "postcode": "SW1A 1AA",
+      "care_type": "residential",
+      "budget": 1200.0,
+      "error": "HTTP 500: Internal Server Error",
+      "success": false
+    },
+    {
+      "questionnaire": "questionnaire_2.json",
+      "postcode": "M1 1AA",
+      "care_type": "nursing",
+      "budget": 1500.0,
+      "error": "HTTP 500: Internal Server Error",
+      "success": false
+    },
+    {
+      "questionnaire": "questionnaire_3.json",
+      "postcode": "B1 1AA",
+      "care_type": "dementia",
+      "budget": 1000.0,
+      "error": "HTTP 500: Internal Server Error",
+      "success": false
+    },
+    {
+      "questionnaire": "questionnaire_4.json",
+      "postcode": "B44 8DD",
+      "care_type": "residential",
+      "budget": 950.0,
+      "error": "HTTP 500: Internal Server Error",
+      "success": false
+    },
+    {
+      "questionnaire": "questionnaire_5.json",
+      "postcode": "B31 2TX",
+      "care_type": "dementia",
+      "budget": 1200.0,
+      "error": "HTTP 500: Internal Server Error",
+      "success": false
+    },
+    {
+      "questionnaire": "questionnaire_6.json",
+      "postcode": "B72 1DU",
+      "care_type": "nursing",
+      "budget": 1400.0,
+      "error": "HTTP 500: Internal Server Error",
+      "success": false
+    }
+  ]
+}

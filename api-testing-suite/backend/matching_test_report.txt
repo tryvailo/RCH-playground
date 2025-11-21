@@ -1,0 +1,55 @@
+
+====================================================================================================
+📊 MATCHING TEST RESULTS - COMPARISON REPORT
+====================================================================================================
+Generated: 2025-11-19 17:16:30
+
+Summary: 0/6 questionnaires tested successfully
+
+====================================================================================================
+DETAILED RESULTS BY QUESTIONNAIRE
+====================================================================================================
+
+❌ questionnaire_1.json: FAILED
+   Error: HTTP 500: Internal Server Error
+
+❌ questionnaire_2.json: FAILED
+   Error: HTTP 500: Internal Server Error
+
+❌ questionnaire_3.json: FAILED
+   Error: HTTP 500: Internal Server Error
+
+❌ questionnaire_4.json: FAILED
+   Error: HTTP 500: Internal Server Error
+
+❌ questionnaire_5.json: FAILED
+   Error: HTTP 500: Internal Server Error
+
+❌ questionnaire_6.json: FAILED
+   Error: HTTP 500: Internal Server Error
+
+====================================================================================================
+COMPARISON BY SCENARIO
+====================================================================================================
+
+📌 SAFE BET:
+--------------------------------------------------------------------------------
+   No matches found for this scenario
+
+📌 BEST VALUE:
+--------------------------------------------------------------------------------
+   No matches found for this scenario
+
+📌 PREMIUM:
+--------------------------------------------------------------------------------
+   No matches found for this scenario
+
+====================================================================================================
+UNIQUENESS ANALYSIS
+====================================================================================================
+
+Total unique care homes across all scenarios: 0
+
+✅ All recommendations are unique!
+
+====================================================================================================

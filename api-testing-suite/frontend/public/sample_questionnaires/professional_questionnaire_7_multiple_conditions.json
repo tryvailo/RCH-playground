@@ -1,0 +1,31 @@
+{
+  "profile_description": "Множественные медицинские условия (3+) без деменции и без высокого риска падений - демонстрирует Rule 3",
+  "section_1_contact_emergency": {
+    "q1_names": "Contact: George Miller; Patient: George Miller",
+    "q2_email": "george.miller.family@email.com",
+    "q3_phone": "+44 7789 012345",
+    "q4_emergency_contact": "Linda Miller +44 7345 678901"
+  },
+  "section_2_location_budget": {
+    "q5_preferred_city": "Birmingham",
+    "q6_max_distance": "20km",
+    "q7_budget": "5000_7000_self"
+  },
+  "section_3_medical_needs": {
+    "q8_care_types": ["medical_nursing"],
+    "q9_medical_conditions": ["diabetes", "heart_conditions", "mobility_problems"],
+    "q10_mobility_level": "wheelchair_sometimes",
+    "q11_medication_management": "many_complex_routine",
+    "q12_age_range": "75_84"
+  },
+  "section_4_safety_special_needs": {
+    "q13_fall_history": "1_2_no_serious_injuries",
+    "q14_allergies": ["medication_allergies"],
+    "q15_dietary_requirements": ["diabetic_diet"],
+    "q16_social_personality": "moderately_sociable"
+  },
+  "section_5_timeline": {
+    "q17_placement_timeline": "planning_2_3_months"
+  }
+}
+

@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Free Care Home Report - {{ postcode }}</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            font-size: 11pt;
+            line-height: 1.6;
+            color: #111827;
+            background: #ffffff;
+        }
+        
+        .page {
+            page-break-after: always;
+            padding: 40pt;
+            min-height: 100vh;
+        }
+        
+        .page:last-child {
+            page-break-after: avoid;
+        }
+        
+        /* Header */
+        .header {
+            background: linear-gradient(135deg, #1E2A44 0%, #2D3E5F 100%);
+            color: #ffffff;
+            padding: 30pt;
+            border-radius: 8pt;
+            margin-bottom: 30pt;
+        }
+        
+        .header-title {
+            font-size: 28pt;
+            font-weight: 700;
+            margin-bottom: 8pt;
+            color: #ffffff;
+        }
+        
+        .header-subtitle {
+            font-size: 12pt;
+            color: #E5E7EB;
+            margin-bottom: 15pt;
+        }
+        
+        .header-info {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 15pt;
+            font-size: 10pt;
+            color: #D1D5DB;
+        }
+        
+        /* Summary Boxes */
+        .summary-grid {
+            display: flex;
+            gap: 10pt;
+            margin-top: 20pt;
+        }
+        
+        .summary-box {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 12pt;
+            border-radius: 6pt;
+            flex: 1;
+        }
+        
+        .summary-label {
+            font-size: 9pt;
+            color: #D1D5DB;
+            margin-bottom: 4pt;
+        }
+        
+        .summary-value {
+            font-size: 18pt;
+            font-weight: 700;
+            color: #ffffff;
+        }
+        
+        /* Fair Cost Gap Block */
+        .fair-cost-gap {
+            background: #EF4444;
+            color: #ffffff;
+            padding: 30pt;
+            border-radius: 8pt;
+            margin: 30pt 0;
+            text-align: center;
+        }
+        
+        .fair-cost-gap-title {
+            font-size: 14pt;
+            font-weight: 600;
+            margin-bottom: 15pt;
+            text-transform: uppercase;
+            letter-spacing: 1pt;
+        }
+        
+        .fair-cost-gap-amount {
+            font-size: 36pt;
+            font-weight: 700;
+            margin: 10pt 0;
+        }
+        
+        .fair-cost-gap-label {
+            font-size: 11pt;
+            margin-top: 5pt;
+            opacity: 0.9;
+        }
+        
+        .fair-cost-gap-breakdown {
+            display: flex;
+            justify-content: space-around;
+            margin-top: 20pt;
+            padding-top: 20pt;
+            border-top: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        
+        .breakdown-item {
+            text-align: center;
+        }
+        
+        .breakdown-amount {
+            font-size: 20pt;
+            font-weight: 700;
+        }
+        
+        .breakdown-label {
+            font-size: 9pt;
+            margin-top: 4pt;
+            opacity: 0.8;
+        }
+        
+        /* Section Titles */
+        .section-title {
+            font-size: 20pt;
+            font-weight: 700;
+            color: #111827;
+            margin: 30pt 0 20pt 0;
+            padding-bottom: 10pt;
+            border-bottom: 2px solid #E5E7EB;
+        }
+        
+        /* Care Home Card */
+        .home-card {
+            margin-bottom: 30pt;
+            border: 1px solid #E5E7EB;
+            border-radius: 8pt;
+            overflow: hidden;
+            page-break-inside: avoid;
+        }
+        
+        .home-header {
+            background: #F9FAFB;
+            padding: 20pt;
+            border-bottom: 1px solid #E5E7EB;
+        }
+        
+        .home-name {
+            font-size: 18pt;
+            font-weight: 700;
+            color: #111827;
+            margin-bottom: 8pt;
+        }
+        
+        .home-badges {
+            display: flex;
+            gap: 8pt;
+            flex-wrap: wrap;
+            margin-top: 10pt;
+        }
+        
+        .badge {
+            display: inline-block;
+            padding: 4pt 10pt;
+            border-radius: 4pt;
+            font-size: 9pt;
+            font-weight: 600;
+        }
+        
+        .badge-primary {
+            background: #1E2A44;
+            color: #ffffff;
+        }
+        
+        .badge-success {
+            background: #10B981;
+            color: #ffffff;
+        }
+        
+        .badge-info {
+            background: #3B82F6;
+            color: #ffffff;
+        }
+        
+        .home-content {
+            padding: 20pt;
+        }
+        
+        .home-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 12pt;
+            padding-bottom: 12pt;
+            border-bottom: 1px solid #F3F4F6;
+        }
+        
+        .home-row:last-child {
+            border-bottom: none;
+        }
+        
+        .home-label {
+            font-size: 10pt;
+            color: #6B7280;
+            font-weight: 600;
+        }
+        
+        .home-value {
+            font-size: 11pt;
+            color: #111827;
+            font-weight: 500;
+        }
+        
+        .home-price {
+            font-size: 24pt;
+            font-weight: 700;
+            color: #1E2A44;
+        }
+        
+        .why-this-home {
+            background: #F9FAFB;
+            padding: 15pt;
+            border-radius: 6pt;
+            margin-top: 15pt;
+            border-left: 4px solid #10B981;
+        }
+        
+        .why-this-home-title {
+            font-size: 10pt;
+            font-weight: 700;
+            color: #111827;
+            margin-bottom: 8pt;
+        }
+        
+        .why-this-home-text {
+            font-size: 10pt;
+            color: #4B5563;
+            line-height: 1.6;
+        }
+        
+        /* Comparison Table */
+        .comparison-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20pt 0;
+        }
+        
+        .comparison-table th,
+        .comparison-table td {
+            padding: 10pt;
+            text-align: left;
+            border-bottom: 1px solid #E5E7EB;
+        }
+        
+        .comparison-table th {
+            background: #F9FAFB;
+            font-weight: 700;
+            font-size: 10pt;
+            color: #111827;
+        }
+        
+        .comparison-table td {
+            font-size: 10pt;
+            color: #4B5563;
+        }
+        
+        /* Footer */
+        .footer {
+            margin-top: 40pt;
+            padding-top: 20pt;
+            border-top: 1px solid #E5E7EB;
+            text-align: center;
+            font-size: 9pt;
+            color: #6B7280;
+        }
+        
+        /* CTA Block */
+        .cta-block {
+            background: linear-gradient(135deg, #10B981 0%, #059669 100%);
+            color: #ffffff;
+            padding: 25pt;
+            border-radius: 8pt;
+            text-align: center;
+            margin: 30pt 0;
+        }
+        
+        .cta-title {
+            font-size: 18pt;
+            font-weight: 700;
+            margin-bottom: 10pt;
+        }
+        
+        .cta-text {
+            font-size: 11pt;
+            margin-bottom: 15pt;
+            opacity: 0.95;
+        }
+        
+        .cta-button {
+            display: inline-block;
+            background: #ffffff;
+            color: #10B981;
+            padding: 12pt 24pt;
+            border-radius: 6pt;
+            font-weight: 700;
+            font-size: 12pt;
+            text-decoration: none;
+        }
+        
+        /* Utilities */
+        .text-center {
+            text-align: center;
+        }
+        
+        .mt-20 {
+            margin-top: 20pt;
+        }
+        
+        .mb-20 {
+            margin-bottom: 20pt;
+        }
+    </style>
+</head>
+<body>
+    <!-- Page 1: Cover -->
+    <div class="page">
+        <div class="header">
+            <div class="header-title">Your Free Care Home Report</div>
+            <div class="header-subtitle">Personalized recommendations for {{ postcode }}</div>
+            <div class="header-info">
+                <div>Generated: {{ generated_date }} at {{ generated_time }}</div>
+                <div>Report ID: {{ report_id }}</div>
+            </div>
+            <div class="summary-grid">
+                <div class="summary-box">
+                    <div class="summary-label">Care Type</div>
+                    <div class="summary-value">{{ care_type|title }}</div>
+                </div>
+                <div class="summary-box">
+                    <div class="summary-label">Homes Found</div>
+                    <div class="summary-value">{{ total_homes }}</div>
+                </div>
+                <div class="summary-box">
+                    <div class="summary-label">Postcode</div>
+                    <div class="summary-value">{{ postcode }}</div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="fair-cost-gap">
+            <div class="fair-cost-gap-title">Your Overpayment</div>
+            <div class="fair-cost-gap-amount">£{{ "%.0f"|format(fair_cost_gap.gap_week) }}</div>
+            <div class="fair-cost-gap-label">Per Week Above Fair Cost Price</div>
+            <div class="fair-cost-gap-breakdown">
+                <div class="breakdown-item">
+                    <div class="breakdown-amount">£{{ "%.0f"|format(fair_cost_gap.gap_year) }}</div>
+                    <div class="breakdown-label">Per Year</div>
+                </div>
+                <div class="breakdown-item">
+                    <div class="breakdown-amount">£{{ "%.0f"|format(fair_cost_gap.gap_5year) }}</div>
+                    <div class="breakdown-label">Over 5 Years</div>
+                </div>
+            </div>
+            <div style="margin-top: 20pt; font-size: 10pt; opacity: 0.9;">
+                This is {{ "%.0f"|format(fair_cost_gap.gap_percent) }}% above fair cost price according to government data (MSIF 2025–2026)
+            </div>
+        </div>
+        
+        <div class="footer">
+            <p>RightCareHome - Free Care Home Matching Service</p>
+            <p>This report is generated automatically based on your questionnaire responses.</p>
+        </div>
+    </div>
+    
+    <!-- Pages 2-4: Care Homes -->
+    {% for home in care_homes %}
+    <div class="page">
+        <div class="section-title">Recommended Home {{ loop.index }}: {{ home.match_type }}</div>
+        
+        <div class="home-card">
+            <div class="home-header">
+                <div class="home-name">{{ home.name }}</div>
+                <div style="font-size: 10pt; color: #6B7280; margin-top: 5pt;">
+                    {{ home.address }}{% if home.postcode %}, {{ home.postcode }}{% endif %}
+                </div>
+                <div class="home-badges">
+                    <span class="badge badge-primary">{{ home.match_type }}</span>
+                    {% if home.rating %}
+                    <span class="badge badge-success">CQC: {{ home.rating }}</span>
+                    {% endif %}
+                    {% if home.fsa_rating %}
+                    <span class="badge badge-info">FSA: {{ home.fsa_rating }}/5</span>
+                    {% endif %}
+                    <span class="badge">Distance: {{ home.distance_km }} km</span>
+                </div>
+            </div>
+            
+            <div class="home-content">
+                <div class="home-row">
+                    <span class="home-label">Weekly Cost</span>
+                    <span class="home-price">£{{ "%.0f"|format(home.weekly_cost) }}</span>
+                </div>
+                
+                {% if home.distance_km %}
+                <div class="home-row">
+                    <span class="home-label">Distance</span>
+                    <span class="home-value">{{ home.distance_km }} km ({{ home.distance_miles }} miles)</span>
+                </div>
+                {% endif %}
+                
+                {% if home.rating %}
+                <div class="home-row">
+                    <span class="home-label">CQC Rating</span>
+                    <span class="home-value">{{ home.rating }}</span>
+                </div>
+                {% endif %}
+                
+                {% if home.fsa_rating %}
+                <div class="home-row">
+                    <span class="home-label">Food Hygiene Rating</span>
+                    <span class="home-value">{{ home.fsa_rating }}/5{% if home.fsa_color %} ({{ home.fsa_color|title }}){% endif %}</span>
+                </div>
+                {% endif %}
+                
+                {% if home.care_types %}
+                <div class="home-row">
+                    <span class="home-label">Care Types</span>
+                    <span class="home-value">{{ home.care_types|join(", ") }}</span>
+                </div>
+                {% endif %}
+                
+                {% if home.contact_phone %}
+                <div class="home-row">
+                    <span class="home-label">Contact</span>
+                    <span class="home-value">{{ home.contact_phone }}</span>
+                </div>
+                {% endif %}
+                
+                {% if home.website %}
+                <div class="home-row">
+                    <span class="home-label">Website</span>
+                    <span class="home-value">{{ home.website }}</span>
+                </div>
+                {% endif %}
+                
+                {% if home.why_this_home %}
+                <div class="why-this-home">
+                    <div class="why-this-home-title">Why we chose this home:</div>
+                    <div class="why-this-home-text">{{ home.why_this_home }}</div>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        
+        {% if home.features %}
+        <div style="margin-top: 20pt;">
+            <div style="font-size: 11pt; font-weight: 700; margin-bottom: 10pt;">Key Features:</div>
+            <ul style="font-size: 10pt; color: #4B5563; line-height: 1.8; padding-left: 20pt;">
+                {% for feature in home.features %}
+                <li>{{ feature }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+    </div>
+    {% endfor %}
+    
+    <!-- Page 5: Comparison Table -->
+    {% if care_homes|length >= 3 %}
+    <div class="page">
+        <div class="section-title">Quick Comparison</div>
+        
+        <table class="comparison-table">
+            <thead>
+                <tr>
+                    <th>Criteria</th>
+                    <th>{{ care_homes[0].name }}</th>
+                    <th>{{ care_homes[1].name }}</th>
+                    <th>{{ care_homes[2].name }}</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>Strategy</strong></td>
+                    <td>{{ care_homes[0].match_type }}</td>
+                    <td>{{ care_homes[1].match_type }}</td>
+                    <td>{{ care_homes[2].match_type }}</td>
+                </tr>
+                <tr>
+                    <td><strong>Weekly Cost</strong></td>
+                    <td>£{{ "%.0f"|format(care_homes[0].weekly_cost) }}</td>
+                    <td>£{{ "%.0f"|format(care_homes[1].weekly_cost) }}</td>
+                    <td>£{{ "%.0f"|format(care_homes[2].weekly_cost) }}</td>
+                </tr>
+                <tr>
+                    <td><strong>Distance</strong></td>
+                    <td>{{ care_homes[0].distance_km }} km</td>
+                    <td>{{ care_homes[1].distance_km }} km</td>
+                    <td>{{ care_homes[2].distance_km }} km</td>
+                </tr>
+                <tr>
+                    <td><strong>CQC Rating</strong></td>
+                    <td>{{ care_homes[0].rating or "Not rated" }}</td>
+                    <td>{{ care_homes[1].rating or "Not rated" }}</td>
+                    <td>{{ care_homes[2].rating or "Not rated" }}</td>
+                </tr>
+                {% if care_homes[0].fsa_rating %}
+                <tr>
+                    <td><strong>FSA Rating</strong></td>
+                    <td>{{ care_homes[0].fsa_rating }}/5</td>
+                    <td>{{ care_homes[1].fsa_rating or "N/A" }}/5</td>
+                    <td>{{ care_homes[2].fsa_rating or "N/A" }}/5</td>
+                </tr>
+                {% endif %}
+            </tbody>
+        </table>
+        
+        <div class="cta-block mt-20">
+            <div class="cta-title">Want More Detailed Analysis?</div>
+            <div class="cta-text">Upgrade to Professional Report for £119</div>
+            <div class="cta-text" style="font-size: 10pt; margin-top: 10pt;">
+                Includes financial stability checks, medical capability verification, and 5-year cost projections
+            </div>
+        </div>
+    </div>
+    {% endif %}
+    
+    <!-- Page 6: Fair Cost Gap Details -->
+    <div class="page">
+        <div class="section-title">Fair Cost Gap Analysis</div>
+        
+        <div style="background: #F9FAFB; padding: 20pt; border-radius: 8pt; margin-bottom: 20pt;">
+            <div style="font-size: 12pt; font-weight: 700; margin-bottom: 15pt;">Market Price vs Fair Cost</div>
+            <div style="display: flex; justify-content: space-between; margin-bottom: 10pt;">
+                <span style="font-size: 11pt; color: #6B7280;">Market Price:</span>
+                <span style="font-size: 14pt; font-weight: 700;">£{{ "%.0f"|format(fair_cost_gap.market_price) }}/week</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; margin-bottom: 10pt;">
+                <span style="font-size: 11pt; color: #6B7280;">Fair Cost (MSIF):</span>
+                <span style="font-size: 14pt; font-weight: 700;">£{{ "%.0f"|format(fair_cost_gap.msif_lower_bound) }}/week</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; padding-top: 15pt; border-top: 2px solid #E5E7EB; margin-top: 15pt;">
+                <span style="font-size: 12pt; font-weight: 700; color: #EF4444;">Your Overpayment:</span>
+                <span style="font-size: 18pt; font-weight: 700; color: #EF4444;">£{{ "%.0f"|format(fair_cost_gap.gap_week) }}/week</span>
+            </div>
+        </div>
+        
+        {% if fair_cost_gap.explanation %}
+        <div style="margin-bottom: 20pt;">
+            <div style="font-size: 11pt; color: #4B5563; line-height: 1.8;">
+                {{ fair_cost_gap.explanation }}
+            </div>
+        </div>
+        {% endif %}
+        
+        {% if fair_cost_gap.recommendations %}
+        <div style="background: #F0FDF4; padding: 20pt; border-radius: 8pt; border-left: 4px solid #10B981;">
+            <div style="font-size: 12pt; font-weight: 700; margin-bottom: 15pt; color: #059669;">Recommendations</div>
+            <ul style="font-size: 11pt; color: #4B5563; line-height: 1.8; padding-left: 20pt;">
+                {% for rec in fair_cost_gap.recommendations %}
+                <li style="margin-bottom: 8pt;">{{ rec }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+        
+        <div class="footer">
+            <p>RightCareHome - Free Care Home Matching Service</p>
+            <p>Report generated on {{ generated_date }} at {{ generated_time }}</p>
+        </div>
+    </div>
+</body>
+</html>
+

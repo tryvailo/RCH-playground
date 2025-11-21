@@ -1,0 +1,14 @@
+{
+  "postcode": "B1 1AA",
+  "budget": 1000.0,
+  "care_type": "dementia",
+  "chc_probability": 28.7,
+  "address": "City Centre",
+  "city": "Birmingham",
+  "preferences": {
+    "secure_garden": true,
+    "specialist_dementia_care": true,
+    "family_involvement": true
+  }
+}
+

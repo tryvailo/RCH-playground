@@ -1,0 +1,1326 @@
+[
+  {
+    "id": "1",
+    "location_id": "1-10016894058",
+    "name": "Respite Breaks - Epwell rd.",
+    "city": "Birmingham",
+    "postcode": "B44 8DD",
+    "latitude": 52.533398,
+    "longitude": null,
+    "region": "West Midlands",
+    "local_authority": "Birmingham",
+    "beds_total": 2,
+    "beds_available": 1,
+    "has_availability": true,
+    "availability_status": "Available",
+    "care_types": [
+      "residential"
+    ],
+    "weekly_costs": {
+      "residential": 948
+    },
+    "cqc_ratings": {
+      "overall": "Good",
+      "safe": "Good",
+      "effective": "Good",
+      "caring": "Good",
+      "responsive": "Good",
+      "well_led": "Good"
+    },
+    "cqc_last_inspection_date": "2022-04-26",
+    "google_rating": 3.7,
+    "review_count": 46,
+    "facilities": {
+      "wheelchair_access": false,
+      "ensuite_rooms": true,
+      "secure_garden": false,
+      "wifi_available": false,
+      "parking_onsite": true
+    },
+    "contact": {
+      "telephone": "1212740588",
+      "website": ""
+    }
+  },
+  {
+    "id": "2",
+    "location_id": "1-1004508435",
+    "name": "Meadow Rose Nursing Home",
+    "city": "Birmingham",
+    "postcode": "B31 2TX",
+    "latitude": 52.399843,
+    "longitude": -1.989241,
+    "region": "West Midlands",
+    "local_authority": "Birmingham",
+    "beds_total": 56,
+    "beds_available": 1,
+    "has_availability": true,
+    "availability_status": "Available",
+    "care_types": [
+      "nursing",
+      "dementia"
+    ],
+    "weekly_costs": {
+      "nursing": 1187,
+      "dementia": 1051
+    },
+    "cqc_ratings": {
+      "overall": "Requires Improvement",
+      "safe": "Requires Improvement",
+      "effective": "Requires Improvement",
+      "caring": "Good",
+      "responsive": "Good",
+      "well_led": "Requires Improvement"
+    },
+    "cqc_last_inspection_date": "2020-10-01",
+    "google_rating": 4.3,
+    "review_count": 122,
+    "facilities": {
+      "wheelchair_access": false,
+      "ensuite_rooms": false,
+      "secure_garden": true,
+      "wifi_available": false,
+      "parking_onsite": false
+    },
+    "contact": {
+      "telephone": "1214769808",
+      "website": "www.macccare.com"
+    }
+  },
+  {
+    "id": "3",
+    "location_id": "1-10646798947",
+    "name": "Petersfield Care Home",
+    "city": "Birmingham",
+    "postcode": "B20 3RP",
+    "latitude": 52.508024,
+    "longitude": -1.912955,
+    "region": "West Midlands",
+    "local_authority": "Birmingham",
+    "beds_total": 5,
+    "beds_available": 0,
+    "has_availability": false,
+    "availability_status": "Full",
+    "care_types": [
+      "residential"
+    ],
+    "weekly_costs": {
+      "residential": 1178
+    },
+    "cqc_ratings": {
+      "overall": "Good",
+      "safe": "Good",
+      "effective": "Good",
+      "caring": "Good",
+      "responsive": "Good",
+      "well_led": "Good"
+    },
+    "cqc_last_inspection_date": "2023-01-20",
+    "google_rating": 4.1,
+    "review_count": 76,
+    "facilities": {
+      "wheelchair_access": true,
+      "ensuite_rooms": false,
+      "secure_garden": true,
+      "wifi_available": false,
+      "parking_onsite": false
+    },
+    "contact": {
+      "telephone": "1215151654",
+      "website": ""
+    }
+  },
+  {
+    "id": "4",
+    "location_id": "1-109100588",
+    "name": "Beech Hill Grange",
+    "city": "Sutton Coldfield",
+    "postcode": "B72 1DU",
+    "latitude": 52.539648,
+    "longitude": -1.822084,
+    "region": "West Midlands",
+    "local_authority": "Birmingham",
+    "beds_total": 74,
+    "beds_available": 22,
+    "has_availability": true,
+    "availability_status": "Waiting list",
+    "care_types": [
+      "nursing",
+      "dementia"
+    ],
+    "weekly_costs": {
+      "nursing": 1233,
+      "dementia": 1399
+    },
+    "cqc_ratings": {
+      "overall": "Requires Improvement",
+      "safe": "Requires Improvement",
+      "effective": "Requires Improvement",
+      "caring": "Good",
+      "responsive": "Good",
+      "well_led": "Requires Improvement"
+    },
+    "cqc_last_inspection_date": "2024-09-13",
+    "google_rating": 4.3,
+    "review_count": 16,
+    "facilities": {
+      "wheelchair_access": false,
+      "ensuite_rooms": false,
+      "secure_garden": false,
+      "wifi_available": true,
+      "parking_onsite": true
+    },
+    "contact": {
+      "telephone": "1213730200",
+      "website": "www.beechhillgrange.co.uk"
+    }
+  },
+  {
+    "id": "5",
+    "location_id": "1-109925813",
+    "name": "Sycamore House",
+    "city": "Birmingham",
+    "postcode": "B11 3RG",
+    "latitude": 52.452689,
+    "longitude": -1.848759,
+    "region": "West Midlands",
+    "local_authority": "Birmingham",
+    "beds_total": 28,
+    "beds_available": 3,
+    "has_availability": true,
+    "availability_status": "Waiting list",
+    "care_types": [
+      "residential"
+    ],
+    "weekly_costs": {
+      "residential": 887
+    },
+    "cqc_ratings": {
+      "overall": "Good",
+      "safe": "Good",
+      "effective": "Good",
+      "caring": "Good",
+      "responsive": "Good",
+      "well_led": "Good"
+    },
+    "cqc_last_inspection_date": "2019-04-05",
+    "google_rating": 4.0,
+    "review_count": 140,
+    "facilities": {
+      "wheelchair_access": true,
+      "ensuite_rooms": true,
+      "secure_garden": false,
+      "wifi_available": true,
+      "parking_onsite": true
+    },
+    "contact": {
+      "telephone": "1217074622",
+      "website": ""
+    }
+  },
+  {
+    "id": "6",
+    "location_id": "1-110294199",
+    "name": "Bryony House",
+    "city": "Birmingham",
+    "postcode": "B29 4BX",
+    "latitude": 52.430879,
+    "longitude": -1.958186,
+    "region": "West Midlands",
+    "local_authority": "Birmingham",
+    "beds_total": 35,
+    "beds_available": 12,
+    "has_availability": true,
+    "availability_status": "Waiting list",
+    "care_types": [
+      "residential"
+    ],
+    "weekly_costs": {
+      "residential": 1076
+    },
+    "cqc_ratings": {
+      "overall": "Inadequate",
+      "safe": "Inadequate",
+      "effective": "Requires Improvement",
+      "caring": "Requires Improvement",
+      "responsive": "Requires Improvement",
+      "well_led": "Inadequate"
+    },
+    "cqc_last_inspection_date": "2025-08-01",
+    "google_rating": 4.1,
+    "review_count": 103,
+    "facilities": {
+      "wheelchair_access": false,
+      "ensuite_rooms": false,
+      "secure_garden": false,
+      "wifi_available": false,
+      "parking_onsite": false
+    },
+    "contact": {
+      "telephone": "1214752965",
+      "website": ""
+    }
+  },
+  {
+    "id": "7",
+    "location_id": "1-11058464513",
+    "name": "Sutton Park Grange",
+    "city": "Sutton Coldfield",
+    "postcode": "B72 1LY",
+    "latitude": 52.551945,
+    "longitude": -1.827226,
+    "region": "West Midlands",
+    "local_authority": "Birmingham",
+    "beds_total": 64,
+    "beds_available": 22,
+    "has_availability": true,
+    "availability_status": "Limited availability",
+    "care_types": [
+      "residential",
+      "dementia"
+    ],
+    "weekly_costs": {
+      "residential": 1199,
+      "dementia": 1022
+    },
+    "cqc_ratings": {
+      "overall": "Good",
+      "safe": "Good",
+      "effective": "Good",
+      "caring": "Good",
+      "responsive": "Good",
+      "well_led": "Good"
+    },
+    "cqc_last_inspection_date": "2023-08-05",
+    "google_rating": 4.6,
+    "review_count": 41,
+    "facilities": {
+      "wheelchair_access": true,
+      "ensuite_rooms": false,
+      "secure_garden": true,
+      "wifi_available": true,
+      "parking_onsite": true
+    },
+    "contact": {
+      "telephone": "1212691235",
+      "website": ""
+    }
+  },
+  {
+    "id": "8",
+    "location_id": "1-111397200",
+    "name": "Orchard House Nursing Home",
+    "city": "Sutton Coldfield",
+    "postcode": "B75 6DS",
+    "latitude": 52.572186,
+    "longitude": -1.802137,
+    "region": "West Midlands",
+    "local_authority": "Birmingham",
+    "beds_total": 31,
+    "beds_available": 2,
+    "has_availability": true,
+    "availability_status": "Waiting list",
+    "care_types": [
+      "nursing"
+    ],
+    "weekly_costs": {
+      "nursing": 1455
+    },
+    "cqc_ratings": {
+      "overall": "Good",
+      "safe": "Good",
+      "effective": "Good",
+      "caring": "Good",
+      "responsive": "Good",
+      "well_led": "Good"
+    },
+    "cqc_last_inspection_date": "2019-05-21",
+    "google_rating": 4.7,
+    "review_count": 21,
+    "facilities": {
+      "wheelchair_access": true,
+      "ensuite_rooms": false,
+      "secure_garden": true,
+      "wifi_available": true,
+      "parking_onsite": false
+    },
+    "contact": {
+      "telephone": "1213780272",
+      "website": "www.orchardhousenursinghome.co.uk"
+    }
+  },
+  {
+    "id": "9",
+    "location_id": "1-11242868692",
+    "name": "Blackmoor",
+    "city": "Birmingham",
+    "postcode": "B33 0PE",
+    "latitude": 52.477568,
+    "longitude": -1.767402,
+    "region": "West Midlands",
+    "local_authority": "Birmingham",
+    "beds_total": 30,
+    "beds_available": 9,
+    "has_availability": true,
+    "availability_status": "Available",
+    "care_types": [
+      "nursing",
+      "dementia"
+    ],
+    "weekly_costs": {
+      "nursing": 893,
+      "dementia": 1127
+    },
+    "cqc_ratings": {
+      "overall": "Requires Improvement",
+      "safe": "Requires Improvement",
+      "effective": "Good",
+      "caring": "Good",
+      "responsive": "Requires Improvement",
+      "well_led": "Requires Improvement"
+    },
+    "cqc_last_inspection_date": "2023-01-12",
+    "google_rating": 4.3,
+    "review_count": 66,
+    "facilities": {
+      "wheelchair_access": false,
+      "ensuite_rooms": false,
+      "secure_garden": true,
+      "wifi_available": false,
+      "parking_onsite": false
+    },
+    "contact": {
+      "telephone": "1218243200",
+      "website": "www.exemplarhc.com"
+    }
+  },
+  {
+    "id": "10",
+    "location_id": "1-112440307",
+    "name": "Arden Lodge Residential Care Home for Elder Adults",
+    "city": "Birmingham",
+    "postcode": "B27 6QG",
+    "latitude": 52.450593,
+    "longitude": -1.830015,
+    "region": "West Midlands",
+    "local_authority": "Birmingham",
+    "beds_total": 47,
+    "beds_available": 10,
+    "has_availability": true,
+    "availability_status": "Waiting list",
+    "care_types": [
+      "residential",
+      "dementia"
+    ],
+    "weekly_costs": {
+      "residential": 856,
+      "dementia": 1356
+    },
+    "cqc_ratings": {
+      "overall": "Good",
+      "safe": "Good",
+      "effective": "Good",
+      "caring": "Good",
+      "responsive": "Outstanding",
+      "well_led": "Good"
+    },
+    "cqc_last_inspection_date": "2019-04-18",
+    "google_rating": 3.8,
+    "review_count": 77,
+    "facilities": {
+      "wheelchair_access": true,
+      "ensuite_rooms": true,
+      "secure_garden": true,
+      "wifi_available": true,
+      "parking_onsite": false
+    },
+    "contact": {
+      "telephone": "1217067958",
+      "website": "www.lindale-homes.co.uk"
+    }
+  },
+  {
+    "id": "11",
+    "location_id": "1-112476088",
+    "name": "Chesterberry",
+    "city": "Birmingham",
+    "postcode": "B24 0EA",
+    "latitude": 52.531978,
+    "longitude": -1.826862,
+    "region": "West Midlands",
+    "local_authority": "Birmingham",
+    "beds_total": 7,
+    "beds_available": 2,
+    "has_availability": true,
+    "availability_status": "Limited availability",
+    "care_types": [
+      "residential"
+    ],
+    "weekly_costs": {
+      "residential": 788
+    },
+    "cqc_ratings": {
+      "overall": "Good",
+      "safe": "Good",
+      "effective": "Good",
+      "caring": "Good",
+      "responsive": "Good",
+      "well_led": "Good"
+    },
+    "cqc_last_inspection_date": "2019-02-01",
+    "google_rating": 4.1,
+    "review_count": 119,
+    "facilities": {
+      "wheelchair_access": false,
+      "ensuite_rooms": false,
+      "secure_garden": false,
+      "wifi_available": false,
+      "parking_onsite": true
+    },
+    "contact": {
+      "telephone": "1213862290",
+      "website": "www.bid.org.uk"
+    }
+  },
+  {
+    "id": "12",
+    "location_id": "1-112566759",
+    "name": "Berwood Court Care Home",
+    "city": "Birmingham",
+    "postcode": "B35 7EW",
+    "latitude": 52.514099,
+    "longitude": -1.789386,
+    "region": "West Midlands",
+    "local_authority": "Birmingham",
+    "beds_total": 74,
+    "beds_available": 29,
+    "has_availability": true,
+    "availability_status": "Limited availability",
+    "care_types": [
+      "residential",
+      "nursing",
+      "dementia"
+    ],
+    "weekly_costs": {
+      "residential": 671,
+      "nursing": 1436,
+      "dementia": 1375
+    },
+    "cqc_ratings": {
+      "overall": "Good",
+      "safe": "Good",
+      "effective": "Good",
+      "caring": "Good",
+      "responsive": "Good",
+      "well_led": "Good"
+    },
+    "cqc_last_inspection_date": "2021-10-20",
+    "google_rating": 3.7,
+    "review_count": 26,
+    "facilities": {
+      "wheelchair_access": false,
+      "ensuite_rooms": true,
+      "secure_garden": true,
+      "wifi_available": true,
+      "parking_onsite": false
+    },
+    "contact": {
+      "telephone": "1217497887",
+      "website": "www.dukerieshealthcare.co.uk"
+    }
+  },
+  {
+    "id": "13",
+    "location_id": "1-112566829",
+    "name": "The Ridings Care Home",
+    "city": "Birmingham",
+    "postcode": "B35 7NR",
+    "latitude": 52.520246,
+    "longitude": -1.778318,
+    "region": "West Midlands",
+    "local_authority": "Birmingham",
+    "beds_total": 83,
+    "beds_available": 27,
+    "has_availability": true,
+    "availability_status": "Available",
+    "care_types": [
+      "residential",
+      "nursing",
+      "dementia"
+    ],
+    "weekly_costs": {
+      "residential": 1155,
+      "nursing": 957,
+      "dementia": 1052
+    },
+    "cqc_ratings": {
+      "overall": "Good",
+      "safe": "Good",
+      "effective": "Good",
+      "caring": "Good",
+      "responsive": "Good",
+      "well_led": "Good"
+    },
+    "cqc_last_inspection_date": "2025-08-14",
+    "google_rating": 3.8,
+    "review_count": 129,
+    "facilities": {
+      "wheelchair_access": false,
+      "ensuite_rooms": true,
+      "secure_garden": true,
+      "wifi_available": false,
+      "parking_onsite": true
+    },
+    "contact": {
+      "telephone": "1217488770",
+      "website": "www.dukerieshealthcare.co.uk"
+    }
+  },
+  {
+    "id": "14",
+    "location_id": "1-112835025",
+    "name": "Roxton Nursing Home",
+    "city": "Sutton Coldfield",
+    "postcode": "B72 1LY",
+    "latitude": 52.551945,
+    "longitude": -1.827226,
+    "region": "West Midlands",
+    "local_authority": "Birmingham",
+    "beds_total": 45,
+    "beds_available": 12,
+    "has_availability": true,
+    "availability_status": "Limited availability",
+    "care_types": [
+      "nursing",
+      "dementia"
+    ],
+    "weekly_costs": {
+      "nursing": 1298,
+      "dementia": 1105
+    },
+    "cqc_ratings": {
+      "overall": "Good",
+      "safe": "Good",
+      "effective": "Good",
+      "caring": "Requires Improvement",
+      "responsive": "Requires Improvement",
+      "well_led": "Good"
+    },
+    "cqc_last_inspection_date": "2019-04-17",
+    "google_rating": 3.6,
+    "review_count": 88,
+    "facilities": {
+      "wheelchair_access": true,
+      "ensuite_rooms": false,
+      "secure_garden": false,
+      "wifi_available": false,
+      "parking_onsite": false
+    },
+    "contact": {
+      "telephone": "1213542621",
+      "website": "www.roxton.biz"
+    }
+  },
+  {
+    "id": "15",
+    "location_id": "1-1128510414",
+    "name": "Hampton Road",
+    "city": "Birmingham",
+    "postcode": "B23 7JJ",
+    "latitude": 52.52257,
+    "longitude": -1.860349,
+    "region": "West Midlands",
+    "local_authority": "Birmingham",
+    "beds_total": 4,
+    "beds_available": 2,
+    "has_availability": true,
+    "availability_status": "Available",
+    "care_types": [
+      "residential"
+    ],
+    "weekly_costs": {
+      "residential": 656
+    },
+    "cqc_ratings": {
+      "overall": "Good",
+      "safe": "Good",
+      "effective": "Good",
+      "caring": "Good",
+      "responsive": "Good",
+      "well_led": "Good"
+    },
+    "cqc_last_inspection_date": "2018-12-25",
+    "google_rating": 4.0,
+    "review_count": 121,
+    "facilities": {
+      "wheelchair_access": false,
+      "ensuite_rooms": false,
+      "secure_garden": true,
+      "wifi_available": false,
+      "parking_onsite": false
+    },
+    "contact": {
+      "telephone": "1212265800",
+      "website": "www.reachthecharity.org.uk"
+    }
+  },
+  {
+    "id": "16",
+    "location_id": "1-112953271",
+    "name": "Tulip Gardens",
+    "city": "Birmingham",
+    "postcode": "B29 5BW",
+    "latitude": 52.429822,
+    "longitude": -1.973777,
+    "region": "West Midlands",
+    "local_authority": "Birmingham",
+    "beds_total": 8,
+    "beds_available": 1,
+    "has_availability": true,
+    "availability_status": "Available",
+    "care_types": [
+      "residential"
+    ],
+    "weekly_costs": {
+      "residential": 815
+    },
+    "cqc_ratings": {
+      "overall": "Requires Improvement",
+      "safe": "Requires Improvement",
+      "effective": "Good",
+      "caring": "Good",
+      "responsive": "Good",
+      "well_led": "Requires Improvement"
+    },
+    "cqc_last_inspection_date": "2022-11-18",
+    "google_rating": 4.3,
+    "review_count": 112,
+    "facilities": {
+      "wheelchair_access": true,
+      "ensuite_rooms": false,
+      "secure_garden": false,
+      "wifi_available": false,
+      "parking_onsite": false
+    },
+    "contact": {
+      "telephone": "1214783505",
+      "website": "www.newoutlookha.org"
+    }
+  },
+  {
+    "id": "17",
+    "location_id": "1-112953306",
+    "name": "Silver Birch",
+    "city": "Birmingham",
+    "postcode": "B24 0AR",
+    "latitude": 52.531207,
+    "longitude": -1.828988,
+    "region": "West Midlands",
+    "local_authority": "Birmingham",
+    "beds_total": 7,
+    "beds_available": 3,
+    "has_availability": true,
+    "availability_status": "Waiting list",
+    "care_types": [
+      "residential"
+    ],
+    "weekly_costs": {
+      "residential": 715
+    },
+    "cqc_ratings": {
+      "overall": "Requires Improvement",
+      "safe": "Requires Improvement",
+      "effective": "Good",
+      "caring": "Good",
+      "responsive": "Good",
+      "well_led": "Requires Improvement"
+    },
+    "cqc_last_inspection_date": "2022-03-03",
+    "google_rating": 4.3,
+    "review_count": 114,
+    "facilities": {
+      "wheelchair_access": true,
+      "ensuite_rooms": true,
+      "secure_garden": false,
+      "wifi_available": false,
+      "parking_onsite": true
+    },
+    "contact": {
+      "telephone": "1212502067",
+      "website": "www.newoutlookha.org"
+    }
+  },
+  {
+    "id": "18",
+    "location_id": "1-112963886",
+    "name": "Oakwood Care Home",
+    "city": "Birmingham",
+    "postcode": "B24 8QJ",
+    "latitude": 52.514781,
+    "longitude": -1.847206,
+    "region": "West Midlands",
+    "local_authority": "Birmingham",
+    "beds_total": 37,
+    "beds_available": 10,
+    "has_availability": true,
+    "availability_status": "Limited availability",
+    "care_types": [
+      "residential",
+      "dementia"
+    ],
+    "weekly_costs": {
+      "residential": 1147,
+      "dementia": 995
+    },
+    "cqc_ratings": {
+      "overall": "Good",
+      "safe": "Good",
+      "effective": "Good",
+      "caring": "Good",
+      "responsive": "Good",
+      "well_led": "Requires Improvement"
+    },
+    "cqc_last_inspection_date": "2023-03-28",
+    "google_rating": 4.2,
+    "review_count": 27,
+    "facilities": {
+      "wheelchair_access": true,
+      "ensuite_rooms": false,
+      "secure_garden": true,
+      "wifi_available": false,
+      "parking_onsite": false
+    },
+    "contact": {
+      "telephone": "1213738476",
+      "website": "www.oakwoodresthome.co.uk"
+    }
+  },
+  {
+    "id": "19",
+    "location_id": "1-113524621",
+    "name": "Keo Lodge",
+    "city": "Birmingham",
+    "postcode": "B13 8DS",
+    "latitude": 52.452609,
+    "longitude": -1.894665,
+    "region": "West Midlands",
+    "local_authority": "Birmingham",
+    "beds_total": 11,
+    "beds_available": 1,
+    "has_availability": true,
+    "availability_status": "Waiting list",
+    "care_types": [
+      "residential"
+    ],
+    "weekly_costs": {
+      "residential": 1185
+    },
+    "cqc_ratings": {
+      "overall": "Good",
+      "safe": "Good",
+      "effective": "Good",
+      "caring": "Good",
+      "responsive": "Good",
+      "well_led": "Requires Improvement"
+    },
+    "cqc_last_inspection_date": "2020-01-01",
+    "google_rating": 3.6,
+    "review_count": 28,
+    "facilities": {
+      "wheelchair_access": true,
+      "ensuite_rooms": false,
+      "secure_garden": true,
+      "wifi_available": true,
+      "parking_onsite": true
+    },
+    "contact": {
+      "telephone": "1214495589",
+      "website": ""
+    }
+  },
+  {
+    "id": "20",
+    "location_id": "1-113533340",
+    "name": "Coney Green Residential Home",
+    "city": "Birmingham",
+    "postcode": "B31 4DT",
+    "latitude": 52.401225,
+    "longitude": -1.973632,
+    "region": "West Midlands",
+    "local_authority": "Birmingham",
+    "beds_total": 9,
+    "beds_available": 4,
+    "has_availability": true,
+    "availability_status": "Available",
+    "care_types": [
+      "residential"
+    ],
+    "weekly_costs": {
+      "residential": 924
+    },
+    "cqc_ratings": {
+      "overall": "Good",
+      "safe": "Good",
+      "effective": "Good",
+      "caring": "Good",
+      "responsive": "Good",
+      "well_led": "Good"
+    },
+    "cqc_last_inspection_date": "2021-08-26",
+    "google_rating": 3.8,
+    "review_count": 107,
+    "facilities": {
+      "wheelchair_access": false,
+      "ensuite_rooms": true,
+      "secure_garden": false,
+      "wifi_available": true,
+      "parking_onsite": false
+    },
+    "contact": {
+      "telephone": "1214781076",
+      "website": ""
+    }
+  },
+  {
+    "id": "21",
+    "location_id": "1-114103397",
+    "name": "Stratford Court",
+    "city": "Birmingham",
+    "postcode": "B28 0EU",
+    "latitude": 52.427771,
+    "longitude": null,
+    "region": "West Midlands",
+    "local_authority": "Birmingham",
+    "beds_total": 30,
+    "beds_available": 14,
+    "has_availability": true,
+    "availability_status": "Available",
+    "care_types": [
+      "residential"
+    ],
+    "weekly_costs": {
+      "residential": 1102
+    },
+    "cqc_ratings": {
+      "overall": "Requires Improvement",
+      "safe": "Requires Improvement",
+      "effective": "Requires Improvement",
+      "caring": "Good",
+      "responsive": "Good",
+      "well_led": "Requires Improvement"
+    },
+    "cqc_last_inspection_date": "2022-12-23",
+    "google_rating": 4.5,
+    "review_count": 116,
+    "facilities": {
+      "wheelchair_access": false,
+      "ensuite_rooms": true,
+      "secure_garden": true,
+      "wifi_available": true,
+      "parking_onsite": false
+    },
+    "contact": {
+      "telephone": "1217783366",
+      "website": ""
+    }
+  },
+  {
+    "id": "22",
+    "location_id": "1-114155375",
+    "name": "Homecroft Residential Home",
+    "city": "Sutton Coldfield",
+    "postcode": "B74 4BL",
+    "latitude": 52.591815,
+    "longitude": -1.834037,
+    "region": "West Midlands",
+    "local_authority": "Birmingham",
+    "beds_total": 23,
+    "beds_available": 6,
+    "has_availability": true,
+    "availability_status": "Limited availability",
+    "care_types": [
+      "residential",
+      "dementia"
+    ],
+    "weekly_costs": {
+      "residential": 637,
+      "dementia": 1354
+    },
+    "cqc_ratings": {
+      "overall": "Good",
+      "safe": "Good",
+      "effective": "Good",
+      "caring": "Good",
+      "responsive": "Good",
+      "well_led": "Good"
+    },
+    "cqc_last_inspection_date": "2022-01-21",
+    "google_rating": 3.6,
+    "review_count": 33,
+    "facilities": {
+      "wheelchair_access": true,
+      "ensuite_rooms": true,
+      "secure_garden": true,
+      "wifi_available": false,
+      "parking_onsite": true
+    },
+    "contact": {
+      "telephone": "1213086367",
+      "website": "www.homecroft-ltd.co.uk"
+    }
+  },
+  {
+    "id": "23",
+    "location_id": "1-114155392",
+    "name": "Wyndley Grange Nursing Home",
+    "city": "Sutton Coldfield",
+    "postcode": "B73 6JA",
+    "latitude": 52.558453,
+    "longitude": -1.833484,
+    "region": "West Midlands",
+    "local_authority": "Birmingham",
+    "beds_total": 64,
+    "beds_available": 2,
+    "has_availability": true,
+    "availability_status": "Waiting list",
+    "care_types": [
+      "nursing",
+      "dementia"
+    ],
+    "weekly_costs": {
+      "nursing": 1219,
+      "dementia": 1077
+    },
+    "cqc_ratings": {
+      "overall": "Good",
+      "safe": "Good",
+      "effective": "Good",
+      "caring": "Good",
+      "responsive": "Good",
+      "well_led": "Good"
+    },
+    "cqc_last_inspection_date": "2018-01-12",
+    "google_rating": 4.0,
+    "review_count": 139,
+    "facilities": {
+      "wheelchair_access": true,
+      "ensuite_rooms": true,
+      "secure_garden": true,
+      "wifi_available": true,
+      "parking_onsite": true
+    },
+    "contact": {
+      "telephone": "1213541619",
+      "website": "www.homecroft-ltd.co.uk"
+    }
+  },
+  {
+    "id": "24",
+    "location_id": "1-114314574",
+    "name": "Care Home for Special Needs",
+    "city": "Birmingham",
+    "postcode": "B16 0LR",
+    "latitude": 52.481361,
+    "longitude": -1.945328,
+    "region": "West Midlands",
+    "local_authority": "Birmingham",
+    "beds_total": 4,
+    "beds_available": 1,
+    "has_availability": true,
+    "availability_status": "Available",
+    "care_types": [
+      "residential",
+      "dementia"
+    ],
+    "weekly_costs": {
+      "residential": 1086,
+      "dementia": 1292
+    },
+    "cqc_ratings": {
+      "overall": "Requires Improvement",
+      "safe": "Requires Improvement",
+      "effective": "Good",
+      "caring": "Good",
+      "responsive": "Good",
+      "well_led": "Requires Improvement"
+    },
+    "cqc_last_inspection_date": "2025-06-17",
+    "google_rating": 4.0,
+    "review_count": 103,
+    "facilities": {
+      "wheelchair_access": false,
+      "ensuite_rooms": true,
+      "secure_garden": false,
+      "wifi_available": false,
+      "parking_onsite": false
+    },
+    "contact": {
+      "telephone": "1214558269",
+      "website": ""
+    }
+  },
+  {
+    "id": "25",
+    "location_id": "1-114658627",
+    "name": "Barkat House Residential Home",
+    "city": "Birmingham",
+    "postcode": "B13 8EY",
+    "latitude": 52.444904,
+    "longitude": -1.889672,
+    "region": "West Midlands",
+    "local_authority": "Birmingham",
+    "beds_total": 27,
+    "beds_available": 8,
+    "has_availability": true,
+    "availability_status": "Available",
+    "care_types": [
+      "residential",
+      "dementia"
+    ],
+    "weekly_costs": {
+      "residential": 876,
+      "dementia": 1180
+    },
+    "cqc_ratings": {
+      "overall": "Good",
+      "safe": "Good",
+      "effective": "Good",
+      "caring": "Good",
+      "responsive": "Good",
+      "well_led": "Requires Improvement"
+    },
+    "cqc_last_inspection_date": "2021-07-30",
+    "google_rating": 4.6,
+    "review_count": 18,
+    "facilities": {
+      "wheelchair_access": false,
+      "ensuite_rooms": false,
+      "secure_garden": true,
+      "wifi_available": false,
+      "parking_onsite": false
+    },
+    "contact": {
+      "telephone": "1214490584",
+      "website": ""
+    }
+  },
+  {
+    "id": "26",
+    "location_id": "1-115853341",
+    "name": "Cotteridge House",
+    "city": "Birmingham",
+    "postcode": "B30 1AB",
+    "latitude": 52.41482,
+    "longitude": -1.934148,
+    "region": "West Midlands",
+    "local_authority": "Birmingham",
+    "beds_total": 11,
+    "beds_available": 1,
+    "has_availability": true,
+    "availability_status": "Limited availability",
+    "care_types": [
+      "residential"
+    ],
+    "weekly_costs": {
+      "residential": 949
+    },
+    "cqc_ratings": {
+      "overall": "Requires Improvement",
+      "safe": "Requires Improvement",
+      "effective": "Requires Improvement",
+      "caring": "Good",
+      "responsive": "Good",
+      "well_led": "Requires Improvement"
+    },
+    "cqc_last_inspection_date": "2023-01-18",
+    "google_rating": 4.1,
+    "review_count": 109,
+    "facilities": {
+      "wheelchair_access": false,
+      "ensuite_rooms": true,
+      "secure_garden": true,
+      "wifi_available": true,
+      "parking_onsite": false
+    },
+    "contact": {
+      "telephone": "1216240506",
+      "website": ""
+    }
+  },
+  {
+    "id": "27",
+    "location_id": "1-11597234926",
+    "name": "Selly Wood House Nursing Home",
+    "city": "Birmingham",
+    "postcode": "B30 1TJ",
+    "latitude": 52.431546,
+    "longitude": -1.942566,
+    "region": "West Midlands",
+    "local_authority": "Birmingham",
+    "beds_total": 48,
+    "beds_available": 5,
+    "has_availability": true,
+    "availability_status": "Waiting list",
+    "care_types": [
+      "nursing",
+      "dementia"
+    ],
+    "weekly_costs": {
+      "nursing": 1281,
+      "dementia": 1312
+    },
+    "cqc_ratings": {
+      "overall": "Good",
+      "safe": "Good",
+      "effective": "Good",
+      "caring": "Good",
+      "responsive": "Good",
+      "well_led": "Good"
+    },
+    "cqc_last_inspection_date": "2019-11-28",
+    "google_rating": 3.7,
+    "review_count": 128,
+    "facilities": {
+      "wheelchair_access": true,
+      "ensuite_rooms": true,
+      "secure_garden": false,
+      "wifi_available": true,
+      "parking_onsite": false
+    },
+    "contact": {
+      "telephone": "1214723721",
+      "website": "www.avatarcaregroup.co.uk"
+    }
+  },
+  {
+    "id": "28",
+    "location_id": "1-11600679815",
+    "name": "Highbury Nursing Home",
+    "city": "Birmingham",
+    "postcode": "B13 8PX",
+    "latitude": 52.443172,
+    "longitude": null,
+    "region": "West Midlands",
+    "local_authority": "Birmingham",
+    "beds_total": 38,
+    "beds_available": 5,
+    "has_availability": true,
+    "availability_status": "Waiting list",
+    "care_types": [
+      "nursing",
+      "dementia"
+    ],
+    "weekly_costs": {
+      "nursing": 1432,
+      "dementia": 1310
+    },
+    "cqc_ratings": {
+      "overall": "Requires Improvement",
+      "safe": "Requires Improvement",
+      "effective": "Requires Improvement",
+      "caring": "Requires Improvement",
+      "responsive": "Requires Improvement",
+      "well_led": "Requires Improvement"
+    },
+    "cqc_last_inspection_date": "2023-06-20",
+    "google_rating": 3.6,
+    "review_count": 124,
+    "facilities": {
+      "wheelchair_access": true,
+      "ensuite_rooms": false,
+      "secure_garden": true,
+      "wifi_available": false,
+      "parking_onsite": true
+    },
+    "contact": {
+      "telephone": "1214424885",
+      "website": "www.highburynursinghome.co.uk"
+    }
+  },
+  {
+    "id": "29",
+    "location_id": "1-116439860",
+    "name": "Queen Alexandra College",
+    "city": "Birmingham",
+    "postcode": "B17 9TG",
+    "latitude": 52.460242,
+    "longitude": -1.965458,
+    "region": "West Midlands",
+    "local_authority": "Birmingham",
+    "beds_total": 51,
+    "beds_available": 13,
+    "has_availability": true,
+    "availability_status": "Waiting list",
+    "care_types": [
+      "residential"
+    ],
+    "weekly_costs": {
+      "residential": 895
+    },
+    "cqc_ratings": {
+      "overall": "Good",
+      "safe": "Good",
+      "effective": "Good",
+      "caring": "Good",
+      "responsive": "Good",
+      "well_led": "Good"
+    },
+    "cqc_last_inspection_date": "2019-05-23",
+    "google_rating": 4.6,
+    "review_count": 50,
+    "facilities": {
+      "wheelchair_access": false,
+      "ensuite_rooms": false,
+      "secure_garden": true,
+      "wifi_available": true,
+      "parking_onsite": true
+    },
+    "contact": {
+      "telephone": "1214285025",
+      "website": "www.qac.ac.uk"
+    }
+  },
+  {
+    "id": "30",
+    "location_id": "1-116640703",
+    "name": "Bournville Grange Limited",
+    "city": "Birmingham",
+    "postcode": "B30 1TX",
+    "latitude": 52.430592,
+    "longitude": -1.939993,
+    "region": "West Midlands",
+    "local_authority": "Birmingham",
+    "beds_total": 28,
+    "beds_available": 7,
+    "has_availability": true,
+    "availability_status": "Waiting list",
+    "care_types": [
+      "residential"
+    ],
+    "weekly_costs": {
+      "residential": 1048
+    },
+    "cqc_ratings": {
+      "overall": "Good",
+      "safe": "Good",
+      "effective": "Good",
+      "caring": "Good",
+      "responsive": "Good",
+      "well_led": "Requires Improvement"
+    },
+    "cqc_last_inspection_date": "2019-04-03",
+    "google_rating": 4.6,
+    "review_count": 89,
+    "facilities": {
+      "wheelchair_access": true,
+      "ensuite_rooms": false,
+      "secure_garden": true,
+      "wifi_available": true,
+      "parking_onsite": false
+    },
+    "contact": {
+      "telephone": "1214722213",
+      "website": ""
+    }
+  }
+]
