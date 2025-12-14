@@ -1,0 +1,13 @@
+{
+  "postcode": "B1 1AA",
+  "budget": 1500.0,
+  "care_type": "nursing",
+  "chc_probability": 42.3,
+  "address": "City Centre",
+  "city": "Birmingham",
+  "preferences": {
+    "dementia_specialist": true,
+    "24_hour_nursing": true,
+    "transport_access": true
+  }
+}

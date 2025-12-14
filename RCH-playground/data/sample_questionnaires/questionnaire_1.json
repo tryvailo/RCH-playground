@@ -1,0 +1,13 @@
+{
+  "postcode": "B1 1AA",
+  "budget": 1200.0,
+  "care_type": "residential",
+  "chc_probability": 35.5,
+  "address": "City Centre",
+  "city": "Birmingham",
+  "preferences": {
+    "garden": true,
+    "activities": true,
+    "visiting_hours": "flexible"
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "profile_description": "Срочное размещение без других критических условий - демонстрирует Rule 6 изолированно",
+  "section_1_contact_emergency": {
+    "q1_names": "Contact: Helen Anderson; Patient: Helen Anderson",
+    "q2_email": "helen.anderson@email.com",
+    "q3_phone": "+44 7890 123456",
+    "q4_emergency_contact": "Peter Anderson +44 7456 789012"
+  },
+  "section_2_location_budget": {
+    "q5_preferred_city": "Birmingham",
+    "q6_max_distance": "10km",
+    "q7_budget": "5000_7000_local"
+  },
+  "section_3_medical_needs": {
+    "q8_care_types": ["general_residential"],
+    "q9_medical_conditions": ["mobility_problems"],
+    "q10_mobility_level": "walking_aids",
+    "q11_medication_management": "simple_1_2",
+    "q12_age_range": "75_84"
+  },
+  "section_4_safety_special_needs": {
+    "q13_fall_history": "no_falls_occurred",
+    "q14_allergies": ["no_allergies"],
+    "q15_dietary_requirements": ["no_special_requirements"],
+    "q16_social_personality": "very_sociable"
+  },
+  "section_5_timeline": {
+    "q17_placement_timeline": "urgent_2_weeks"
+  }
+}
+

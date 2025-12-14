@@ -1,0 +1,31 @@
+{
+  "profile_description": "Человек с диабетом и проблемами мобильности, нужен медицинский уход",
+  "section_1_contact_emergency": {
+    "q1_names": "Contact: Robert Williams; Patient: Robert Williams",
+    "q2_email": "r.williams.family@email.com",
+    "q3_phone": "+44 7234 567890",
+    "q4_emergency_contact": "Sarah Williams +44 7890 123456"
+  },
+  "section_2_location_budget": {
+    "q5_preferred_city": "Birmingham",
+    "q6_max_distance": "10km",
+    "q7_budget": "3000_5000_self"
+  },
+  "section_3_medical_needs": {
+    "q8_care_types": ["medical_nursing", "general_residential"],
+    "q9_medical_conditions": ["diabetes", "mobility_problems"],
+    "q10_mobility_level": "wheelchair_sometimes",
+    "q11_medication_management": "many_complex_routine",
+    "q12_age_range": "75_84"
+  },
+  "section_4_safety_special_needs": {
+    "q13_fall_history": "3_plus_or_serious_injuries",
+    "q14_allergies": ["medication_allergies"],
+    "q15_dietary_requirements": ["diabetic_diet"],
+    "q16_social_personality": "very_sociable"
+  },
+  "section_5_timeline": {
+    "q17_placement_timeline": "urgent_2_weeks"
+  }
+}
+

@@ -1,0 +1,31 @@
+{
+  "profile_description": "Сестринский уход + низкий бюджет - демонстрирует комбинацию Rule 4 + Rule 5",
+  "section_1_contact_emergency": {
+    "q1_names": "Contact: Charles White; Patient: Charles White",
+    "q2_email": "charles.white.family@email.com",
+    "q3_phone": "+44 7901 234567",
+    "q4_emergency_contact": "Mary White +44 7567 890123"
+  },
+  "section_2_location_budget": {
+    "q5_preferred_city": "Birmingham",
+    "q6_max_distance": "distance_not_important",
+    "q7_budget": "under_3000_local"
+  },
+  "section_3_medical_needs": {
+    "q8_care_types": ["medical_nursing"],
+    "q9_medical_conditions": ["diabetes"],
+    "q10_mobility_level": "walking_aids",
+    "q11_medication_management": "several_simple_routine",
+    "q12_age_range": "75_84"
+  },
+  "section_4_safety_special_needs": {
+    "q13_fall_history": "no_falls_occurred",
+    "q14_allergies": ["no_allergies"],
+    "q15_dietary_requirements": ["diabetic_diet"],
+    "q16_social_personality": "moderately_sociable"
+  },
+  "section_5_timeline": {
+    "q17_placement_timeline": "planning_2_3_months"
+  }
+}
+
