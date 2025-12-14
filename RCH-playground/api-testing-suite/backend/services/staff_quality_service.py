@@ -906,9 +906,17 @@ class StaffQualityService:
             
             # Check if line contains staff-related keywords
             if any(keyword in line_lower for keyword in staff_keywords):
-                # Try to extract rating
-                rating_match = re.search(r'(\d+\.?\d*)\s*(?:star|rating|out of 5|/5|out of 10|/10)', line_lower)
-                rating = float(rating_match.group(1)) if rating_match else None
+                # Try to extract rating - handle both /5 and /10 scales
+                rating_match = re.search(r'(\d+\.?\d*)\s*(?:star|rating|out of 5|/5)', line_lower)
+                rating_10_match = re.search(r'(\d+\.?\d*)\s*(?:out of 10|/10)', line_lower)
+                
+                if rating_10_match:
+                    # Convert /10 rating to /5 scale
+                    rating = float(rating_10_match.group(1)) / 2.0
+                elif rating_match:
+                    rating = float(rating_match.group(1))
+                else:
+                    rating = None
                 
                 # Try to extract date
                 date_patterns = [
@@ -951,8 +959,16 @@ class StaffQualityService:
             for para in paragraphs:
                 para_lower = para.lower()
                 if any(keyword in para_lower for keyword in staff_keywords) and len(para) > 50:
-                    rating_match = re.search(r'(\d+\.?\d*)\s*(?:star|rating|out of 5|/5|out of 10|/10)', para_lower)
-                    rating = float(rating_match.group(1)) if rating_match else 3.0
+                    # Handle both /5 and /10 scales
+                    rating_match = re.search(r'(\d+\.?\d*)\s*(?:star|rating|out of 5|/5)', para_lower)
+                    rating_10_match = re.search(r'(\d+\.?\d*)\s*(?:out of 10|/10)', para_lower)
+                    
+                    if rating_10_match:
+                        rating = float(rating_10_match.group(1)) / 2.0
+                    elif rating_match:
+                        rating = float(rating_match.group(1))
+                    else:
+                        rating = 3.0
                     
                     # Detect source
                     source = detect_source(para)
@@ -1014,18 +1030,25 @@ class StaffQualityService:
                 
                 # Call OpenAI for sentiment analysis
                 try:
-                    # Use OpenAI's analyze_care_home_insights method structure
-                    # But we'll create a simpler direct call
                     import json
                     import httpx
                     
+                    # Safely get API key and base URL
+                    api_key = getattr(self.openai_client, 'api_key', None)
+                    base_url = getattr(self.openai_client, 'base_url', 'https://api.openai.com/v1')
+                    
+                    if not api_key:
+                        print("Warning: OpenAI API key not available, skipping LLM sentiment analysis")
+                        analyzed_reviews.extend(batch)
+                        continue
+                    
                     headers = {
-                        "Authorization": f"Bearer {self.openai_client.api_key}",
+                        "Authorization": f"Bearer {api_key}",
                         "Content-Type": "application/json"
                     }
                     
                     payload = {
-                        "model": "gpt-4o-mini",  # Cost-effective model
+                        "model": "gpt-4o-mini",
                         "messages": [
                             {
                                 "role": "system",
@@ -1046,7 +1069,7 @@ Return ONLY valid JSON array, no markdown, no code blocks."""
                     
                     async with httpx.AsyncClient(timeout=30.0) as client:
                         response = await client.post(
-                            f"{self.openai_client.base_url}/chat/completions",
+                            f"{base_url}/chat/completions",
                             headers=headers,
                             json=payload
                         )
