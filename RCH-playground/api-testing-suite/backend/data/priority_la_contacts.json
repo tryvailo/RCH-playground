@@ -1,0 +1,199 @@
+{
+  "metadata": {
+    "version": "1.0",
+    "last_updated": "2025-12-14",
+    "total_priority_la": 21,
+    "note": "23 priority Local Authorities covering ~40% of UK population for MVP"
+  },
+  "councils": [
+    {
+      "council_name": "Birmingham City Council",
+      "ons_code": "E08000025",
+      "region": "West Midlands",
+      "asc_phone": "0121 303 1234",
+      "asc_email": "acap@birmingham.gov.uk",
+      "asc_website_url": "https://www.birmingham.gov.uk/info/20018/adult_social_care",
+      "is_priority": true
+    },
+    {
+      "council_name": "Manchester City Council",
+      "ons_code": "E08000003",
+      "region": "North West",
+      "asc_phone": "0161 234 5001",
+      "asc_email": "mcsreply@manchester.gov.uk",
+      "asc_website_url": "https://www.manchester.gov.uk/info/100010/social_services/3584/get_help_support_or_social_care",
+      "is_priority": true
+    },
+    {
+      "council_name": "Leeds City Council",
+      "ons_code": "E08000035",
+      "region": "Yorkshire and the Humber",
+      "asc_phone": "0113 222 4401",
+      "asc_email": "socialservices@leeds.gov.uk",
+      "asc_website_url": "https://www.leeds.gov.uk/adult-social-care",
+      "is_priority": true
+    },
+    {
+      "council_name": "Liverpool City Council",
+      "ons_code": "E08000012",
+      "region": "North West",
+      "asc_phone": "0151 459 2606",
+      "asc_email": null,
+      "asc_website_url": "https://liverpool.gov.uk/adult-social-care/",
+      "is_priority": true
+    },
+    {
+      "council_name": "Sheffield City Council",
+      "ons_code": "E08000019",
+      "region": "Yorkshire and the Humber",
+      "asc_phone": "0114 273 4908",
+      "asc_email": "asc.howdenhouse@sheffield.gov.uk",
+      "asc_website_url": "https://www.sheffield.gov.uk/social-care/adults",
+      "is_priority": true
+    },
+    {
+      "council_name": "Kent County Council",
+      "ons_code": "E10000016",
+      "region": "South East",
+      "asc_phone": "03000 41 61 61",
+      "asc_email": "social.services@kent.gov.uk",
+      "asc_website_url": "https://www.kent.gov.uk/social-care-and-health/adult-social-care",
+      "is_priority": true
+    },
+    {
+      "council_name": "Surrey County Council",
+      "ons_code": "E10000030",
+      "region": "South East",
+      "asc_phone": "0300 200 1005",
+      "asc_email": "asc.infoandadvice@surreycc.gov.uk",
+      "asc_website_url": "https://www.surreycc.gov.uk/adults",
+      "is_priority": true
+    },
+    {
+      "council_name": "Hampshire County Council",
+      "ons_code": "E10000014",
+      "region": "South East",
+      "asc_phone": "0300 555 1386",
+      "asc_email": null,
+      "asc_website_url": "https://www.hants.gov.uk/socialcareandhealth/adultsocialcare",
+      "is_priority": true
+    },
+    {
+      "council_name": "Essex County Council",
+      "ons_code": "E10000012",
+      "region": "East of England",
+      "asc_phone": "0345 603 7630",
+      "asc_email": "socialcaredirect@essex.gov.uk",
+      "asc_website_url": "https://www.essex.gov.uk/adult-social-care-and-health/adult-social-care-contacts",
+      "is_priority": true
+    },
+    {
+      "council_name": "Lancashire County Council",
+      "ons_code": "E10000017",
+      "region": "North West",
+      "asc_phone": null,
+      "asc_email": null,
+      "asc_website_url": "https://www.lancashire.gov.uk",
+      "is_priority": true
+    },
+    {
+      "council_name": "Bristol City Council",
+      "ons_code": "E06000023",
+      "region": "South West",
+      "asc_phone": "0117 922 2700",
+      "asc_email": "adult.care@bristol.gov.uk",
+      "asc_website_url": "https://www.bristol.gov.uk/residents/social-care-and-health/adults-and-older-people",
+      "is_priority": true
+    },
+    {
+      "council_name": "Brighton and Hove City Council",
+      "ons_code": "E06000043",
+      "region": "South East",
+      "asc_phone": "01273 295 555",
+      "asc_email": "AccessPoint@brighton-hove.gov.uk",
+      "asc_website_url": "https://www.brighton-hove.gov.uk/adult-social-care-hub",
+      "is_priority": true
+    },
+    {
+      "council_name": "Newcastle City Council",
+      "ons_code": "E08000021",
+      "region": "North East",
+      "asc_phone": "0191 278 8377",
+      "asc_email": "ASCP@newcastle.gov.uk",
+      "asc_website_url": "https://www.newcastle.gov.uk/services/care-and-support/adults/contact-adult-social-care",
+      "is_priority": true
+    },
+    {
+      "council_name": "Cornwall Council",
+      "ons_code": "E06000052",
+      "region": "South West",
+      "asc_phone": "0300 123 4131",
+      "asc_email": null,
+      "asc_website_url": "https://www.cornwall.gov.uk/health-and-social-care/adult-social-care/",
+      "is_priority": true
+    },
+    {
+      "council_name": "Coventry City Council",
+      "ons_code": "E08000026",
+      "region": "West Midlands",
+      "asc_phone": "024 7683 3003",
+      "asc_email": "ascdirect@coventry.gov.uk",
+      "asc_website_url": "https://www.coventry.gov.uk/health-social-care",
+      "is_priority": true
+    },
+    {
+      "council_name": "Leicester City Council",
+      "ons_code": "E06000016",
+      "region": "East Midlands",
+      "asc_phone": "0116 454 1004",
+      "asc_email": null,
+      "asc_website_url": "https://www.leicester.gov.uk/health-and-social-care/adult-social-care/",
+      "is_priority": true
+    },
+    {
+      "council_name": "Nottingham City Council",
+      "ons_code": "E06000018",
+      "region": "East Midlands",
+      "asc_phone": "0115 876 3330",
+      "asc_email": null,
+      "asc_website_url": "https://healthandsocialcareportal.nottinghamcity.gov.uk/",
+      "is_priority": true
+    },
+    {
+      "council_name": "Derby City Council",
+      "ons_code": "E06000015",
+      "region": "East Midlands",
+      "asc_phone": null,
+      "asc_email": null,
+      "asc_website_url": "https://www.derby.gov.uk",
+      "is_priority": true
+    },
+    {
+      "council_name": "Southampton City Council",
+      "ons_code": "E06000045",
+      "region": "South East",
+      "asc_phone": "0001801246746",
+      "asc_email": null,
+      "asc_website_url": "https://www.southampton.gov.uk",
+      "is_priority": true
+    },
+    {
+      "council_name": "Portsmouth City Council",
+      "ons_code": "E06000044",
+      "region": "South East",
+      "asc_phone": null,
+      "asc_email": null,
+      "asc_website_url": "https://www.portsmouth.gov.uk",
+      "is_priority": true
+    },
+    {
+      "council_name": "Reading Borough Council",
+      "ons_code": "E06000038",
+      "region": "South East",
+      "asc_phone": null,
+      "asc_email": null,
+      "asc_website_url": "https://www.reading.gov.uk",
+      "is_priority": true
+    }
+  ]
+}

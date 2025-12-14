@@ -1,0 +1,31 @@
+{
+  "postcode": "B44 8DD",
+  "budget": 950.0,
+  "care_type": "residential",
+  "chc_probability": 15.2,
+  "address": "8 Epwell Road, Birmingham",
+  "city": "Birmingham",
+  "latitude": 52.533398,
+  "longitude": -1.8904,
+  "preferences": {
+    "garden": true,
+    "activities": true,
+    "visiting_hours": "flexible",
+    "wheelchair_access": false,
+    "ensuite_rooms": true,
+    "wifi_available": false,
+    "parking_onsite": true,
+    "family_involvement": true,
+    "social_activities": true,
+    "religious_services": false,
+    "pet_friendly": false,
+    "timeline": "flexible",
+    "duration": "permanent",
+    "max_distance_miles": 10,
+    "special_dietary_needs": false,
+    "mobility_level": "independent",
+    "medical_conditions": [],
+    "notes": "Elderly person with minimal care needs, looking for comfortable residential care with garden access and social activities"
+  }
+}
+

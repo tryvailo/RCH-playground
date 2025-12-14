@@ -1,0 +1,47 @@
+{
+  "postcode": "B72 1DU",
+  "budget": 1400.0,
+  "care_type": "nursing",
+  "chc_probability": 68.5,
+  "address": "1 Beech Hill Road, Sutton Coldfield",
+  "city": "Birmingham",
+  "latitude": 52.539648,
+  "longitude": -1.822084,
+  "preferences": {
+    "24_hour_nursing": true,
+    "medical_equipment": true,
+    "specialist_nursing_care": true,
+    "dementia_care": true,
+    "physical_disability_support": true,
+    "wound_care": true,
+    "medication_management": true,
+    "physiotherapy": true,
+    "occupational_therapy": false,
+    "speech_therapy": false,
+    "visiting_hours": "flexible",
+    "wheelchair_access": false,
+    "ensuite_rooms": false,
+    "wifi_available": true,
+    "parking_onsite": true,
+    "secure_garden": false,
+    "family_involvement": true,
+    "timeline": "urgent",
+    "duration": "permanent",
+    "max_distance_miles": 20,
+    "medical_conditions": [
+      "diabetes type 2",
+      "hypertension",
+      "mobility issues",
+      "wound care needs"
+    ],
+    "mobility_level": "wheelchair_bound",
+    "nursing_interventions": [
+      "daily medication administration",
+      "blood glucose monitoring",
+      "wound dressing changes",
+      "catheter care"
+    ],
+    "notes": "Patient with complex medical needs requiring 24/7 nursing care, multiple chronic conditions, and high CHC probability due to nursing needs and medical complexity. Urgent placement needed."
+  }
+}
+

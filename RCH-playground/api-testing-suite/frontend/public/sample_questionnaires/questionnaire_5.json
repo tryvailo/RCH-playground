@@ -1,0 +1,36 @@
+{
+  "postcode": "B31 2TX",
+  "budget": 1200.0,
+  "care_type": "dementia",
+  "chc_probability": 45.8,
+  "address": "96 The Roundabout, Birmingham",
+  "city": "Birmingham",
+  "latitude": 52.399843,
+  "longitude": -1.989241,
+  "preferences": {
+    "secure_garden": true,
+    "specialist_dementia_care": true,
+    "family_involvement": true,
+    "24_hour_supervision": true,
+    "memory_care_programs": true,
+    "wandering_protection": true,
+    "dementia_specialist_staff": true,
+    "activities_dementia_focused": true,
+    "visiting_hours": "flexible",
+    "wheelchair_access": false,
+    "ensuite_rooms": false,
+    "wifi_available": false,
+    "parking_onsite": false,
+    "timeline": "soon",
+    "duration": "permanent",
+    "max_distance_miles": 15,
+    "medical_conditions": [
+      "Alzheimer's disease",
+      "moderate dementia"
+    ],
+    "mobility_level": "assisted",
+    "behavioral_support": true,
+    "notes": "Patient with moderate Alzheimer's disease requiring specialist dementia care, secure environment, and family involvement. Higher CHC probability due to dementia diagnosis."
+  }
+}
+

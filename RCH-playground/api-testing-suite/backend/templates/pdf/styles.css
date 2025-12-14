@@ -1,0 +1,22 @@
+/* Additional CSS styles for PDF generation */
+
+@page {
+    size: A4;
+    margin: 0;
+}
+
+/* Print-specific styles */
+@media print {
+    .page {
+        page-break-after: always;
+    }
+    
+    .page:last-child {
+        page-break-after: avoid;
+    }
+    
+    .home-card {
+        page-break-inside: avoid;
+    }
+}
+

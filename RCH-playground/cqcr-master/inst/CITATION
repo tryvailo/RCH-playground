@@ -1,0 +1,10 @@
+note <- sprintf("R package version %s", meta$Version)
+
+bibentry(bibtype = "Manual",
+  title = "{cqcr}: Access 'Care Quality Commission' Data",
+  author = c(person("Evan", "Odell")),
+  doi = "10.5281/zenodo.3452020",
+  year = "2019",
+  note = note,
+  url = c("https://github.com/evanodell/cqcr")
+)
