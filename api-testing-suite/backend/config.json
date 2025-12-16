@@ -1,0 +1,34 @@
+{
+  "cqc": {
+    "partner_code": "YourPartnerCode",
+    "use_without_code": false,
+    "primary_subscription_key": "your-primary-subscription-key",
+    "secondary_subscription_key": "your-secondary-subscription-key"
+  },
+  "fsa": {},
+  "google_places": {
+    "api_key": "your-google-places-api-key",
+    "search_engine_id": "your-search-engine-id"
+  },
+  "perplexity": {
+    "api_key": "your-perplexity-api-key"
+  },
+  "openai": {
+    "api_key": "your-openai-api-key"
+  },
+  "firecrawl": {
+    "api_key": "your-firecrawl-api-key"
+  },
+  "companies_house": {
+    "api_key": "your-companies-house-api-key"
+  },
+  "os_places": {
+    "api_key": "your-os-places-api-key",
+    "api_secret": "your-os-places-api-secret",
+    "places_endpoint": "https://api.os.uk/search/places/v1/",
+    "features_endpoint": "https://api.os.uk/features/v1/wfs"
+  },
+  "anthropic": {
+    "api_key": "your-anthropic-api-key"
+  }
+}

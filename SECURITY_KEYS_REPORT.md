@@ -127,3 +127,5 @@
 4. ✅ Настроить pre-commit hooks для проверки на секреты
 5. ✅ Использовать секретные менеджеры (AWS Secrets Manager, HashiCorp Vault и т.д.)
 
+
+
