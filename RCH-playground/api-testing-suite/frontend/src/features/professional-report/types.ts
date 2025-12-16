@@ -1502,3 +1502,151 @@ export interface ProfessionalReportResponse {
   status?: 'pending' | 'processing' | 'completed' | 'failed';
 }
 
+// ===== NEW TYPES FOR ADDITIONAL SECTIONS =====
+
+// Executive Summary Section (Page 1)
+export interface ExecutiveSummaryData {
+  fullName: string;
+  reportGenerationDate: string;
+  topRecommendations: Array<{
+    rank: 1 | 2 | 3;
+    homeName: string;
+    overallScore: number;
+    address: string;
+    phone: string;
+    waitingListStatus: 'Available now' | '2-4 weeks' | '3+ months';
+    matchReason: string;
+  }>;
+  urgencyAlert?: {
+    show: boolean;
+    message: string;
+    topChoicePhone: string;
+  };
+  actionPlanPageLink: number;
+}
+
+// Priorities Match Section (Page 4)
+export interface UserPriority {
+  id: string;
+  label: string;
+  source: string;
+  weight: number;
+}
+
+export interface PriorityMatch {
+  score: number;
+  status: 'full' | 'partial' | 'none';
+  note?: string;
+}
+
+export interface HomeMatch {
+  homeId: string;
+  homeName: string;
+  homeRank: number;
+  priorityScores: Record<string, PriorityMatch>;
+  overallPriorityMatch: number;
+}
+
+export interface PrioritiesMatchData {
+  userPriorities: UserPriority[];
+  comparisonMatrix: HomeMatch[];
+}
+
+// Funding Options Section (Page 14)
+export interface CHCEligibility {
+  probability: 'High' | 'Medium' | 'Low';
+  score: number;
+  matchedCriteria: string[];
+  weeklyValue: string;
+  annualValue: string;
+  nextSteps: string[];
+}
+
+export interface CouncilFunding {
+  localAuthorityName: string;
+  localAuthorityPhone: string;
+  capitalLimit: number;
+  lowerLimit: number;
+  propertyDisregard: boolean;
+  meansTestInfo: string;
+  deferredPaymentAvailable: boolean;
+  nextSteps: string[];
+}
+
+export interface AttendanceAllowance {
+  higherRate: string;
+  lowerRate: string;
+  estimatedRate: 'higher' | 'lower';
+  annualValue: string;
+}
+
+export interface FundingOptionsData {
+  chcEligibility: CHCEligibility;
+  councilFunding: CouncilFunding;
+  attendanceAllowance: AttendanceAllowance;
+  totalPotentialFunding: {
+    weeklyMin: number;
+    weeklyMax: number;
+    annualMin: number;
+    annualMax: number;
+  };
+}
+
+// 14-Day Action Plan Section (Page 15)
+export interface ActionTask {
+  id: string;
+  title: string;
+  description: string;
+  priority: 'high' | 'medium' | 'low';
+  category: 'call' | 'visit' | 'document' | 'research' | 'decision';
+  contactInfo?: {
+    name: string;
+    phone: string;
+    role?: string;
+  };
+  estimatedTime?: string;
+  completed: boolean;
+}
+
+export interface DayPlan {
+  day: number;
+  date?: string;
+  tasks: ActionTask[];
+}
+
+export interface WeekPlan {
+  weekNumber: 1 | 2;
+  title: string;
+  days: DayPlan[];
+}
+
+export interface DocumentItem {
+  document: string;
+  required: boolean;
+  obtained: boolean;
+  whereToGet: string;
+}
+
+export interface KeyContact {
+  type: 'care_home' | 'council' | 'nhs' | 'solicitor';
+  name: string;
+  phone: string;
+  email?: string;
+  notes?: string;
+}
+
+export interface ActionPlanData {
+  weeks: WeekPlan[];
+  keyContacts: KeyContact[];
+  documentsNeeded: DocumentItem[];
+}
+
+// Verdict Badge
+export interface VerdictInfo {
+  label: 'Excellent Match' | 'Good Match' | 'Fair Match' | 'Limited Match';
+  color: string;
+  bgClass: string;
+  borderClass: string;
+  description: string;
+}
+

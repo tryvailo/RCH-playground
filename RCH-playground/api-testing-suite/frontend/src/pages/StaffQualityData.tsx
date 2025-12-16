@@ -80,11 +80,68 @@ interface StaffQualityScore {
   };
 }
 
+interface PerplexityResearch {
+  summary: string;
+  raw_content: string;
+  citations: string[];
+  has_negative_findings: boolean;
+  source: string;
+  cost: number;
+}
+
+interface KeyFindingsSummary {
+  summary: string;
+  review_count: number;
+  overall_score: number;
+  category: string;
+  generated: boolean;
+}
+
+interface EnforcementSignals {
+  has_enforcement_actions: boolean;
+  count: number;
+  actions?: Array<{
+    type: string;
+    date?: string;
+    description?: string;
+  }>;
+  severity?: 'HIGH' | 'MEDIUM' | 'LOW';
+}
+
+interface CompanySignals {
+  company_name: string;
+  company_number: string;
+  company_status: string;
+  company_age_years: number;
+  director_stability: {
+    active_directors: number;
+    resignations_last_year: number;
+    resignations_last_2_years: number;
+    average_tenure_years: number;
+    stability_label: string;
+    issues: string[];
+  };
+  financial_risk: {
+    risk_level: string;
+    risk_score: number;
+    issues: string[];
+  };
+  staff_quality_impact: {
+    level: 'POSITIVE' | 'NEUTRAL' | 'NEGATIVE' | 'CRITICAL';
+    score_adjustment: number;
+    flags: string[];
+  };
+}
+
 interface CareHomeAnalysis {
   careHome: CareHome;
   cqcData: CQCRating;
   reviews: EmployeeReview[];
   staffQualityScore: StaffQualityScore;
+  perplexityResearch?: PerplexityResearch;
+  keyFindingsSummary?: KeyFindingsSummary;
+  enforcementSignals?: EnforcementSignals;
+  companySignals?: CompanySignals;
 }
 
 // Preset care homes with verified CQC location_id for full analysis (CQC + CareHome.co.uk + Google)
@@ -215,6 +272,51 @@ const generateAnalysis = async (home: CareHome): Promise<CareHomeAnalysis> => {
           } : undefined,
         },
       },
+      perplexityResearch: data.perplexity_research ? {
+        summary: data.perplexity_research.summary || '',
+        raw_content: data.perplexity_research.raw_content || '',
+        citations: data.perplexity_research.citations || [],
+        has_negative_findings: data.perplexity_research.has_negative_findings || false,
+        source: data.perplexity_research.source || 'Perplexity AI',
+        cost: data.perplexity_research.cost || 0,
+      } : undefined,
+      keyFindingsSummary: data.key_findings_summary ? {
+        summary: data.key_findings_summary.summary || '',
+        review_count: data.key_findings_summary.review_count || 0,
+        overall_score: data.key_findings_summary.overall_score || 0,
+        category: data.key_findings_summary.category || '',
+        generated: data.key_findings_summary.generated || false,
+      } : undefined,
+      enforcementSignals: data.enforcement_signals ? {
+        has_enforcement_actions: data.enforcement_signals.has_enforcement_actions || false,
+        count: data.enforcement_signals.count || 0,
+        actions: data.enforcement_signals.actions || [],
+        severity: data.enforcement_signals.severity || 'MEDIUM',
+      } : undefined,
+      companySignals: data.company_signals ? {
+        company_name: data.company_signals.company_name || '',
+        company_number: data.company_signals.company_number || '',
+        company_status: data.company_signals.company_status || '',
+        company_age_years: data.company_signals.company_age_years || 0,
+        director_stability: data.company_signals.director_stability || {
+          active_directors: 0,
+          resignations_last_year: 0,
+          resignations_last_2_years: 0,
+          average_tenure_years: 0,
+          stability_label: 'Unknown',
+          issues: [],
+        },
+        financial_risk: data.company_signals.financial_risk || {
+          risk_level: 'Unknown',
+          risk_score: 0,
+          issues: [],
+        },
+        staff_quality_impact: data.company_signals.staff_quality_impact || {
+          level: 'NEUTRAL',
+          score_adjustment: 0,
+          flags: [],
+        },
+      } : undefined,
     };
   } catch (error: any) {
     console.error('Error fetching staff quality data:', error);
@@ -742,6 +844,205 @@ export default function StaffQualityData() {
                         </div>
                       </div>
                     </div>
+
+                    {/* Key Findings Summary Section */}
+                    {analysis.keyFindingsSummary && (
+                      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-6 rounded-lg border border-blue-200">
+                        <h3 className="text-lg font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                          <Info className="w-5 h-5 text-blue-600" />
+                          Key Findings
+                        </h3>
+                        <p className="text-gray-700 leading-relaxed">
+                          {analysis.keyFindingsSummary.summary}
+                        </p>
+                        <div className="mt-3 flex items-center gap-4 text-xs text-gray-500">
+                          <span>Based on {analysis.keyFindingsSummary.review_count} reviews</span>
+                          <span>•</span>
+                          <span>Score: {analysis.keyFindingsSummary.overall_score}/100 ({analysis.keyFindingsSummary.category})</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Perplexity Online Research Section - Simplified */}
+                    {analysis.perplexityResearch && (
+                      <div className={`p-4 rounded-lg border ${
+                        analysis.perplexityResearch.has_negative_findings 
+                          ? 'bg-yellow-50 border-yellow-200' 
+                          : 'bg-green-50 border-green-200'
+                      }`}>
+                        <h4 className="text-sm font-semibold text-gray-800 mb-2 flex items-center gap-2">
+                          <svg className="w-4 h-4 text-purple-600" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="currentColor" fill="none" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                          </svg>
+                          Online Staff Reputation Research
+                          {!analysis.perplexityResearch.has_negative_findings && (
+                            <CheckCircle className="w-4 h-4 text-green-600" />
+                          )}
+                        </h4>
+                        <p className="text-sm text-gray-700">
+                          {analysis.perplexityResearch.summary || 'No specific online data found about staff. No negative reports identified.'}
+                        </p>
+                        {analysis.perplexityResearch.citations && analysis.perplexityResearch.citations.length > 0 && (
+                          <details className="mt-2">
+                            <summary className="text-xs text-blue-600 cursor-pointer hover:underline">
+                              View sources ({analysis.perplexityResearch.citations.length})
+                            </summary>
+                            <div className="mt-2 space-y-1">
+                              {analysis.perplexityResearch.citations.slice(0, 5).map((citation, idx) => (
+                                <a
+                                  key={idx}
+                                  href={typeof citation === 'string' ? citation : '#'}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="block text-xs text-blue-600 hover:underline truncate"
+                                >
+                                  {typeof citation === 'string' ? citation : JSON.stringify(citation)}
+                                </a>
+                              ))}
+                            </div>
+                          </details>
+                        )}
+                      </div>
+                    )}
+
+                    {/* CQC Enforcement Actions Section */}
+                    {analysis.enforcementSignals && (
+                      <div className={`p-4 rounded-lg border ${
+                        analysis.enforcementSignals.has_enforcement_actions 
+                          ? 'bg-red-50 border-red-300' 
+                          : 'bg-green-50 border-green-200'
+                      }`}>
+                        <h4 className="text-sm font-semibold text-gray-800 mb-2 flex items-center gap-2">
+                          <AlertCircle className={`w-4 h-4 ${
+                            analysis.enforcementSignals.has_enforcement_actions ? 'text-red-600' : 'text-green-600'
+                          }`} />
+                          CQC Enforcement Actions
+                          {!analysis.enforcementSignals.has_enforcement_actions && (
+                            <CheckCircle className="w-4 h-4 text-green-600" />
+                          )}
+                        </h4>
+                        {analysis.enforcementSignals.has_enforcement_actions ? (
+                          <div>
+                            <p className="text-sm text-red-700 font-medium">
+                              ⚠️ {analysis.enforcementSignals.count} enforcement action(s) on record
+                              {analysis.enforcementSignals.severity && ` (Severity: ${analysis.enforcementSignals.severity})`}
+                            </p>
+                            {analysis.enforcementSignals.actions && analysis.enforcementSignals.actions.length > 0 && (
+                              <ul className="mt-2 space-y-1">
+                                {analysis.enforcementSignals.actions.slice(0, 3).map((action, idx) => (
+                                  <li key={idx} className="text-xs text-red-600">
+                                    • {action.type}{action.date && ` (${action.date})`}
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                          </div>
+                        ) : (
+                          <p className="text-sm text-green-700">
+                            ✅ No enforcement actions on record - positive indicator
+                          </p>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Company Stability Signals Section */}
+                    {analysis.companySignals && (
+                      <div className={`p-4 rounded-lg border ${
+                        analysis.companySignals.staff_quality_impact.level === 'NEGATIVE' || analysis.companySignals.staff_quality_impact.level === 'CRITICAL'
+                          ? 'bg-amber-50 border-amber-300'
+                          : analysis.companySignals.staff_quality_impact.level === 'POSITIVE'
+                          ? 'bg-green-50 border-green-200'
+                          : 'bg-gray-50 border-gray-200'
+                      }`}>
+                        <h4 className="text-sm font-semibold text-gray-800 mb-3 flex items-center gap-2">
+                          <Building2 className="w-4 h-4 text-blue-600" />
+                          Company Stability Analysis
+                          <span className="text-xs font-normal text-gray-500">
+                            ({analysis.companySignals.company_name})
+                          </span>
+                        </h4>
+                        
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                          {/* Director Stability */}
+                          <div className="bg-white p-3 rounded border">
+                            <div className="text-xs text-gray-500 mb-1">Director Stability</div>
+                            <div className={`text-sm font-semibold ${
+                              analysis.companySignals.director_stability.stability_label === 'Excellent' ? 'text-green-600' :
+                              analysis.companySignals.director_stability.stability_label === 'Good' ? 'text-blue-600' :
+                              analysis.companySignals.director_stability.stability_label === 'Concerning' ? 'text-amber-600' :
+                              'text-red-600'
+                            }`}>
+                              {analysis.companySignals.director_stability.stability_label}
+                            </div>
+                            <div className="text-xs text-gray-500 mt-1">
+                              {analysis.companySignals.director_stability.active_directors} active directors
+                              {analysis.companySignals.director_stability.resignations_last_year > 0 && (
+                                <span className="text-amber-600"> • {analysis.companySignals.director_stability.resignations_last_year} resigned (1yr)</span>
+                              )}
+                            </div>
+                            {analysis.companySignals.director_stability.average_tenure_years > 0 && (
+                              <div className="text-xs text-gray-500">
+                                Avg tenure: {analysis.companySignals.director_stability.average_tenure_years.toFixed(1)} years
+                              </div>
+                            )}
+                          </div>
+                          
+                          {/* Financial Risk */}
+                          <div className="bg-white p-3 rounded border">
+                            <div className="text-xs text-gray-500 mb-1">Financial Risk</div>
+                            <div className={`text-sm font-semibold ${
+                              analysis.companySignals.financial_risk.risk_level === 'Very Low' ? 'text-green-600' :
+                              analysis.companySignals.financial_risk.risk_level === 'Low' ? 'text-blue-600' :
+                              analysis.companySignals.financial_risk.risk_level === 'Medium' ? 'text-amber-600' :
+                              'text-red-600'
+                            }`}>
+                              {analysis.companySignals.financial_risk.risk_level}
+                            </div>
+                            <div className="text-xs text-gray-500 mt-1">
+                              Risk Score: {analysis.companySignals.financial_risk.risk_score}/100
+                            </div>
+                            <div className="text-xs text-gray-500">
+                              Company age: {analysis.companySignals.company_age_years.toFixed(1)} years
+                            </div>
+                          </div>
+                          
+                          {/* Staff Impact */}
+                          <div className="bg-white p-3 rounded border">
+                            <div className="text-xs text-gray-500 mb-1">Staff Quality Impact</div>
+                            <div className={`text-sm font-semibold ${
+                              analysis.companySignals.staff_quality_impact.level === 'POSITIVE' ? 'text-green-600' :
+                              analysis.companySignals.staff_quality_impact.level === 'NEUTRAL' ? 'text-gray-600' :
+                              analysis.companySignals.staff_quality_impact.level === 'NEGATIVE' ? 'text-amber-600' :
+                              'text-red-600'
+                            }`}>
+                              {analysis.companySignals.staff_quality_impact.level}
+                            </div>
+                            {analysis.companySignals.staff_quality_impact.score_adjustment !== 0 && (
+                              <div className={`text-xs ${analysis.companySignals.staff_quality_impact.score_adjustment > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                Score adjustment: {analysis.companySignals.staff_quality_impact.score_adjustment > 0 ? '+' : ''}{analysis.companySignals.staff_quality_impact.score_adjustment}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        
+                        {/* Flags/Issues */}
+                        {analysis.companySignals.staff_quality_impact.flags.length > 0 && (
+                          <div className="mt-3 pt-3 border-t">
+                            <div className="text-xs text-gray-600 space-y-1">
+                              {analysis.companySignals.staff_quality_impact.flags.map((flag, idx) => (
+                                <div key={idx} className="flex items-start gap-1">
+                                  <span className={
+                                    analysis.companySignals!.staff_quality_impact.level === 'POSITIVE' ? '✅' :
+                                    analysis.companySignals!.staff_quality_impact.level === 'NEGATIVE' || analysis.companySignals!.staff_quality_impact.level === 'CRITICAL' ? '⚠️' : '•'
+                                  }></span>
+                                  <span>{flag}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
 
                     {/* Reviews */}
                     {analysis.reviews.length > 0 && (

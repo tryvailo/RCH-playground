@@ -6,6 +6,12 @@ Algorithm based on staff-quality.md specification.
 
 UPDATED: Now uses Google Custom Search + Firecrawl for Indeed reviews
 as per staff-analysis documentation (more accurate than Perplexity).
+
+ENHANCED: Additional signals for improved accuracy:
+- CQC enforcement actions (red flags)
+- Companies House director stability
+- Companies House financial health
+- Local news via Perplexity
 """
 from typing import Dict, Any, Optional, List
 from datetime import datetime
@@ -118,6 +124,15 @@ class StaffQualityService:
         except Exception as e:
             print(f"Warning: CareHome.co.uk Reviews Service not available: {e}")
             self.carehome_reviews_service = None
+        
+        # Initialize Companies House Service for financial/director signals
+        self.companies_house_service = None
+        try:
+            from services.companies_house_service import CompaniesHouseService
+            self.companies_house_service = CompaniesHouseService()
+            print("✅ Companies House Service initialized for staff quality signals")
+        except Exception as e:
+            print(f"Warning: Companies House Service not available: {e}")
     
     async def analyze_by_location_id(self, location_id: str) -> Dict[str, Any]:
         """Analyze staff quality for a care home by CQC location ID"""
@@ -178,11 +193,15 @@ class StaffQualityService:
                     
                     # Convert CareHome.co.uk reviews to unified format
                     for review in carehome_reviews:
+                        # Clean the review text from markdown artifacts
+                        review_text = review.get("review_text", "")
+                        review_text = self._clean_review_text_markdown(review_text)
+                        
                         unified_review = {
                             "source": "CareHome.co.uk",
                             "rating": review.get("overall_rating"),
                             "sentiment": self._map_rating_to_sentiment(review.get("overall_rating", 3)),
-                            "text": review.get("review_text", ""),
+                            "text": review_text,
                             "date": review.get("date"),
                             "author": review.get("reviewer_initials", "Anonymous"),
                             "reviewer_type": review.get("reviewer_connection"),  # e.g., "Daughter of Resident"
@@ -324,6 +343,69 @@ class StaffQualityService:
         if indeed_data and (indeed_data.get('indeed_url') or indeed_data.get('review_count')):
             result['indeed'] = indeed_data
         
+        # PRIORITY 5: Perplexity Staff Research (enrichment for staff reviews and reputation)
+        perplexity_research = None
+        if self.perplexity_client:
+            try:
+                perplexity_research = await self._fetch_perplexity_staff_research(
+                    name=home_name,
+                    location=f"{home_address}, {home_postcode}" if home_address else home_postcode,
+                    provider_name=provider_name
+                )
+                if perplexity_research:
+                    result['perplexity_research'] = perplexity_research
+                    print(f"✅ Perplexity Research: Found staff insights for {home_name}")
+            except Exception as e:
+                print(f"⚠️ Perplexity staff research failed: {e}")
+        
+        # ENHANCED SIGNALS: CQC Enforcement Actions (red flags)
+        enforcement_signals = None
+        try:
+            enforcement_actions = await self.cqc_client.get_location_enforcement_actions(location_id)
+            if enforcement_actions:
+                enforcement_signals = {
+                    'has_enforcement_actions': True,
+                    'count': len(enforcement_actions),
+                    'actions': enforcement_actions[:5],  # Limit to 5 most recent
+                    'severity': 'HIGH' if any(a.get('type', '').lower() in ['urgent', 'warning', 'condition'] for a in enforcement_actions) else 'MEDIUM'
+                }
+                result['enforcement_signals'] = enforcement_signals
+                print(f"⚠️ CQC Enforcement Actions found: {len(enforcement_actions)} for {home_name}")
+            else:
+                enforcement_signals = {'has_enforcement_actions': False, 'count': 0}
+                result['enforcement_signals'] = enforcement_signals
+                print(f"✅ No CQC Enforcement Actions for {home_name}")
+        except Exception as e:
+            print(f"⚠️ CQC Enforcement check failed: {e}")
+        
+        # ENHANCED SIGNALS: Companies House - Director & Financial stability
+        company_signals = None
+        if self.companies_house_service and provider_name:
+            try:
+                company_signals = await self._fetch_company_stability_signals(provider_name)
+                if company_signals:
+                    result['company_signals'] = company_signals
+                    print(f"✅ Companies House signals fetched for {provider_name}")
+            except Exception as e:
+                print(f"⚠️ Companies House signals failed: {e}")
+        
+        # Generate Key Findings summary using LLM (uses OpenAI)
+        if reviews:
+            try:
+                key_findings = await self._generate_key_findings_summary(
+                    home_name=home_name,
+                    reviews=reviews,
+                    staff_quality_score=staff_quality_score,
+                    perplexity_research=perplexity_research,
+                    enforcement_signals=enforcement_signals,
+                    company_signals=company_signals
+                )
+                if key_findings:
+                    result['key_findings_summary'] = key_findings
+                    print(f"✅ Key Findings Summary generated for {home_name}")
+            except Exception as e:
+                print(f"⚠️ Key Findings generation failed: {e}")
+        
         return result
     
     def _map_rating_to_sentiment(self, rating: int) -> str:
@@ -334,6 +416,47 @@ class StaffQualityService:
             return 'NEGATIVE'
         else:
             return 'MIXED'
+    
+    def _clean_review_text_markdown(self, text: str) -> str:
+        """Clean review text from markdown artifacts, image links, and category ratings"""
+        if not text:
+            return ""
+        
+        # Remove markdown image syntax: ![alt](url) or ![](url)
+        text = re.sub(r'!\[[^\]]*\]\([^)]+\)', '', text)
+        
+        # Remove category rating lines like "- Facilities ![](url)" or "- Staff ![](url)"
+        text = re.sub(r'-\s*[A-Za-z\s/]+\s*!\[\]\([^)]+\)', '', text)
+        text = re.sub(r'-\s*[A-Za-z\s/]+\s*$', '', text, flags=re.MULTILINE)
+        
+        # Remove standalone image URLs
+        text = re.sub(r'https?://[^\s]+\.(png|jpg|jpeg|gif|svg)[^\s]*', '', text)
+        
+        # Remove remaining markdown link syntax: [text](url)
+        text = re.sub(r'\[([^\]]*)\]\([^)]+\)', r'\1', text)
+        
+        # Remove lines that are just "- CategoryName" 
+        lines = text.split('\n')
+        cleaned_lines = []
+        category_pattern = re.compile(r'^-?\s*(Facilities|Care\s*/?\s*Support|Cleanliness|Treated with Dignity|Food\s*&?\s*Drink|Staff|Activities|Management|Safety\s*/?\s*Security|Rooms|Value for Money)\s*$', re.IGNORECASE)
+        
+        for line in lines:
+            line = line.strip()
+            # Skip empty lines and category-only lines
+            if not line or category_pattern.match(line):
+                continue
+            cleaned_lines.append(line)
+        
+        text = ' '.join(cleaned_lines)
+        
+        # Clean up multiple spaces, dots, and dashes
+        text = re.sub(r'\s+', ' ', text)
+        text = re.sub(r'\.{2,}', '.', text)
+        text = re.sub(r'\s*\.\s*-\s*$', '', text)
+        text = re.sub(r'\s*\.\s*-\s*\.', '.', text)
+        text = re.sub(r'\s+-\s*$', '', text)
+        
+        return text.strip()
     
     async def analyze_by_search(
         self,
@@ -452,11 +575,15 @@ class StaffQualityService:
         # Convert CareHome.co.uk reviews to unified format
         reviews = []
         for review in carehome_reviews:
+            # Clean the review text from markdown artifacts
+            review_text = review.get("review_text", "")
+            review_text = self._clean_review_text_markdown(review_text)
+            
             unified_review = {
                 "source": "CareHome.co.uk",
                 "rating": review.get("overall_rating"),
                 "sentiment": self._map_rating_to_sentiment(review.get("overall_rating", 3)),
-                "text": review.get("review_text", ""),
+                "text": review_text,
                 "date": review.get("date"),
                 "author": review.get("reviewer_initials", "Anonymous"),
                 "reviewer_type": review.get("reviewer_connection"),
@@ -530,6 +657,38 @@ class StaffQualityService:
             'carehome_co_uk': carehome_data,
             'review_sources': sources
         }
+        
+        # Perplexity Staff Research (enrichment for staff reviews and reputation)
+        perplexity_research = None
+        if self.perplexity_client:
+            try:
+                perplexity_research = await self._fetch_perplexity_staff_research(
+                    name=name,
+                    location=postcode,
+                    provider_name=None
+                )
+                if perplexity_research:
+                    result['perplexity_research'] = perplexity_research
+                    print(f"✅ Perplexity Research: Found staff insights for {name}")
+            except Exception as e:
+                print(f"⚠️ Perplexity staff research failed: {e}")
+        
+        # Generate Key Findings summary using LLM (uses OpenAI)
+        if reviews:
+            try:
+                key_findings = await self._generate_key_findings_summary(
+                    home_name=name,
+                    reviews=reviews,
+                    staff_quality_score=staff_quality_score,
+                    perplexity_research=perplexity_research,
+                    enforcement_signals=None,  # Not available without CQC location_id
+                    company_signals=None  # Could be added if provider name known
+                )
+                if key_findings:
+                    result['key_findings_summary'] = key_findings
+                    print(f"✅ Key Findings Summary generated for {name}")
+            except Exception as e:
+                print(f"⚠️ Key Findings generation failed: {e}")
         
         return result
     
@@ -1723,4 +1882,520 @@ IMPORTANT: Return ONLY valid JSON, no markdown, no code blocks."""
                 return org_name
         
         return None
+    
+    async def _fetch_perplexity_staff_research(
+        self,
+        name: str,
+        location: Optional[str] = None,
+        provider_name: Optional[str] = None
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Fetch staff-related research from Perplexity Search API.
+        
+        Searches for:
+        - Glassdoor reviews and ratings
+        - LinkedIn staff profiles and tenure data
+        - Staff awards and recognition
+        - Employer reputation and workplace culture
+        - News about staff, management changes, or workplace issues
+        
+        Returns enriched data for staff analysis section.
+        """
+        if not self.perplexity_client:
+            return None
+        
+        try:
+            location_str = location or ""
+            search_name = provider_name or name
+            
+            # Build focused staff research query - asking for concise summary
+            query = f"""Search for news, reviews and staff information about "{name}" care home {location_str} UK.
+
+PRIORITY SEARCHES:
+1. LOCAL NEWS: Any BBC, local newspaper, or news articles about this care home
+2. CQC REPORTS: Recent CQC inspection findings, ratings changes, or enforcement actions
+3. GLASSDOOR: Employee reviews and workplace ratings
+4. INDEED: Staff reviews and employer ratings
+5. COMPLAINTS: Any safeguarding concerns, complaints, or negative incidents
+6. AWARDS: Care home awards, staff recognitions, Skills for Care mentions
+7. MANAGEMENT: News about ownership changes, director appointments, or provider changes
+
+IMPORTANT: 
+- Prioritize RECENT news from last 12 months
+- Mention any CQC rating upgrades or downgrades
+- Note any safeguarding concerns or complaints
+- If NO negative news found - explicitly state "No negative news or complaints identified"
+- Provide 3-4 sentence summary with key findings
+
+Focus on UK sources. Search local news sites like BBC Local, ITV News, local newspapers."""
+
+            # Search with Perplexity
+            result = await self.perplexity_client.search(
+                query=query,
+                model="sonar-pro",
+                max_tokens=800,  # Reduced for concise response
+                search_recency_filter="year"
+            )
+            
+            content = result.get('content', '')
+            citations = result.get('citations', [])
+            
+            if not content:
+                # Return default positive message if no data
+                return {
+                    'summary': 'No specific employee review data found online. This is neutral - no negative reports were identified.',
+                    'raw_content': '',
+                    'citations': [],
+                    'has_negative_findings': False,
+                    'source': 'Perplexity AI',
+                    'cost': 0.005
+                }
+            
+            # Extract concise summary from content (first 2-3 sentences or whole if short)
+            summary = self._extract_concise_summary(content)
+            
+            # Check for negative findings
+            has_negative = self._check_for_negative_findings(content)
+            
+            return {
+                'summary': summary,
+                'raw_content': content,
+                'citations': citations,
+                'has_negative_findings': has_negative,
+                'source': 'Perplexity AI',
+                'cost': 0.005
+            }
+            
+        except Exception as e:
+            print(f"Error in Perplexity staff research: {e}")
+            return None
+    
+    def _extract_concise_summary(self, content: str) -> str:
+        """Extract a concise 2-3 sentence summary from Perplexity content"""
+        if not content:
+            return "No information found."
+        
+        # Split into sentences
+        sentences = re.split(r'(?<=[.!?])\s+', content.strip())
+        
+        # Filter out very short or unhelpful sentences
+        meaningful_sentences = [
+            s.strip() for s in sentences 
+            if len(s.strip()) > 30 and not s.strip().startswith('I ')
+        ]
+        
+        if not meaningful_sentences:
+            return content[:300] + "..." if len(content) > 300 else content
+        
+        # Take first 2-3 meaningful sentences
+        summary = ' '.join(meaningful_sentences[:3])
+        
+        # Truncate if still too long
+        if len(summary) > 400:
+            summary = summary[:397] + "..."
+        
+        return summary
+    
+    def _check_for_negative_findings(self, content: str) -> bool:
+        """Check if content contains negative findings about staff"""
+        negative_keywords = [
+            'complaint', 'issue', 'problem', 'concern', 'negative', 'poor',
+            'understaffed', 'turnover', 'shortage', 'warning', 'fine',
+            'investigation', 'closure', 'downgrade', 'inadequate'
+        ]
+        content_lower = content.lower()
+        return any(keyword in content_lower for keyword in negative_keywords)
+    
+    async def _generate_key_findings_summary(
+        self,
+        home_name: str,
+        reviews: List[Dict[str, Any]],
+        staff_quality_score: Dict[str, Any],
+        perplexity_research: Optional[Dict[str, Any]] = None,
+        enforcement_signals: Optional[Dict[str, Any]] = None,
+        company_signals: Optional[Dict[str, Any]] = None
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Generate a comprehensive Key Findings summary using OpenAI GPT.
+        Analyzes all reviews and additional signals for care home seekers.
+        """
+        if not reviews:
+            return None
+        
+        try:
+            import httpx
+            
+            # Get OpenAI API key from credentials
+            from utils.auth import credentials_store
+            creds = credentials_store.get("default")
+            openai_api_key = None
+            if creds and hasattr(creds, 'openai') and creds.openai:
+                openai_api_key = getattr(creds.openai, 'api_key', None)
+            
+            if not openai_api_key:
+                print("Warning: OpenAI API key not found for Key Findings generation")
+                return None
+            
+            # Prepare review summaries
+            review_texts = []
+            for i, review in enumerate(reviews[:20]):  # Limit to 20 reviews
+                source = review.get('source', 'Unknown')
+                rating = review.get('rating', 'N/A')
+                sentiment = review.get('sentiment', 'NEUTRAL')
+                text = review.get('text', '')[:300]  # Truncate long reviews
+                reviewer_type = review.get('reviewer_type', '')
+                
+                review_texts.append(f"- [{source}] Rating: {rating}/5, Sentiment: {sentiment}, Type: {reviewer_type}\n  \"{text}\"")
+            
+            reviews_summary = '\n'.join(review_texts)
+            
+            # Staff quality score info
+            overall_score = staff_quality_score.get('overall_score', 'N/A')
+            category = staff_quality_score.get('category', 'N/A')
+            positive_themes = staff_quality_score.get('themes', {}).get('positive', [])
+            negative_themes = staff_quality_score.get('themes', {}).get('negative', [])
+            
+            # Perplexity insights
+            perplexity_summary = ""
+            if perplexity_research:
+                perplexity_summary = perplexity_research.get('summary', '')
+            
+            # CQC Enforcement signals
+            enforcement_info = ""
+            if enforcement_signals:
+                if enforcement_signals.get('has_enforcement_actions'):
+                    count = enforcement_signals.get('count', 0)
+                    severity = enforcement_signals.get('severity', 'MEDIUM')
+                    enforcement_info = f"⚠️ CQC ENFORCEMENT: {count} enforcement action(s) on record (Severity: {severity})"
+                else:
+                    enforcement_info = "✅ CQC ENFORCEMENT: No enforcement actions on record"
+            
+            # Company stability signals
+            company_info = ""
+            if company_signals:
+                director_stability = company_signals.get('director_stability', {})
+                financial_risk = company_signals.get('financial_risk', {})
+                impact = company_signals.get('staff_quality_impact', {})
+                
+                company_info = f"""
+COMPANY STABILITY:
+- Director stability: {director_stability.get('stability_label', 'Unknown')} (Resignations last year: {director_stability.get('resignations_last_year', 0)})
+- Financial risk: {financial_risk.get('risk_level', 'Unknown')}
+- Impact on staff: {impact.get('level', 'NEUTRAL')}
+- Flags: {', '.join(impact.get('flags', [])) if impact.get('flags') else 'None'}"""
+            
+            prompt = f"""Analyze the following data for "{home_name}" care home and provide a KEY FINDINGS summary for someone searching for a care home for their elderly relative.
+
+STAFF QUALITY SCORE: {overall_score}/100 ({category})
+POSITIVE THEMES: {', '.join(positive_themes) if positive_themes else 'None identified'}
+NEGATIVE THEMES: {', '.join(negative_themes) if negative_themes else 'None identified'}
+
+{enforcement_info}
+{company_info}
+
+ONLINE RESEARCH: {perplexity_summary if perplexity_summary else 'No additional data found'}
+
+REVIEWS ({len(reviews)} total):
+{reviews_summary}
+
+Write a SINGLE PARAGRAPH (5-7 sentences) summary that:
+1. Highlights the MAIN STRENGTHS of this care home's staff (if any)
+2. Notes any CONCERNS or areas for attention (if any)
+3. Mentions CQC enforcement actions if present (CRITICAL)
+4. Notes company stability issues if significant (director changes, financial stress)
+5. Mentions specific examples from reviews if noteworthy
+6. Gives an overall impression suitable for someone deciding whether to consider this home
+7. Is balanced, professional, and helpful
+
+Focus on staff quality, care quality, management stability, and any red flags.
+Write in third person, professional tone. Do NOT use bullet points."""
+
+            headers = {
+                "Authorization": f"Bearer {openai_api_key}",
+                "Content-Type": "application/json"
+            }
+            
+            payload = {
+                "model": "gpt-4o-mini",
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": "You are an expert care home analyst helping families find the right care home. Provide balanced, helpful summaries in a professional tone."
+                    },
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ],
+                "max_tokens": 500,
+                "temperature": 0.7
+            }
+            
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.post(
+                    "https://api.openai.com/v1/chat/completions",
+                    headers=headers,
+                    json=payload
+                )
+                response.raise_for_status()
+                data = response.json()
+                
+                # OpenAI API response format
+                summary_text = data["choices"][0]["message"]["content"].strip()
+                
+                return {
+                    'summary': summary_text,
+                    'review_count': len(reviews),
+                    'overall_score': overall_score,
+                    'category': category,
+                    'generated': True
+                }
+                
+        except Exception as e:
+            print(f"Error generating Key Findings summary: {e}")
+            return None
+    
+    def _parse_perplexity_staff_research(
+        self,
+        content: str,
+        citations: List
+    ) -> Dict[str, Any]:
+        """Parse Perplexity staff research response into structured data - DEPRECATED, kept for compatibility"""
+        parsed = {
+            'glassdoor': {
+                'found': False,
+                'rating': None,
+                'review_count': None,
+                'highlights': []
+            },
+            'linkedin': {
+                'found': False,
+                'avg_tenure': None,
+                'highlights': []
+            },
+            'employer_awards': [],
+            'news_highlights': [],
+            'staff_indicators': {
+                'turnover_mentions': [],
+                'training_mentions': [],
+                'qualifications_mentioned': []
+            },
+            'overall_sentiment': 'NEUTRAL',
+            'key_findings': []
+        }
+        
+        content_lower = content.lower()
+        
+        # Check for Glassdoor data
+        if 'glassdoor' in content_lower:
+            parsed['glassdoor']['found'] = True
+            # Try to extract rating
+            import re
+            rating_match = re.search(r'glassdoor.*?(\d+\.?\d*)\s*(?:out of 5|/5|stars?)', content_lower)
+            if rating_match:
+                parsed['glassdoor']['rating'] = float(rating_match.group(1))
+        
+        # Check for LinkedIn mentions
+        if 'linkedin' in content_lower:
+            parsed['linkedin']['found'] = True
+            # Extract tenure if mentioned
+            tenure_match = re.search(r'(?:average|typical)\s+tenure.*?(\d+(?:\.\d+)?)\s*(?:years?|months?)', content_lower)
+            if tenure_match:
+                parsed['linkedin']['avg_tenure'] = tenure_match.group(0)
+        
+        # Check for awards
+        award_keywords = ['award', 'recognition', 'best employer', 'great place to work', 'top employer']
+        for keyword in award_keywords:
+            if keyword in content_lower:
+                # Find the sentence containing the keyword
+                sentences = content.split('.')
+                for sentence in sentences:
+                    if keyword in sentence.lower():
+                        parsed['employer_awards'].append(sentence.strip())
+                        break
+        
+        # Check for staff indicators
+        turnover_keywords = ['turnover', 'retention', 'staff leaving', 'vacancy', 'understaffed']
+        training_keywords = ['nvq', 'diploma', 'training', 'certification', 'qualified']
+        
+        for keyword in turnover_keywords:
+            if keyword in content_lower:
+                sentences = content.split('.')
+                for sentence in sentences:
+                    if keyword in sentence.lower():
+                        parsed['staff_indicators']['turnover_mentions'].append(sentence.strip())
+        
+        for keyword in training_keywords:
+            if keyword in content_lower:
+                parsed['staff_indicators']['training_mentions'].append(keyword.upper())
+        
+        # Determine overall sentiment
+        positive_indicators = ['good employer', 'great place', 'caring', 'supportive', 'excellent', 'award']
+        negative_indicators = ['understaffed', 'high turnover', 'poor management', 'complaint', 'issue']
+        
+        positive_count = sum(1 for word in positive_indicators if word in content_lower)
+        negative_count = sum(1 for word in negative_indicators if word in content_lower)
+        
+        if positive_count > negative_count:
+            parsed['overall_sentiment'] = 'POSITIVE'
+        elif negative_count > positive_count:
+            parsed['overall_sentiment'] = 'NEGATIVE'
+        else:
+            parsed['overall_sentiment'] = 'MIXED' if (positive_count > 0 or negative_count > 0) else 'NEUTRAL'
+        
+        # Extract key findings (first 3-5 important sentences)
+        sentences = content.split('.')
+        key_sentences = []
+        important_keywords = ['rating', 'review', 'staff', 'employee', 'work', 'management', 'award']
+        
+        for sentence in sentences:
+            sentence = sentence.strip()
+            if len(sentence) > 30 and any(kw in sentence.lower() for kw in important_keywords):
+                key_sentences.append(sentence)
+                if len(key_sentences) >= 5:
+                    break
+        
+        parsed['key_findings'] = key_sentences
+        
+        return parsed
+    
+    async def _fetch_company_stability_signals(self, provider_name: str) -> Optional[Dict[str, Any]]:
+        """
+        Fetch company stability signals from Companies House.
+        
+        Returns signals about:
+        - Director changes (high turnover = instability)
+        - Financial health indicators
+        - Company age and status
+        """
+        if not self.companies_house_service:
+            return None
+        
+        try:
+            # Search for company by name
+            from api_clients.companies_house_client import CompaniesHouseClient
+            from utils.auth import credentials_store
+            
+            creds = credentials_store.get("default")
+            if not creds or not creds.companies_house:
+                return None
+            
+            api_key = creds.companies_house.api_key
+            if not api_key:
+                return None
+            
+            client = CompaniesHouseClient(api_key)
+            
+            # Search for company
+            search_results = await client.search_companies(provider_name, limit=3)
+            if not search_results:
+                return None
+            
+            # Find best match
+            company = None
+            for result in search_results:
+                company_name = result.get('title', '').lower()
+                if 'care' in company_name or 'home' in company_name or provider_name.lower() in company_name:
+                    company = result
+                    break
+            
+            if not company:
+                company = search_results[0]
+            
+            company_number = company.get('company_number')
+            if not company_number:
+                return None
+            
+            # Get financial stability data
+            stability_result = await self.companies_house_service.get_financial_stability(company_number)
+            
+            if not stability_result:
+                return None
+            
+            # Extract key signals for staff quality
+            signals = {
+                'company_name': stability_result.company_name,
+                'company_number': company_number,
+                'company_status': stability_result.company_status,
+                'company_age_years': stability_result.company_age_years,
+                
+                # Director stability signals
+                'director_stability': {
+                    'active_directors': stability_result.director_stability.active_directors,
+                    'resignations_last_year': stability_result.director_stability.resignations_last_year,
+                    'resignations_last_2_years': stability_result.director_stability.resignations_last_2_years,
+                    'average_tenure_years': stability_result.director_stability.average_tenure_years,
+                    'stability_label': stability_result.director_stability.stability_label,
+                    'issues': stability_result.director_stability.issues[:3] if stability_result.director_stability.issues else []
+                },
+                
+                # Financial risk signals
+                'financial_risk': {
+                    'risk_level': stability_result.risk_level,
+                    'risk_score': stability_result.risk_score,
+                    'issues': stability_result.issues[:5] if stability_result.issues else []
+                },
+                
+                # Staff quality impact assessment
+                'staff_quality_impact': self._assess_company_impact_on_staff(stability_result)
+            }
+            
+            return signals
+            
+        except Exception as e:
+            print(f"Error fetching company stability signals: {e}")
+            return None
+    
+    def _assess_company_impact_on_staff(self, stability_result) -> Dict[str, Any]:
+        """
+        Assess how company stability affects staff quality.
+        
+        High director turnover or financial stress often correlates with:
+        - Staff cuts
+        - Lower wages
+        - Higher agency staff usage
+        - Lower morale
+        """
+        impact = {
+            'level': 'NEUTRAL',
+            'score_adjustment': 0,
+            'flags': []
+        }
+        
+        # Director instability impact
+        if stability_result.director_stability.resignations_last_year >= 2:
+            impact['level'] = 'NEGATIVE'
+            impact['score_adjustment'] -= 10
+            impact['flags'].append('High director turnover may indicate management instability')
+        
+        if stability_result.director_stability.average_tenure_years < 2:
+            impact['score_adjustment'] -= 5
+            impact['flags'].append('Low average director tenure')
+        
+        # Financial stress impact
+        if stability_result.risk_level in ['High', 'Critical']:
+            impact['level'] = 'NEGATIVE'
+            impact['score_adjustment'] -= 15
+            impact['flags'].append('Financial stress may affect staffing levels and wages')
+        elif stability_result.risk_level == 'Medium':
+            impact['score_adjustment'] -= 5
+            impact['flags'].append('Moderate financial concerns')
+        
+        # Company status impact
+        if stability_result.company_status.lower() not in ['active', 'registered']:
+            impact['level'] = 'CRITICAL'
+            impact['score_adjustment'] -= 20
+            impact['flags'].append(f'Company status: {stability_result.company_status}')
+        
+        # Positive signals
+        if stability_result.risk_level == 'Very Low':
+            impact['level'] = 'POSITIVE'
+            impact['score_adjustment'] += 5
+            impact['flags'].append('Strong financial stability')
+        
+        if stability_result.director_stability.stability_label == 'Excellent':
+            impact['score_adjustment'] += 5
+            impact['flags'].append('Excellent management stability')
+        
+        return impact
 

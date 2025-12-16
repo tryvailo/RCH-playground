@@ -28,6 +28,11 @@ import LLMInsightsSection from './components/LLMInsightsSection';
 import EnforcementActionsSection from './components/EnforcementActionsSection';
 import RegulatedActivitiesSection from './components/RegulatedActivitiesSection';
 import FootfallTrendsSection from './components/FootfallTrendsSection';
+import ExecutiveSummarySection from './components/ExecutiveSummarySection';
+import PrioritiesMatchSection from './components/PrioritiesMatchSection';
+import FundingOptionsSection from './components/FundingOptionsSection';
+import ActionPlanSection from './components/ActionPlanSection';
+import VerdictBadge from './components/VerdictBadge';
 import { useGenerateProfessionalReport, usePollProfessionalReport } from './hooks/useProfessionalReport';
 import { CostAnalysisBlock } from '../cost-analysis';
 import type { ProfessionalQuestionnaireResponse, ProfessionalReportData } from './types';
@@ -656,7 +661,9 @@ export default function ProfessionalReportViewer() {
                   <div className="lg:col-span-1">
                     <ReportNavigation
                       sections={[
-                        { id: 'summary', label: 'Executive Summary', icon: <Home className="w-4 h-4" />, hasData: true },
+                        { id: 'executive-summary', label: 'Executive Summary', icon: <Home className="w-4 h-4" />, hasData: true },
+                        { id: 'summary', label: 'Dashboard', icon: <BarChart3 className="w-4 h-4" />, hasData: true },
+                        { id: 'priorities-match', label: 'Your Priorities Match', icon: <Target className="w-4 h-4" />, hasData: true },
                         { id: 'homes', label: 'Top 5 Homes', icon: <Building2 className="w-4 h-4" />, hasData: report.careHomes.length > 0 },
                         { id: 'funding', label: 'Funding Optimization', icon: <DollarSign className="w-4 h-4" />, hasData: !!report.fundingOptimization },
                         { id: 'cost-analysis', label: 'Cost Analysis', icon: <TrendingUp className="w-4 h-4" />, hasData: report.careHomes.length > 0 },
@@ -679,6 +686,8 @@ export default function ProfessionalReportViewer() {
                         { id: 'comparative', label: 'Comparative Analysis', icon: <BarChart3 className="w-4 h-4" />, hasData: !!report.comparativeAnalysis },
                         { id: 'risks', label: 'Risk Assessment', icon: <AlertCircle className="w-4 h-4" />, hasData: !!report.riskAssessment },
                         { id: 'negotiation', label: 'Negotiation Strategy', icon: <FileTextIcon className="w-4 h-4" />, hasData: !!report.negotiationStrategy },
+                        { id: 'funding-options', label: 'Funding Options', icon: <DollarSign className="w-4 h-4" />, hasData: true },
+                        { id: 'actionplan', label: '14-Day Action Plan', icon: <CheckCircle2 className="w-4 h-4" />, hasData: true },
                         { id: 'nextsteps', label: 'Next Steps', icon: <CheckCircle2 className="w-4 h-4" />, hasData: !!report.nextSteps },
                       ]}
                       activeSection={activeSection}
@@ -701,13 +710,42 @@ export default function ProfessionalReportViewer() {
                       </div>
                       
                       <div className="space-y-4">
-                        {/* Executive Summary Dashboard */}
+                        {/* Executive Summary Section (Page 1) */}
+                        <div 
+                          id="executive-summary" 
+                          ref={(el) => { sectionRefs.current['executive-summary'] = el; }}
+                          className="scroll-mt-4 mb-6 p-4 bg-gradient-to-r from-gray-50 to-slate-50 rounded-lg border border-gray-200"
+                        >
+                          <ExecutiveSummarySection 
+                            report={report} 
+                            onNavigateToSection={(sectionId) => {
+                              const el = sectionRefs.current[sectionId];
+                              if (el) {
+                                el.scrollIntoView({ behavior: 'smooth' });
+                              }
+                            }}
+                          />
+                        </div>
+
+                        {/* Executive Summary Dashboard (Metrics) */}
                         <div 
                           id="summary" 
                           ref={(el) => { sectionRefs.current['summary'] = el; }}
                           className="scroll-mt-4 mb-6"
                         >
                           <ExecutiveSummaryDashboard report={report} />
+                        </div>
+
+                        {/* Your Priorities Match Section (Page 4) */}
+                        <div 
+                          id="priorities-match" 
+                          ref={(el) => { sectionRefs.current['priorities-match'] = el; }}
+                          className="scroll-mt-4 mb-6 p-4 bg-gradient-to-r from-indigo-50 to-purple-50 rounded-lg border border-indigo-200"
+                        >
+                          <PrioritiesMatchSection 
+                            report={report} 
+                            questionnaire={questionnaire || undefined}
+                          />
                         </div>
 
                         {/* Analysis Summary */}
@@ -2058,6 +2096,27 @@ export default function ProfessionalReportViewer() {
                             <NegotiationStrategyViewer strategy={report.negotiationStrategy} />
                           </div>
                         )}
+
+                        {/* Funding Options Section (Page 14) */}
+                        <div 
+                          id="funding-options" 
+                          ref={(el) => { sectionRefs.current['funding-options'] = el; }}
+                          className="scroll-mt-4 mt-6 p-4 bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg border border-green-200"
+                        >
+                          <FundingOptionsSection 
+                            report={report} 
+                            questionnaire={questionnaire || undefined}
+                          />
+                        </div>
+
+                        {/* 14-Day Action Plan Section (Page 15) */}
+                        <div 
+                          id="actionplan" 
+                          ref={(el) => { sectionRefs.current['actionplan'] = el; }}
+                          className="scroll-mt-4 mt-6 p-4 bg-gradient-to-r from-emerald-50 to-teal-50 rounded-lg border border-emerald-200"
+                        >
+                          <ActionPlanSection report={report} />
+                        </div>
 
                         {/* Next Steps Section */}
                         <div 

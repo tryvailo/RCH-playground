@@ -485,10 +485,13 @@ Return ONLY valid JSON, no markdown formatting."""
                 
                 reviews = result.get("reviews", [])
                 
-                # Add page number and source
+                # Add page number and source, and clean review text
                 for review in reviews:
                     review["source"] = "carehome.co.uk"
                     review["page"] = page_num
+                    # Clean review_text from markdown artifacts
+                    if "review_text" in review:
+                        review["review_text"] = self._clean_review_text(review["review_text"])
                 
                 return reviews
                 
@@ -536,6 +539,43 @@ Return ONLY valid JSON, no markdown formatting."""
                 })
         
         return reviews
+    
+    def _clean_review_text(self, text: str) -> str:
+        """Clean review text from markdown artifacts, image links, and category ratings"""
+        if not text:
+            return ""
+        
+        # Remove markdown image syntax: ![alt](url)
+        text = re.sub(r'!\[([^\]]*)\]\([^)]+\)', '', text)
+        
+        # Remove standalone image URLs
+        text = re.sub(r'https?://[^\s]+\.(png|jpg|jpeg|gif|svg)[^\s]*', '', text)
+        
+        # Remove category rating lines like "- Facilities ![](url)"
+        text = re.sub(r'-\s*[A-Za-z\s/]+\s*!\[\]\([^)]+\)', '', text)
+        
+        # Remove remaining markdown link syntax: [text](url)
+        text = re.sub(r'\[([^\]]*)\]\([^)]+\)', r'\1', text)
+        
+        # Remove lines that are just category names with no content
+        lines = text.split('\n')
+        cleaned_lines = []
+        for line in lines:
+            line = line.strip()
+            # Skip lines that are just "- Category Name" or similar
+            if re.match(r'^-?\s*[A-Za-z\s/]+\s*$', line) and len(line) < 30:
+                continue
+            if line:
+                cleaned_lines.append(line)
+        
+        text = ' '.join(cleaned_lines)
+        
+        # Clean up multiple spaces and dots
+        text = re.sub(r'\s+', ' ', text)
+        text = re.sub(r'\.{2,}', '.', text)
+        text = re.sub(r'\s*\.\s*-\s*', '. ', text)
+        
+        return text.strip()
     
     def analyze_reviews_semantically(
         self,

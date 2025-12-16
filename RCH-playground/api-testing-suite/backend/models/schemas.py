@@ -200,11 +200,17 @@ class FirecrawlCredentials(BaseModel):
 
 class AnthropicCredentials(BaseModel):
     """Anthropic Claude API Credentials"""
-    api_key: Optional[str] = Field(None, alias="apiKey")
-    apiKey: Optional[str] = None  # Support camelCase from frontend
+    api_key: Optional[str] = None
     
     class Config:
+        populate_by_name = True
         allow_population_by_field_name = True
+    
+    def __init__(self, **data):
+        # Normalize camelCase to snake_case
+        if 'apiKey' in data:
+            data['api_key'] = data.pop('apiKey')
+        super().__init__(**data)
 
 
 class OSPlacesCredentials(BaseModel):

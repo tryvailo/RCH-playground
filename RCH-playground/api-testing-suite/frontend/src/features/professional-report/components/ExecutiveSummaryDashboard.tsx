@@ -1,6 +1,7 @@
 import React from 'react';
 import { TrendingUp, Shield, DollarSign, Users, AlertCircle, Award, MapPin, Star } from 'lucide-react';
 import PriceComparisonChart from './PriceComparisonChart';
+import VerdictBadge from './VerdictBadge';
 import type { ProfessionalReportData } from '../types';
 
 interface ExecutiveSummaryDashboardProps {
@@ -25,6 +26,13 @@ export default function ExecutiveSummaryDashboard({ report }: ExecutiveSummaryDa
 
   return (
     <div className="space-y-6">
+      {/* Verdict Badge - Overall Match Quality */}
+      {topHome && (
+        <div className="flex items-center justify-center">
+          <VerdictBadge score={topHome.matchScore} size="lg" showIcon showScore />
+        </div>
+      )}
+
       {/* Key Metrics Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-4 border border-blue-200">

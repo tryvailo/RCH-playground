@@ -30,6 +30,11 @@ class StaffQualityAnalyzeResponse(BaseModel):
     staff_quality_score: Dict[str, Any]
     carehome_co_uk: Optional[Dict[str, Any]] = None
     indeed: Optional[Dict[str, Any]] = None
+    perplexity_research: Optional[Dict[str, Any]] = None
+    key_findings_summary: Optional[Dict[str, Any]] = None
+    # Enhanced signals for improved accuracy
+    enforcement_signals: Optional[Dict[str, Any]] = None  # CQC enforcement actions
+    company_signals: Optional[Dict[str, Any]] = None  # Companies House director/financial data
 
 
 @router.post("/analyze", response_model=StaffQualityAnalyzeResponse)
