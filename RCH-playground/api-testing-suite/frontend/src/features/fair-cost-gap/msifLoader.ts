@@ -49,7 +49,7 @@ async function checkBackendAvailable(): Promise<boolean> {
 /**
  * Loads XLS file via backend API (to avoid CORS issues)
  */
-async function fetchXLSFile(url: string): Promise<ArrayBuffer> {
+async function fetchXLSFile(fileUrl: string): Promise<ArrayBuffer> {
   // Check if backend is available first
   const isBackendAvailable = await checkBackendAvailable();
   
@@ -61,13 +61,13 @@ async function fetchXLSFile(url: string): Promise<ArrayBuffer> {
   // Use backend API to fetch file (avoids CORS)
   try {
     const API_BASE_URL = import.meta.env.VITE_API_URL || '';
-      const url = API_BASE_URL ? `${API_BASE_URL}/api/proxy-fetch` : '/api/proxy-fetch';
-      const response = await fetch(url, {
+    const proxyEndpoint = API_BASE_URL ? `${API_BASE_URL}/api/proxy-fetch` : '/api/proxy-fetch';
+    const response = await fetch(proxyEndpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ url }),
+      body: JSON.stringify({ url: fileUrl }),
       signal: AbortSignal.timeout(30000), // 30 second timeout
     });
     

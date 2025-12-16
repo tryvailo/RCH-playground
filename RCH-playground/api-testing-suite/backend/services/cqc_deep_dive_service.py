@@ -199,7 +199,7 @@ class CQCDeepDiveService:
         Returns:
             CQCDeepDive object with all required data
         """
-        # Extract current ratings from DB
+        # First try to get live data from CQC API
         overall = str(db_data.get('cqc_rating_overall') or 'Unknown').strip()
         safe = str(db_data.get('cqc_rating_safe') or 'Unknown').strip()
         effective = str(db_data.get('cqc_rating_effective') or 'Unknown').strip()
@@ -207,10 +207,54 @@ class CQCDeepDiveService:
         responsive = str(db_data.get('cqc_rating_responsive') or 'Unknown').strip()
         well_led = str(db_data.get('cqc_rating_well_led') or 'Unknown').strip()
         
-        # Extract dates
+        # Extract dates from DB initially
         last_inspection_date = self._parse_date(db_data.get('cqc_last_inspection_date'))
         publication_date = self._parse_date(db_data.get('cqc_publication_date'))
         report_url = db_data.get('cqc_latest_report_url')
+        
+        # Try to enrich with live CQC API data
+        try:
+            location_details = await self.cqc_client.get_location_details(location_id)
+            if location_details:
+                current_ratings = location_details.get('currentRatings', {})
+                overall_data = current_ratings.get('overall', {})
+                
+                # Get overall rating
+                api_overall = overall_data.get('rating')
+                if api_overall:
+                    overall = api_overall
+                
+                # Get detailed key question ratings
+                key_question_ratings = overall_data.get('keyQuestionRatings', [])
+                for kqr in key_question_ratings:
+                    name = kqr.get('name', '').lower()
+                    rating = kqr.get('rating')
+                    if rating:
+                        if name == 'safe':
+                            safe = rating
+                        elif name == 'effective':
+                            effective = rating
+                        elif name == 'caring':
+                            caring = rating
+                        elif name == 'responsive':
+                            responsive = rating
+                        elif name == 'well-led' or name == 'wellled' or name == 'well_led':
+                            well_led = rating
+                
+                # Get dates from API
+                report_date = overall_data.get('reportDate')
+                if report_date:
+                    last_inspection_date = self._parse_date(report_date)
+                    publication_date = self._parse_date(report_date)
+                
+                # Get report URL
+                report_link_id = overall_data.get('reportLinkId')
+                if report_link_id:
+                    report_url = f"https://www.cqc.org.uk/location/{location_id}/reports"
+                
+                logger.info(f"Enriched CQC data for {location_id}: {overall}, Safe={safe}, Effective={effective}, Caring={caring}, Responsive={responsive}, Well-led={well_led}")
+        except Exception as e:
+            logger.warning(f"Failed to get CQC API details for {location_id}: {e}")
         
         # Parse regulated activities
         regulated_activities = self.parse_regulated_activities(

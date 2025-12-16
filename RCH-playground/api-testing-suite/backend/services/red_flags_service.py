@@ -46,6 +46,8 @@ class RedFlagsService:
         low_risk_count = 0
         
         for home in care_homes:
+            if not home:
+                continue
             assessment = self._assess_single_home(home, questionnaire)
             homes_assessment.append(assessment)
             
@@ -81,12 +83,27 @@ class RedFlagsService:
         questionnaire: Dict[str, Any]
     ) -> Dict[str, Any]:
         """Assess a single care home for red flags and risks"""
+        if not home or not isinstance(home, dict):
+            return {
+                'home_id': None,
+                'home_name': 'Unknown',
+                'red_flags': [],
+                'warnings': [],
+                'risk_score': 0,
+                'overall_risk_level': 'low',
+                'financial_assessment': {'status': 'unknown', 'risk_score': 0, 'red_flags': [], 'warnings': []},
+                'cqc_assessment': {'status': 'unknown', 'risk_score': 0, 'red_flags': [], 'warnings': []},
+                'staff_assessment': {'status': 'unknown', 'risk_score': 0, 'red_flags': [], 'warnings': []},
+                'pricing_assessment': {'status': 'unknown', 'risk_score': 0, 'red_flags': [], 'warnings': []}
+            }
+        
         red_flags = []
         warnings = []
         risk_score = 0
         
-        home_id = home.get('id')
-        home_name = home.get('name', 'Unknown')
+        try:
+            home_id = home.get('id')
+            home_name = home.get('name', 'Unknown')
         
         # 1. Financial Stability Warnings
         financial_flags = self._assess_financial_stability(home)
@@ -115,18 +132,32 @@ class RedFlagsService:
         # Calculate overall risk level
         overall_risk_level = self._calculate_risk_level(risk_score, len(red_flags))
         
-        return {
-            'home_id': home_id,
-            'home_name': home_name,
-            'red_flags': red_flags,
-            'warnings': warnings,
-            'risk_score': min(risk_score, 100),  # Cap at 100
-            'overall_risk_level': overall_risk_level,
-            'financial_assessment': financial_flags,
-            'cqc_assessment': cqc_flags,
-            'staff_assessment': staff_flags,
-            'pricing_assessment': pricing_flags
-        }
+            return {
+                'home_id': home_id,
+                'home_name': home_name,
+                'red_flags': red_flags,
+                'warnings': warnings,
+                'risk_score': min(risk_score, 100),  # Cap at 100
+                'overall_risk_level': overall_risk_level,
+                'financial_assessment': financial_flags,
+                'cqc_assessment': cqc_flags,
+                'staff_assessment': staff_flags,
+                'pricing_assessment': pricing_flags
+            }
+        except Exception as e:
+            logger.error(f"Error assessing home {home.get('name', 'Unknown') if isinstance(home, dict) else 'Unknown'}: {e}")
+            return {
+                'home_id': home.get('id') if isinstance(home, dict) else None,
+                'home_name': home.get('name', 'Unknown') if isinstance(home, dict) else 'Unknown',
+                'red_flags': [],
+                'warnings': [{'type': 'system', 'severity': 'low', 'title': 'Assessment Error', 'description': str(e)}],
+                'risk_score': 0,
+                'overall_risk_level': 'low',
+                'financial_assessment': {'status': 'error', 'risk_score': 0, 'red_flags': [], 'warnings': []},
+                'cqc_assessment': {'status': 'error', 'risk_score': 0, 'red_flags': [], 'warnings': []},
+                'staff_assessment': {'status': 'error', 'risk_score': 0, 'red_flags': [], 'warnings': []},
+                'pricing_assessment': {'status': 'error', 'risk_score': 0, 'red_flags': [], 'warnings': []}
+            }
     
     def _assess_financial_stability(self, home: Dict[str, Any]) -> Dict[str, Any]:
         """Assess financial stability and identify red flags"""

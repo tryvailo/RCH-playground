@@ -227,18 +227,17 @@ class ComparativeAnalysisService:
             } for i, home in enumerate(homes)}
         })
         
-        # Add detailed CQC ratings if available
-        if homes[0].get('cqcDeepDive') and homes[0]['cqcDeepDive'].get('detailed_ratings'):
-            detailed_ratings = ['Safe', 'Effective', 'Caring', 'Responsive', 'Well-led']
-            for rating in detailed_ratings:
-                comparison_rows.append({
-                    'category': 'CQC Ratings',
-                    'metric': rating,
-                    'homes': {f'home_{i+1}': {
-                        'value': self._get_detailed_cqc_rating(home, rating),
-                        'highlight': False
-                    } for i, home in enumerate(homes)}
-                })
+        # Add detailed CQC ratings - always show, use fallback if no detailed data
+        detailed_ratings = ['Safe', 'Effective', 'Caring', 'Responsive', 'Well-led']
+        for rating in detailed_ratings:
+            comparison_rows.append({
+                'category': 'CQC Ratings',
+                'metric': rating,
+                'homes': {f'home_{i+1}': {
+                    'value': self._get_detailed_cqc_rating(home, rating),
+                    'highlight': False
+                } for i, home in enumerate(homes)}
+            })
         
         # Row 5: Pricing
         comparison_rows.append({
@@ -713,14 +712,31 @@ class ComparativeAnalysisService:
         return 0
     
     def _get_detailed_cqc_rating(self, home: Dict[str, Any], rating_type: str) -> str:
-        """Get detailed CQC rating"""
+        """Get detailed CQC rating with fallback to overall rating"""
+        invalid_values = ['Unknown', 'N/A', '', None, 'None']
+        
+        # Try cqcDeepDive detailed_ratings first
         cqc_deep_dive = home.get('cqcDeepDive')
         if cqc_deep_dive and cqc_deep_dive.get('detailed_ratings'):
             detailed = cqc_deep_dive['detailed_ratings']
             rating_key = rating_type.lower().replace('-', '_')
             rating_obj = detailed.get(rating_key)
             if rating_obj:
-                return rating_obj.get('rating', 'N/A')
+                rating = rating_obj.get('rating')
+                if rating and rating not in invalid_values:
+                    return rating
+        
+        # Try cqcDeepDive overall rating
+        if cqc_deep_dive:
+            overall_from_deep = cqc_deep_dive.get('overall_rating') or cqc_deep_dive.get('current_rating')
+            if overall_from_deep and overall_from_deep not in invalid_values:
+                return overall_from_deep
+        
+        # Fallback to home-level CQC rating
+        overall_rating = home.get('cqcRating') or home.get('cqc_rating')
+        if overall_rating and overall_rating not in invalid_values:
+            return overall_rating
+        
         return 'N/A'
     
     def _format_financial_metric(self, value: Optional[float]) -> str:

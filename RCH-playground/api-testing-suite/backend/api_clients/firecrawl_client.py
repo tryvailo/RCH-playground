@@ -293,15 +293,18 @@ class FirecrawlAPIClient:
             payload["scrapeOptions"] = scrape_options
         
         try:
+            # Search endpoint is v1, not v2
+            search_url = "https://api.firecrawl.dev/v1/search"
             response = await self.client.post(
-                f"{self.base_url}/search",
+                search_url,
                 json=payload
             )
             response.raise_for_status()
             result = response.json()
-            # API returns data in response.data
+            # API returns data in response.data as list of results
             if result.get("success") and "data" in result:
-                return result["data"]
+                # Return in expected format with 'web' key for compatibility
+                return {"web": result["data"]}
             return result
         except httpx.HTTPStatusError as e:
             error_detail = ""

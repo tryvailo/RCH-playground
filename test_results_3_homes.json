@@ -1,0 +1,80 @@
+[
+  {
+    "name": "Clare Court",
+    "url": "https://www.averyhealthcare.co.uk/our-homes/clare-court",
+    "status": "success",
+    "method": "3-phase-semantic-v2.5",
+    "completeness": {
+      "staff": true,
+      "facilities": true,
+      "services": true,
+      "pricing": true,
+      "activities": true,
+      "contact": true,
+      "nutrition": true,
+      "reviews": true,
+      "awards": true,
+      "safety": true,
+      "transport": true,
+      "media": true,
+      "policies": false,
+      "events": true,
+      "faq": false,
+      "about": true
+    },
+    "categories_filled": 14,
+    "total_categories": 16
+  },
+  {
+    "name": "Metchley Manor",
+    "url": "https://www.careuk.com/care-homes/metchley-manor",
+    "status": "success",
+    "method": "3-phase-semantic-v2.5",
+    "completeness": {
+      "staff": true,
+      "facilities": true,
+      "services": true,
+      "pricing": true,
+      "activities": true,
+      "contact": true,
+      "nutrition": true,
+      "reviews": true,
+      "awards": true,
+      "safety": true,
+      "transport": true,
+      "media": true,
+      "policies": false,
+      "events": true,
+      "faq": false,
+      "about": true
+    },
+    "categories_filled": 14,
+    "total_categories": 16
+  },
+  {
+    "name": "Bartley Green Lodge",
+    "url": "https://www.sanctuary-care.co.uk/care-homes/bartley-green-lodge",
+    "status": "success",
+    "method": "3-phase-semantic-v2.5",
+    "completeness": {
+      "staff": true,
+      "facilities": true,
+      "services": true,
+      "pricing": true,
+      "activities": true,
+      "contact": true,
+      "nutrition": true,
+      "reviews": true,
+      "awards": true,
+      "safety": true,
+      "transport": true,
+      "media": true,
+      "policies": false,
+      "events": true,
+      "faq": false,
+      "about": true
+    },
+    "categories_filled": 14,
+    "total_categories": 16
+  }
+]

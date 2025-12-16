@@ -1,0 +1,34 @@
+{
+  "cqc": {
+    "partner_code": "RightCareHomeTest",
+    "use_without_code": false,
+    "primary_subscription_key": "e96322da6d094f0ebec30c526a74205a",
+    "secondary_subscription_key": "b9dfa372a9ec40cf96fa4d5e1c1dbc23"
+  },
+  "fsa": {},
+  "google_places": {
+    "api_key": "AIzaSyDAMAyN1b8t05DJGIBt9jr6FA3zEbAVOU8",
+    "search_engine_id": "425839836dedd4cea"
+  },
+  "perplexity": {
+    "api_key": "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"
+  },
+  "openai": {
+    "api_key": "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"
+  },
+  "firecrawl": {
+    "api_key": "fc-864a2c592f884561aa6887041fafcaf8"
+  },
+  "companies_house": {
+    "api_key": "cff980e9-34b2-4060-a606-580aefae4f82"
+  },
+  "os_places": {
+    "api_key": "4rt8r3Hnr6W4PreGYYtClGmmxix1ICTz",
+    "api_secret": "vkN8lePzf2EhSG49",
+    "places_endpoint": "https://api.os.uk/search/places/v1/",
+    "features_endpoint": "https://api.os.uk/features/v1/wfs"
+  },
+  "anthropic": {
+    "api_key": "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"
+  }
+}

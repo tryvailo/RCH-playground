@@ -1,4 +1,3 @@
-import React from 'react';
 import type { FSADetailed } from '../types';
 
 interface FSAInspectionHistoryProps {
@@ -46,7 +45,7 @@ export default function FSAInspectionHistory({ fsaData }: FSAInspectionHistoryPr
     allRatings.unshift({
       date: new Date().toISOString().split('T')[0],
       rating: typeof fsaData.rating === 'number' ? fsaData.rating : parseInt(String(fsaData.rating)) || 0,
-      rating_date: fsaData.rating_date
+      rating_date: fsaData.rating_date || undefined
     });
   }
 

@@ -1,6 +1,8 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
 import axios from 'axios';
-import type { QuestionnaireResponse, FreeReportResponse, FreeReportData, CareHomeData, FairCostGapData, FundingEligibility } from '../types';
+import type { QuestionnaireResponse, FreeReportResponse, FreeReportData, CareHomeData, FairCostGapData, FundingEligibility, AreaProfile, AreaMapData } from '../types';
+import { getFairCostLower } from '../../fair-cost-gap/msifLoader';
+import type { CareType } from '../../fair-cost-gap/types';
 
 // Use relative path through Vite proxy, fallback to direct connection only if env var is set
 const API_BASE_URL = import.meta.env.VITE_API_URL || '';
@@ -42,11 +44,11 @@ const getLocalAuthorityFromPostcode = (postcode: string): string => {
   return 'Westminster'; // Default fallback
 };
 
-// Helper: Get care type for MSIF API
-const getMSIFCareType = (careType?: string): string => {
+// Helper: Convert care type string to MSIF CareType enum
+const toMSIFCareType = (careType?: string): CareType => {
   if (!careType) return 'nursing';
   
-  const mapping: Record<string, string> = {
+  const mapping: Record<string, CareType> = {
     residential: 'residential',
     nursing: 'nursing',
     dementia: 'residential_dementia',
@@ -56,25 +58,19 @@ const getMSIFCareType = (careType?: string): string => {
   return mapping[careType] || 'nursing';
 };
 
-// Fetch MSIF lower bound
+// Fetch MSIF lower bound using shared msifLoader
+// This ensures consistent MSIF data across Free Report and other tabs
 const fetchMSIFLowerBound = async (localAuthority: string, careType: string): Promise<number> => {
-  const msifCareType = getMSIFCareType(careType);
+  const msifCareType = toMSIFCareType(careType);
   
   try {
-    const url = API_BASE_URL 
-      ? `${API_BASE_URL}/api/msif/fair-cost/${encodeURIComponent(localAuthority)}`
-      : `/api/msif/fair-cost/${encodeURIComponent(localAuthority)}`;
-    const response = await axios.get<{ fair_cost_gbp_week: number }>(
-      url,
-      {
-        params: { care_type: msifCareType },
-      }
-    );
-    return response.data.fair_cost_gbp_week;
+    // Use shared getFairCostLower from msifLoader (with caching and fallback)
+    const fairCost = await getFairCostLower(localAuthority, msifCareType);
+    return fairCost || 700; // Default fallback if null
   } catch (error) {
-    console.warn('MSIF API failed, using fallback:', error);
+    console.warn('MSIF loader failed, using fallback:', error);
     // Fallback values based on care type
-    const fallbackValues: Record<string, number> = {
+    const fallbackValues: Record<CareType, number> = {
       residential: 700,
       nursing: 1048,
       residential_dementia: 800,
@@ -149,8 +145,6 @@ const calculateFundingEligibility = (questionnaire: QuestionnaireResponse): Fund
 const generateMockReportData = (
   questionnaire: QuestionnaireResponse
 ): FreeReportData => {
-  const localAuthority = getLocalAuthorityFromPostcode(questionnaire.postcode);
-  const careType = questionnaire.care_type || 'residential';
   const marketPrice = questionnaire.budget || 1200;
   const msifLowerBound = 1048; // Mock MSIF value
   
@@ -279,11 +273,31 @@ const transformBackendResponse = (
   const fundingEligibility = responseData.funding_eligibility || 
     calculateFundingEligibility(responseData.questionnaire);
 
+  // Transform area_profile if provided by backend
+  const areaProfile: AreaProfile | undefined = (responseData as any).area_profile ? {
+    area_name: (responseData as any).area_profile.area_name,
+    total_homes: (responseData as any).area_profile.total_homes,
+    average_weekly_cost: (responseData as any).area_profile.average_weekly_cost,
+    cost_vs_national: (responseData as any).area_profile.cost_vs_national,
+    cqc_distribution: (responseData as any).area_profile.cqc_distribution,
+    wellbeing_index: (responseData as any).area_profile.wellbeing_index,
+    demographics: (responseData as any).area_profile.demographics,
+  } : undefined;
+
+  // Transform area_map if provided by backend
+  const areaMap: AreaMapData | undefined = (responseData as any).area_map ? {
+    user_location: (responseData as any).area_map.user_location,
+    homes: (responseData as any).area_map.homes,
+    amenities: (responseData as any).area_map.amenities,
+  } : undefined;
+
   return {
     homes,
     fairCostGap,
     chcTeaserPercent: responseData.questionnaire.chc_probability || 0,
     fundingEligibility,
+    areaProfile,
+    areaMap,
   };
 };
 
@@ -293,10 +307,9 @@ export const useGenerateFreeReport = () => {
     mutationFn: async (questionnaire: QuestionnaireResponse): Promise<FreeReportData> => {
       const localAuthority = getLocalAuthorityFromPostcode(questionnaire.postcode);
       const careType = questionnaire.care_type || 'residential';
-      const msifCareType = getMSIFCareType(careType);
 
       try {
-        // Step 1: Try to fetch MSIF lower bound
+        // Step 1: Try to fetch MSIF lower bound (using shared msifLoader)
         let msifLowerBound: number;
         try {
           msifLowerBound = await fetchMSIFLowerBound(localAuthority, careType);

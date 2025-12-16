@@ -1,0 +1,113 @@
+
+🚀 Starting Matching Tests
+   Backend URL: http://localhost:8000
+   Questionnaires directory: /Users/alexandertryvailo/Documents/Products/RCH-playground/api-testing-suite/frontend/public/sample_questionnaires
+
+📚 Loaded 6 questionnaires
+
+================================================================================
+📋 Testing: questionnaire_1.json
+   Postcode: SW1A 1AA
+   Care Type: residential
+   Budget: £1200.0/week
+================================================================================
+❌ Error: HTTP 500: Internal Server Error
+
+================================================================================
+📋 Testing: questionnaire_2.json
+   Postcode: M1 1AA
+   Care Type: nursing
+   Budget: £1500.0/week
+================================================================================
+❌ Error: HTTP 500: Internal Server Error
+
+================================================================================
+📋 Testing: questionnaire_3.json
+   Postcode: B1 1AA
+   Care Type: dementia
+   Budget: £1000.0/week
+================================================================================
+❌ Error: HTTP 500: Internal Server Error
+
+================================================================================
+📋 Testing: questionnaire_4.json
+   Postcode: B44 8DD
+   Care Type: residential
+   Budget: £950.0/week
+================================================================================
+❌ Error: HTTP 500: Internal Server Error
+
+================================================================================
+📋 Testing: questionnaire_5.json
+   Postcode: B31 2TX
+   Care Type: dementia
+   Budget: £1200.0/week
+================================================================================
+❌ Error: HTTP 500: Internal Server Error
+
+================================================================================
+📋 Testing: questionnaire_6.json
+   Postcode: B72 1DU
+   Care Type: nursing
+   Budget: £1400.0/week
+================================================================================
+❌ Error: HTTP 500: Internal Server Error
+
+====================================================================================================
+📊 MATCHING TEST RESULTS - COMPARISON REPORT
+====================================================================================================
+Generated: 2025-11-19 17:13:58
+
+Summary: 0/6 questionnaires tested successfully
+
+====================================================================================================
+DETAILED RESULTS BY QUESTIONNAIRE
+====================================================================================================
+
+❌ questionnaire_1.json: FAILED
+   Error: HTTP 500: Internal Server Error
+
+❌ questionnaire_2.json: FAILED
+   Error: HTTP 500: Internal Server Error
+
+❌ questionnaire_3.json: FAILED
+   Error: HTTP 500: Internal Server Error
+
+❌ questionnaire_4.json: FAILED
+   Error: HTTP 500: Internal Server Error
+
+❌ questionnaire_5.json: FAILED
+   Error: HTTP 500: Internal Server Error
+
+❌ questionnaire_6.json: FAILED
+   Error: HTTP 500: Internal Server Error
+
+====================================================================================================
+COMPARISON BY SCENARIO
+====================================================================================================
+
+📌 SAFE BET:
+--------------------------------------------------------------------------------
+   No matches found for this scenario
+
+📌 BEST VALUE:
+--------------------------------------------------------------------------------
+   No matches found for this scenario
+
+📌 PREMIUM:
+--------------------------------------------------------------------------------
+   No matches found for this scenario
+
+====================================================================================================
+UNIQUENESS ANALYSIS
+====================================================================================================
+
+Total unique care homes across all scenarios: 0
+
+✅ All recommendations are unique!
+
+====================================================================================================
+
+💾 Results saved to: /Users/alexandertryvailo/Documents/Products/RCH-playground/api-testing-suite/backend/matching_test_results.json
+
+📄 Report saved to: /Users/alexandertryvailo/Documents/Products/RCH-playground/api-testing-suite/backend/matching_test_report.txt

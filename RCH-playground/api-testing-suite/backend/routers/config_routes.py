@@ -10,10 +10,7 @@ from pathlib import Path
 
 from models.schemas import ApiCredentials
 from config_manager import get_credentials, save_config
-
-# Import credentials_store from main module to avoid circular imports
-# This will be initialized in main.py
-credentials_store = {}
+from core.dependencies import credentials_store
 
 router = APIRouter(prefix="/api/config", tags=["Configuration"])
 

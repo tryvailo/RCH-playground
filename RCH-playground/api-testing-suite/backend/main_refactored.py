@@ -36,7 +36,8 @@ from routers import (
     firecrawl_routes,
     report_routes,
     analytics_routes,
-    utility_routes
+    utility_routes,
+    indeed_search_routes
 )
 
 
@@ -151,6 +152,9 @@ app.include_router(analytics_routes.router)
 
 # Utility routes
 app.include_router(utility_routes.router)
+
+# Indeed Search routes (staff-analysis approach)
+app.include_router(indeed_search_routes.router)
 
 # RCH-data routes (already modularized)
 try:

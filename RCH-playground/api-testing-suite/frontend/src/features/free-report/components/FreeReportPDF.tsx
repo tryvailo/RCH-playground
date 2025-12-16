@@ -571,9 +571,15 @@ const FreeReportPDF: React.FC<FreeReportPDFProps> = ({ data, questionnaire }) =>
             },
             {
               name: 'FSA Rating',
-              home1: homes[0]?.fsa_color.toUpperCase() || 'N/A',
-              home2: homes[1]?.fsa_color.toUpperCase() || 'N/A',
-              home3: homes[2]?.fsa_color.toUpperCase() || 'N/A',
+              home1: homes[0]?.fsa_rating != null 
+                ? `${homes[0].fsa_rating}/5` 
+                : homes[0]?.fsa_color?.toUpperCase() || 'N/A',
+              home2: homes[1]?.fsa_rating != null 
+                ? `${homes[1].fsa_rating}/5` 
+                : homes[1]?.fsa_color?.toUpperCase() || 'N/A',
+              home3: homes[2]?.fsa_rating != null 
+                ? `${homes[2].fsa_rating}/5` 
+                : homes[2]?.fsa_color?.toUpperCase() || 'N/A',
             },
             {
               name: 'CQC Rating',

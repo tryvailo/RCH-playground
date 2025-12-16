@@ -110,11 +110,11 @@ class ProfessionalMatchingService:
         weights = ScoringWeights()
         applied_conditions = []
         
-        # Extract questionnaire data
-        medical_needs = questionnaire.get('section_3_medical_needs', {})
-        safety_needs = questionnaire.get('section_4_safety_special_needs', {})
-        location_budget = questionnaire.get('section_2_location_budget', {})
-        timeline = questionnaire.get('section_5_timeline', {})
+        # Extract questionnaire data (handle None values)
+        medical_needs = questionnaire.get('section_3_medical_needs') or {}
+        safety_needs = questionnaire.get('section_4_safety_special_needs') or {}
+        location_budget = questionnaire.get('section_2_location_budget') or {}
+        timeline = questionnaire.get('section_5_timeline') or {}
         
         fall_history = safety_needs.get('q13_fall_history', '')
         medical_conditions = medical_needs.get('q9_medical_conditions', [])
@@ -711,12 +711,13 @@ class ProfessionalMatchingService:
             activities = [activities]
         
         # Match activities to social personality
-        if social_personality == 'very_social':
+        # Support both variants: 'very_social'/'very_sociable', 'moderately_social'/'moderately_sociable'
+        if social_personality in ('very_social', 'very_sociable'):
             if len(activities) >= 5:
                 activity_score = 3.0
             elif len(activities) >= 3:
                 activity_score = 2.0
-        elif social_personality == 'moderately_social':
+        elif social_personality in ('moderately_social', 'moderately_sociable'):
             if len(activities) >= 3:
                 activity_score = 2.5
             elif len(activities) >= 1:
@@ -756,8 +757,8 @@ class ProfessionalMatchingService:
             score = ch_scoring.get('financial_stability_score', 0)
             return min(score / max_score, 1.0)
         
-        # Fallback to old format
-        financial_data = enriched_data.get('financial_data', {})
+        # Fallback to old format (handle None)
+        financial_data = enriched_data.get('financial_data') or {}
         
         # 1. Altman Z-Score (10 points)
         altman_score = 0.0
@@ -827,7 +828,13 @@ class ProfessionalMatchingService:
         """
         Calculate staff quality score (0-1.0)
         
+        Uses StaffQualityService data if available (from staff_quality enrichment),
+        otherwise falls back to legacy staff_data fields.
+        
         Factors (20 points total):
+        - Staff Quality Score from StaffQualityService: up to 16 points (based on 0-100 score)
+        - CQC Well-Led/Effective ratings: 4 bonus points
+        OR (fallback):
         - Employee satisfaction: 8 points
         - Staff tenure: 7 points
         - Turnover rate: 5 points
@@ -835,6 +842,48 @@ class ProfessionalMatchingService:
         score = 0.0
         max_score = 20.0
         
+        # Priority 1: Use StaffQualityService enriched data if available
+        staff_quality = enriched_data.get('staff_quality', {})
+        staff_quality_score_data = staff_quality.get('staff_quality_score', {})
+        
+        if staff_quality_score_data and staff_quality_score_data.get('overall_score') is not None:
+            # Use the comprehensive staff quality score (0-100 scale)
+            overall_score = staff_quality_score_data.get('overall_score', 0)
+            try:
+                overall_score = float(overall_score)
+            except (ValueError, TypeError):
+                overall_score = 0.0
+            
+            # Convert 0-100 to 0-16 points (max 16 from overall score)
+            base_score = (overall_score / 100) * 16.0
+            score += base_score
+            
+            # Bonus points from CQC components (max 4 points)
+            components = staff_quality_score_data.get('components', {})
+            
+            # CQC Well-Led bonus (0-2 points)
+            well_led = components.get('cqc_well_led', {})
+            well_led_rating = well_led.get('rating', '')
+            if well_led_rating == 'Outstanding':
+                score += 2.0
+            elif well_led_rating == 'Good':
+                score += 1.5
+            elif well_led_rating == 'Requires improvement':
+                score += 0.5
+            
+            # CQC Effective bonus (0-2 points)
+            effective = components.get('cqc_effective', {})
+            effective_rating = effective.get('rating', '')
+            if effective_rating == 'Outstanding':
+                score += 2.0
+            elif effective_rating == 'Good':
+                score += 1.5
+            elif effective_rating == 'Requires improvement':
+                score += 0.5
+            
+            return min(score / max_score, 1.0)
+        
+        # Priority 2: Fallback to legacy staff_data fields
         staff_data = enriched_data.get('staff_data', {})
         
         # 1. Employee satisfaction (8 points)
@@ -959,9 +1008,11 @@ class ProfessionalMatchingService:
             score += 3.0
         
         # 3. Specialist programs (3 points)
-        specialist_programs = home.get('specialist_programs', [])
+        specialist_programs = home.get('specialist_programs') or []
         if isinstance(specialist_programs, str):
             specialist_programs = [specialist_programs]
+        if specialist_programs is None:
+            specialist_programs = []
         
         program_match = False
         if 'dementia_alzheimers' in medical_conditions:
@@ -977,9 +1028,11 @@ class ProfessionalMatchingService:
             score += 1.5
         
         # 4. Enrichment activities (2 points)
-        enrichment = home.get('enrichment_activities', [])
+        enrichment = home.get('enrichment_activities') or []
         if isinstance(enrichment, str):
             enrichment = [enrichment]
+        if enrichment is None:
+            enrichment = []
         
         if len(enrichment) >= 5:
             score += 2.0

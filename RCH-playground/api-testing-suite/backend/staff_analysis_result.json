@@ -1,0 +1,104 @@
+{
+  "care_home": {
+    "id": "1-10224972832",
+    "name": "Kinross Residential Care Home",
+    "address": "",
+    "postcode": "PO6 1EE",
+    "local_authority": ""
+  },
+  "cqc_data": {
+    "well_led": "Good",
+    "effective": "Good",
+    "last_inspection_date": "2022-12-07"
+  },
+  "reviews": [
+    {
+      "source": "Google",
+      "rating": 1,
+      "sentiment": "NEGATIVE",
+      "text": "My grandma was placed in here for 1 month and one month only!!\n\nIt was horrible to the point, everyday I was in tears and wanted to collect her. In that short space of time she had clothes & money stolen. This was raised with management and nan was reimbursed with much bother. Should not of happened in the first place.\nno care for nans belongings just dumped them in bin liners at the door when we moved her out, with odd shoes here and there. Her nails were long and she had other people\u2019s clothes on every time we visited. Total disrespect.\n\nAVOID!",
+      "date": "2022-05-03",
+      "author": "J J",
+      "llm_analyzed": true,
+      "sentiment_confidence": 0.95
+    },
+    {
+      "source": "Google",
+      "rating": 5,
+      "sentiment": "POSITIVE",
+      "text": "The staff are friendly, helpful & professional at all times. My Mum looks well cared for and relaxed. She always speaks well of her carers.",
+      "date": "2021-05-31",
+      "author": "Sharon Gough",
+      "llm_analyzed": true,
+      "sentiment_confidence": 0.9
+    },
+    {
+      "source": "Google",
+      "rating": 5,
+      "sentiment": "POSITIVE",
+      "text": "My Father had been in Kinross for over a year. He speaks highly of the staff and service.",
+      "date": "2024-08-02",
+      "author": "Jason Phillips",
+      "llm_analyzed": true,
+      "sentiment_confidence": 0.9
+    }
+  ],
+  "staff_quality_score": {
+    "overall_score": 69.0,
+    "category": "ADEQUATE",
+    "confidence": "Low",
+    "components": {
+      "cqc_well_led": {
+        "score": 75,
+        "weight": 0.4,
+        "rating": "Good"
+      },
+      "cqc_effective": {
+        "score": 70,
+        "weight": 0.2,
+        "rating": "Good"
+      },
+      "cqc_staff_sentiment": {
+        "score": 50,
+        "weight": 0.1
+      },
+      "employee_sentiment": {
+        "score": 66.66666666666667,
+        "weight": 0.3,
+        "review_count": 3
+      }
+    },
+    "flags": [
+      {
+        "type": "yellow",
+        "message": "\u26a0\ufe0f CQC inspection data is 36 months old - may be outdated. Consider requesting updated inspection."
+      },
+      {
+        "type": "yellow",
+        "message": "\u26a0\ufe0f Limited employee review data: Only 3 review(s) found. More reviews would improve accuracy."
+      },
+      {
+        "type": "yellow",
+        "message": "\u26a0\ufe0f No CQC staff sentiment data available from inspection reports. Score calculated without this component."
+      }
+    ],
+    "themes": {
+      "positive": [
+        "Management supportive & approachable"
+      ],
+      "negative": []
+    },
+    "data_quality": {
+      "cqc_data_age": "36 months ago",
+      "review_count": 3,
+      "has_insufficient_data": true,
+      "data_completeness": {
+        "has_cqc_well_led": true,
+        "has_cqc_effective": true,
+        "has_cqc_staff_sentiment": false,
+        "has_employee_reviews": true,
+        "employee_review_count": 3
+      }
+    }
+  }
+}

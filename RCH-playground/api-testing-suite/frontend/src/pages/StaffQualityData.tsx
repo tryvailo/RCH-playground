@@ -40,12 +40,13 @@ interface CQCRating {
 }
 
 interface EmployeeReview {
-  source: 'Indeed' | 'Indeed UK' | 'Google';
+  source: 'Indeed' | 'Indeed UK' | 'Google' | 'CareHome.co.uk';
   rating: number;
   sentiment: 'POSITIVE' | 'MIXED' | 'NEGATIVE' | 'NEUTRAL';
   text?: string;
   date?: string;
   author?: string;
+  reviewerType?: string;  // e.g., "Son of Resident", "Daughter of Resident"
   llm_analyzed?: boolean;
   sentiment_confidence?: number;
 }
@@ -53,12 +54,12 @@ interface EmployeeReview {
 interface StaffQualityScore {
   overallScore: number;
   category: 'EXCELLENT' | 'GOOD' | 'ADEQUATE' | 'CONCERNING' | 'POOR';
-  confidence: 'High' | 'Medium' | 'Low';
+  confidence: 'high' | 'medium' | 'low' | 'High' | 'Medium' | 'Low';
   components: {
-    cqcWellLed: { score: number; weight: number; rating: string | null };
-    cqcEffective: { score: number; weight: number; rating: string | null };
-    cqcStaffSentiment: { score: number; weight: number };
-    employeeSentiment: { score: number | null; weight: number; reviewCount: number };
+    cqcWellLed: { score: number | null; weight: number; rating: string | null; note?: string };
+    cqcEffective: { score: number | null; weight: number; rating: string | null; note?: string };
+    cqcStaffSentiment: { score: number | null; weight: number; note?: string };
+    employeeSentiment: { score: number | null; weight: number; reviewCount: number; source?: string };
   };
   flags: Array<{ type: 'red' | 'yellow'; message: string }>;
   themes: {
@@ -86,8 +87,7 @@ interface CareHomeAnalysis {
   staffQualityScore: StaffQualityScore;
 }
 
-// Preset care homes with location_id from CQC API (used in other parts of the app)
-// These are real care homes with verified location_id for fast analysis
+// Preset care homes with verified CQC location_id for full analysis (CQC + CareHome.co.uk + Google)
 const PRESET_CARE_HOMES: CareHome[] = [
   {
     id: 'preset-1',
@@ -95,7 +95,7 @@ const PRESET_CARE_HOMES: CareHome[] = [
     address: '178 Romford Road, Forest Gate',
     postcode: 'E7 9HY',
     localAuthority: 'Newham',
-    locationId: '1-10224972832', // Verified CQC location_id
+    locationId: '1-125863016', // CQC location ID
   },
   {
     id: 'preset-2',
@@ -103,7 +103,7 @@ const PRESET_CARE_HOMES: CareHome[] = [
     address: '164 Shard End Crescent, Shard End',
     postcode: 'B34 7BP',
     localAuthority: 'Birmingham',
-    locationId: '1-135968358', // Verified CQC location_id
+    locationId: '1-320755658', // CQC location ID - The Orchards, Birmingham
   },
   {
     id: 'preset-3',
@@ -111,7 +111,7 @@ const PRESET_CARE_HOMES: CareHome[] = [
     address: 'West Ashton Road, West Ashton',
     postcode: 'BA14 6DW',
     localAuthority: 'Wiltshire',
-    locationId: '1-126668028', // Verified CQC location_id
+    locationId: '1-130120824', // CQC location ID
   },
   {
     id: 'preset-4',
@@ -119,7 +119,7 @@ const PRESET_CARE_HOMES: CareHome[] = [
     address: 'The Embankment',
     postcode: 'TW1 3DY',
     localAuthority: 'Richmond upon Thames',
-    locationId: '1-10363767558', // Verified CQC location_id
+    locationId: '1-125856379', // CQC location ID
   },
 ];
 
@@ -158,12 +158,17 @@ const generateAnalysis = async (home: CareHome): Promise<CareHomeAnalysis> => {
         } : undefined,
       },
       reviews: (data.reviews || []).map((r: any) => ({
-        source: (r.source === 'Indeed UK' ? 'Indeed UK' : r.source === 'Indeed' ? 'Indeed' : 'Google') as 'Indeed' | 'Indeed UK' | 'Google',
+        source: (
+          r.source === 'CareHome.co.uk' ? 'CareHome.co.uk' :
+          r.source === 'Indeed UK' ? 'Indeed UK' : 
+          r.source === 'Indeed' ? 'Indeed' : 'Google'
+        ) as 'Indeed' | 'Indeed UK' | 'Google' | 'CareHome.co.uk',
         rating: typeof r.rating === 'number' ? r.rating : parseFloat(r.rating) || 0,
         sentiment: (r.sentiment || 'NEUTRAL') as 'POSITIVE' | 'MIXED' | 'NEGATIVE' | 'NEUTRAL',
         text: r.text || '',
         date: r.date || undefined,
         author: r.author || undefined,
+        reviewerType: r.reviewer_type || undefined,
         llm_analyzed: r.llm_analyzed || false,
         sentiment_confidence: r.sentiment_confidence || undefined,
       })),
@@ -543,11 +548,17 @@ export default function StaffQualityData() {
                         <div className="bg-white p-4 rounded-lg border border-gray-200">
                           <div className="flex justify-between items-center mb-2">
                             <span className="text-sm font-medium text-gray-700">CQC Well-Led</span>
-                            <span className="text-xs text-gray-500">{(staffQualityScore.components.cqcWellLed.weight * 100).toFixed(0)}%</span>
+                            <span className="text-xs text-gray-500">
+                              {staffQualityScore.components.cqcWellLed.score !== null 
+                                ? `${((staffQualityScore.components.cqcWellLed.weight || 0) * 100).toFixed(0)}%`
+                                : 'N/A'}
+                            </span>
                           </div>
                           <div className="flex items-center gap-2">
                             <div className="text-2xl font-bold text-gray-900">
-                              {staffQualityScore.components.cqcWellLed.score.toFixed(0)}
+                              {staffQualityScore.components.cqcWellLed.score !== null 
+                                ? staffQualityScore.components.cqcWellLed.score.toFixed(0)
+                                : 'N/A'}
                             </div>
                             {staffQualityScore.components.cqcWellLed.rating && (
                               <span className="text-sm text-gray-600">
@@ -559,11 +570,17 @@ export default function StaffQualityData() {
                         <div className="bg-white p-4 rounded-lg border border-gray-200">
                           <div className="flex justify-between items-center mb-2">
                             <span className="text-sm font-medium text-gray-700">CQC Effective</span>
-                            <span className="text-xs text-gray-500">{(staffQualityScore.components.cqcEffective.weight * 100).toFixed(0)}%</span>
+                            <span className="text-xs text-gray-500">
+                              {staffQualityScore.components.cqcEffective.score !== null
+                                ? `${((staffQualityScore.components.cqcEffective.weight || 0) * 100).toFixed(0)}%`
+                                : 'N/A'}
+                            </span>
                           </div>
                           <div className="flex items-center gap-2">
                             <div className="text-2xl font-bold text-gray-900">
-                              {staffQualityScore.components.cqcEffective.score.toFixed(0)}
+                              {staffQualityScore.components.cqcEffective.score !== null
+                                ? staffQualityScore.components.cqcEffective.score.toFixed(0)
+                                : 'N/A'}
                             </div>
                             {staffQualityScore.components.cqcEffective.rating && (
                               <span className="text-sm text-gray-600">
@@ -575,10 +592,16 @@ export default function StaffQualityData() {
                         <div className="bg-white p-4 rounded-lg border border-gray-200">
                           <div className="flex justify-between items-center mb-2">
                             <span className="text-sm font-medium text-gray-700">CQC Staff Sentiment</span>
-                            <span className="text-xs text-gray-500">{(staffQualityScore.components.cqcStaffSentiment.weight * 100).toFixed(0)}%</span>
+                            <span className="text-xs text-gray-500">
+                              {staffQualityScore.components.cqcStaffSentiment.score !== null
+                                ? `${((staffQualityScore.components.cqcStaffSentiment.weight || 0) * 100).toFixed(0)}%`
+                                : 'N/A'}
+                            </span>
                           </div>
                           <div className="text-2xl font-bold text-gray-900">
-                            {staffQualityScore.components.cqcStaffSentiment.score.toFixed(0)}
+                            {staffQualityScore.components.cqcStaffSentiment.score !== null
+                              ? staffQualityScore.components.cqcStaffSentiment.score.toFixed(0)
+                              : 'N/A'}
                           </div>
                         </div>
                         <div className="bg-white p-4 rounded-lg border border-gray-200">
@@ -833,13 +856,13 @@ export default function StaffQualityData() {
                                       <Star
                                         key={i}
                                         className={`w-4 h-4 ${
-                                          i < Math.floor(review.rating)
+                                          i < Math.floor(review.rating || 0)
                                             ? 'text-yellow-400 fill-current'
                                             : 'text-gray-300'
                                         }`}
                                       />
                                     ))}
-                                    <span className="text-sm text-gray-600 ml-1">{review.rating.toFixed(1)}</span>
+                                    <span className="text-sm text-gray-600 ml-1">{(review.rating || 0).toFixed(1)}</span>
                                   </div>
                                 </div>
                                 <span className={`px-2 py-1 rounded text-xs font-medium ${

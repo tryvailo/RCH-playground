@@ -10,6 +10,8 @@ import MatchScoreRadarChart from './components/MatchScoreRadarChart';
 import CQCRatingTrendChart from './components/CQCRatingTrendChart';
 import FSAInspectionHistory from './components/FSAInspectionHistory';
 import FinancialStabilityChart from './components/FinancialStabilityChart';
+import StaffQualitySection from './components/StaffQualitySection';
+import NeighbourhoodSection from './components/NeighbourhoodSection';
 import PriceComparisonChart from './components/PriceComparisonChart';
 import ReportNavigation from './components/ReportNavigation';
 import QuestionnaireProfile from './components/QuestionnaireProfile';
@@ -23,6 +25,9 @@ import LocationWellbeingSection from './components/LocationWellbeingSection';
 import AreaMapSection from './components/AreaMapSection';
 import AppendixSection from './components/AppendixSection';
 import LLMInsightsSection from './components/LLMInsightsSection';
+import EnforcementActionsSection from './components/EnforcementActionsSection';
+import RegulatedActivitiesSection from './components/RegulatedActivitiesSection';
+import FootfallTrendsSection from './components/FootfallTrendsSection';
 import { useGenerateProfessionalReport, usePollProfessionalReport } from './hooks/useProfessionalReport';
 import { CostAnalysisBlock } from '../cost-analysis';
 import type { ProfessionalQuestionnaireResponse, ProfessionalReportData } from './types';
@@ -955,91 +960,89 @@ export default function ProfessionalReportViewer() {
                                       </div>
                                     </div>
 
-                                    {/* Breakdown Scores */}
-                                    {home.fsaDetailed?.data_available !== false ? (
+                                    {/* Breakdown Scores - UNIFIED: Using RAW scores from FSA API */}
+                                    {/* FSA scores are penalty points: lower is better (0 = best) */}
+                                    {home.fsaDetailed?.breakdown_scores ? (
                                       <div className="mb-6">
                                         <h5 className="text-lg font-semibold mb-3">Detailed Breakdown Scores</h5>
+                                        <p className="text-xs text-gray-500 mb-3">
+                                          FSA penalty points (lower = better, 0 = excellent)
+                                        </p>
                                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                          {/* Hygiene */}
+                                          {/* Hygiene - RAW score directly from FSA API */}
                                           <div className="border-l-4 border-blue-500 pl-4">
                                             <p className="text-sm text-gray-600 mb-1">Hygiene</p>
                                             {(() => {
-                                              const hygiene = home.fsaDetailed?.detailed_sub_scores?.hygiene;
-                                              const normalizedScore = hygiene?.normalized_score;
-                                              // Convert normalized_score (0-100) to raw score (0-20)
-                                              const displayScore = normalizedScore !== null && normalizedScore !== undefined 
-                                                ? Math.round((normalizedScore / 100) * 20)
-                                              : null;
-                                            return (
-                                              <>
-                                                <p className="text-2xl font-bold text-blue-600">
-                                                  {displayScore !== null ? `${displayScore}/20` : 'N/A'}
-                                                </p>
-                                                {hygiene?.label && (
-                                                  <p className="text-sm text-gray-600 mt-1">
-                                                    {hygiene.label}
+                                              const hygieneScore = home.fsaDetailed?.breakdown_scores?.hygiene;
+                                              const hygieneLabel = home.fsaDetailed?.breakdown_scores?.hygiene_label;
+                                              return (
+                                                <>
+                                                  <p className="text-2xl font-bold text-blue-600">
+                                                    {hygieneScore !== null && hygieneScore !== undefined ? `${hygieneScore}/20` : 'N/A'}
                                                   </p>
-                                                )}
-                                              </>
-                                            );
-                                          })()}
-                                        </div>
+                                                  {hygieneLabel && (
+                                                    <p className="text-sm text-gray-600 mt-1">
+                                                      {hygieneLabel}
+                                                    </p>
+                                                  )}
+                                                </>
+                                              );
+                                            })()}
+                                          </div>
 
-                                        {/* Cleanliness (Structural) */}
-                                        <div className="border-l-4 border-green-500 pl-4">
-                                          <p className="text-sm text-gray-600 mb-1">Structural</p>
-                                          {(() => {
-                                            const cleanliness = home.fsaDetailed?.detailed_sub_scores?.cleanliness;
-                                            const normalizedScore = cleanliness?.normalized_score;
-                                            // Convert normalized_score (0-100) to raw score (0-20)
-                                            const displayScore = normalizedScore !== null && normalizedScore !== undefined 
-                                              ? Math.round((normalizedScore / 100) * 20)
-                                              : null;
-                                            return (
-                                              <>
-                                                <p className="text-2xl font-bold text-green-600">
-                                                  {displayScore !== null ? `${displayScore}/20` : 'N/A'}
-                                                </p>
-                                                {cleanliness?.label && (
-                                                  <p className="text-sm text-gray-600 mt-1">
-                                                    {cleanliness.label}
+                                          {/* Structural - RAW score directly from FSA API */}
+                                          <div className="border-l-4 border-green-500 pl-4">
+                                            <p className="text-sm text-gray-600 mb-1">Structural</p>
+                                            {(() => {
+                                              const structuralScore = home.fsaDetailed?.breakdown_scores?.structural;
+                                              const structuralLabel = home.fsaDetailed?.breakdown_scores?.structural_label;
+                                              return (
+                                                <>
+                                                  <p className="text-2xl font-bold text-green-600">
+                                                    {structuralScore !== null && structuralScore !== undefined ? `${structuralScore}/20` : 'N/A'}
                                                   </p>
-                                                )}
-                                              </>
-                                            );
-                                          })()}
-                                        </div>
+                                                  {structuralLabel && (
+                                                    <p className="text-sm text-gray-600 mt-1">
+                                                      {structuralLabel}
+                                                    </p>
+                                                  )}
+                                                </>
+                                              );
+                                            })()}
+                                          </div>
 
-                                        {/* Management */}
-                                        <div className="border-l-4 border-purple-500 pl-4">
-                                          <p className="text-sm text-gray-600 mb-1">Management</p>
-                                          {(() => {
-                                            const management = home.fsaDetailed?.detailed_sub_scores?.management;
-                                            const normalizedScore = management?.normalized_score;
-                                            // Convert normalized_score (0-100) to raw score (0-30)
-                                            const displayScore = normalizedScore !== null && normalizedScore !== undefined 
-                                              ? Math.round((normalizedScore / 100) * 30)
-                                              : null;
-                                            return (
-                                              <>
-                                                <p className="text-2xl font-bold text-purple-600">
-                                                  {displayScore !== null ? `${displayScore}/30` : 'N/A'}
-                                                </p>
-                                                {management?.label && (
-                                                  <p className="text-sm text-gray-600 mt-1">
-                                                    {management.label}
+                                          {/* Management - RAW score directly from FSA API */}
+                                          <div className="border-l-4 border-purple-500 pl-4">
+                                            <p className="text-sm text-gray-600 mb-1">Management</p>
+                                            {(() => {
+                                              const managementScore = home.fsaDetailed?.breakdown_scores?.confidence_in_management;
+                                              const managementLabel = home.fsaDetailed?.breakdown_scores?.confidence_label;
+                                              return (
+                                                <>
+                                                  <p className="text-2xl font-bold text-purple-600">
+                                                    {managementScore !== null && managementScore !== undefined ? `${managementScore}/30` : 'N/A'}
                                                   </p>
-                                                )}
-                                              </>
-                                            );
-                                          })()}
+                                                  {managementLabel && (
+                                                    <p className="text-sm text-gray-600 mt-1">
+                                                      {managementLabel}
+                                                    </p>
+                                                  )}
+                                                </>
+                                              );
+                                            })()}
+                                          </div>
                                         </div>
                                       </div>
-                                    </div>
-                                    ) : (
+                                    ) : home.fsaDetailed?.data_available === false ? (
                                       <div className="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
                                         <p className="text-sm text-yellow-800">
                                           {home.fsaDetailed?.note || 'Food hygiene rating data is not available for this care home. This may be because the establishment does not have a registered kitchen or the data has not been updated in our system.'}
+                                        </p>
+                                      </div>
+                                    ) : (
+                                      <div className="mb-6 p-4 bg-gray-50 border border-gray-200 rounded-lg">
+                                        <p className="text-sm text-gray-600">
+                                          Detailed breakdown scores not available. Only overall rating shown above.
                                         </p>
                                       </div>
                                     )}
@@ -1096,6 +1099,12 @@ export default function ProfessionalReportViewer() {
                                       </div>
                                     )}
                                   </div>
+
+                                  {/* Staff Quality Analysis - Section 9 */}
+                                  <StaffQualitySection staffQuality={home.staffQuality} homeName={home.name} />
+
+                                  {/* Neighbourhood Analysis - Section 18 */}
+                                  <NeighbourhoodSection neighbourhood={home.neighbourhood} homeName={home.name} />
 
                                   {/* Google Places Reviews & Sentiment & NEW API Insights - Always show, even if data is missing */}
                                   <div className="p-3 bg-yellow-50 rounded-lg border border-yellow-200">
@@ -1427,13 +1436,34 @@ export default function ProfessionalReportViewer() {
                                       </div>
                                     )}
 
-                                    {/* Financial Stability Charts - Only show if data available */}
-                                    {home.financialStability && (
+                                    {/* CQC Enforcement Actions - Always show (green = no issues, red = problems) */}
+                                    {home.cqcDeepDive && (
                                       <div className="mt-4">
-                                        <FinancialStabilityChart financialData={home.financialStability} homeName={home.name} />
+                                        <EnforcementActionsSection cqcData={home.cqcDeepDive} homeName={home.name} />
+                                      </div>
+                                    )}
+
+                                    {/* CQC Regulated Activities & Licenses */}
+                                    {home.cqcDeepDive && (
+                                      <div className="mt-4">
+                                        <RegulatedActivitiesSection cqcData={home.cqcDeepDive} homeName={home.name} />
                                       </div>
                                     )}
                                   </div>
+
+                                  {/* Footfall & Visitor Trends - from Google Places Insights - SEPARATE SECTION */}
+                                  {home.googlePlaces && (
+                                    <div className="mb-4 p-3 bg-amber-50 rounded-lg border border-amber-200">
+                                      <FootfallTrendsSection googlePlacesData={home.googlePlaces} homeName={home.name} />
+                                    </div>
+                                  )}
+
+                                  {/* Financial Stability Charts - SEPARATE SECTION */}
+                                  {home.financialStability && (
+                                    <div className="mb-4 p-3 bg-emerald-50 rounded-lg border border-emerald-200">
+                                      <FinancialStabilityChart financialData={home.financialStability} homeName={home.name} />
+                                    </div>
+                                  )}
                                 </div>
                               )}
                             </div>

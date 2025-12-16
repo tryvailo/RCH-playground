@@ -315,17 +315,6 @@ class NegotiationStrategyService:
             'market_insights': self._generate_market_insights(prices, regional_average, care_homes)
         }
         
-        # Note: Autumna pricing removed - using database prices from care_homes
-        # Prices are calculated from care_homes weeklyPrice/weekly_costs fields above
-                'sample_size': autumna_data.get('sample_size'),
-                'market_range': {
-                    'minimum': autumna_data.get('min_price'),
-                    'maximum': autumna_data.get('max_price'),
-                    'average': autumna_data.get('avg_price')
-                },
-                'note': f"Based on {autumna_data.get('sample_size')} homes from Autumna database"
-            }
-        
         return market_analysis
     
     def _get_price_positioning(self, vs_market_percent: float) -> str:

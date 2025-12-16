@@ -102,6 +102,8 @@ export interface FreeReportData {
   fairCostGap: FairCostGapData;
   chcTeaserPercent: number;
   fundingEligibility?: FundingEligibility;
+  areaProfile?: AreaProfile;
+  areaMap?: AreaMapData;
 }
 
 export interface FundingEligibility {
@@ -119,11 +121,54 @@ export interface FundingEligibility {
   };
 }
 
+export interface AreaProfile {
+  area_name: string;
+  total_homes: number;
+  average_weekly_cost: number;
+  cost_vs_national: number; // percentage above/below national average
+  cqc_distribution: {
+    outstanding: number;
+    good: number;
+    requires_improvement: number;
+    inadequate: number;
+  };
+  wellbeing_index?: number; // 0-100
+  demographics?: {
+    population_65_plus: number; // percentage
+    average_income?: number;
+    green_spaces?: 'high' | 'medium' | 'low';
+  };
+}
+
+export interface AreaMapData {
+  user_location: {
+    lat: number;
+    lng: number;
+    postcode: string;
+  };
+  homes: Array<{
+    id: string;
+    name: string;
+    lat: number;
+    lng: number;
+    distance_km: number;
+    match_type: 'Safe Bet' | 'Best Value' | 'Premium';
+  }>;
+  amenities?: Array<{
+    type: 'hospital' | 'park' | 'gp' | 'transport';
+    name: string;
+    lat: number;
+    lng: number;
+  }>;
+}
+
 export interface FreeReportResponse {
   questionnaire: QuestionnaireResponse;
   care_homes: CareHome[];
   fair_cost_gap: FairCostGap;
   funding_eligibility?: FundingEligibility;
+  area_profile?: AreaProfile;
+  area_map?: AreaMapData;
   generated_at: string;
   report_id: string;
 }

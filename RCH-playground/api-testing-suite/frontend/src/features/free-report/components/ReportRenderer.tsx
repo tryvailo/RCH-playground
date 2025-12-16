@@ -22,6 +22,8 @@ import { pdf } from '@react-pdf/renderer';
 import FreeReportPDF from './FreeReportPDF';
 import { FairCostGapBlock } from '../../fair-cost-gap/components/FairCostGapBlock';
 import { FundingEligibilityBlock } from './FundingEligibilityBlock';
+import { AreaProfileBlock } from './AreaProfileBlock';
+import { AreaMapBlock } from './AreaMapBlock';
 import { ReportGuide } from './ReportGuide';
 import ScoringSettings from './ScoringSettings';
 import type { FreeReportData, CareHomeData, QuestionnaireResponse } from '../types';
@@ -166,7 +168,7 @@ function CareHomeCard({ home, index }: { home: CareHomeData; index: number }) {
             {home.fsa_color && (
               <div 
                 className={`w-5 h-5 rounded-full ${getFSAColorClass(home.fsa_color)}`} 
-                title={`FSA Rating: ${home.fsa_rating !== undefined ? `${home.fsa_rating}/5` : home.fsa_color}`}
+                title={`FSA Rating: ${home.fsa_rating != null ? `${home.fsa_rating}/5` : home.fsa_color || 'N/A'}`}
               />
             )}
           </div>
@@ -209,7 +211,7 @@ function CareHomeCard({ home, index }: { home: CareHomeData; index: number }) {
                 FSA Rating
               </span>
               <div className="flex items-center gap-2">
-                {home.fsa_rating !== undefined && (
+                {home.fsa_rating != null && (
                   <span className="font-medium text-gray-900">
                     {typeof home.fsa_rating === 'number' ? `${home.fsa_rating}/5` : home.fsa_rating}
                   </span>
@@ -297,7 +299,7 @@ function ProfessionalPeek({ home }: { home: CareHomeData }) {
               <ul className="space-y-1 text-sm text-gray-300">
                 {home.fsa_color && (
                   <li>
-                    • FSA Rating: {home.fsa_rating !== undefined ? `${home.fsa_rating}/5` : ''} ({home.fsa_color})
+                    • FSA Rating: {home.fsa_rating != null ? `${home.fsa_rating}/5` : 'N/A'} ({home.fsa_color || 'N/A'})
                     {home.fsa_rating_date && ` - Inspected: ${new Date(home.fsa_rating_date).toLocaleDateString()}`}
                   </li>
                 )}
@@ -352,13 +354,13 @@ function ComparisonTable({ homes }: { homes: CareHomeData[] }) {
     },
     {
       name: 'FSA Rating',
-      home1: homes[0]?.fsa_rating !== undefined 
+      home1: homes[0]?.fsa_rating != null 
         ? `${homes[0].fsa_rating}/5 (${homes[0].fsa_color || 'N/A'})` 
         : homes[0]?.fsa_color || 'N/A',
-      home2: homes[1]?.fsa_rating !== undefined 
+      home2: homes[1]?.fsa_rating != null 
         ? `${homes[1].fsa_rating}/5 (${homes[1].fsa_color || 'N/A'})` 
         : homes[1]?.fsa_color || 'N/A',
-      home3: homes[2]?.fsa_rating !== undefined 
+      home3: homes[2]?.fsa_rating != null 
         ? `${homes[2].fsa_rating}/5 (${homes[2].fsa_color || 'N/A'})` 
         : homes[2]?.fsa_color || 'N/A',
     },
@@ -677,7 +679,17 @@ export default function ReportRenderer({ report, questionnaire }: ReportRenderer
         />
       )}
 
-      {/* Section 7: Comparison Table */}
+      {/* Section 7: Area Profile - Local Area Context */}
+      {report.areaProfile && (
+        <AreaProfileBlock areaProfile={report.areaProfile} />
+      )}
+
+      {/* Section 8: Area Map - Geographic Visualization */}
+      {report.areaMap && (
+        <AreaMapBlock mapData={report.areaMap} />
+      )}
+
+      {/* Section 9: Comparison Table */}
       <ComparisonTable homes={homes} />
 
       {/* Section 7: Checklist + Next Steps */}

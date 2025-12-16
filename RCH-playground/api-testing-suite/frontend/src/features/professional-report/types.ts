@@ -40,46 +40,81 @@ export interface ProfessionalQuestionnaireResponse {
   };
 }
 
-export interface FSADetailedSubScore {
-  raw_score?: number | null;
-  normalized_score?: number | null;
-  max_score: number;
-  label?: string | null;
-  weight: number;
+/**
+ * FSA Breakdown Scores - RAW scores from FSA API
+ * These are penalty points: lower is better
+ * - hygiene: 0-20 (0 = best)
+ * - structural: 0-20 (0 = best)
+ * - confidence_in_management: 0-30 (0 = best)
+ */
+export interface FSABreakdownScores {
+  hygiene?: number | null;
+  structural?: number | null;
+  confidence_in_management?: number | null;
+  hygiene_label?: string | null;
+  structural_label?: string | null;
+  confidence_label?: string | null;
 }
 
+/**
+ * FSA Detailed - UNIFIED format used by both FSA Explorer and Professional Report
+ * This is the SINGLE SOURCE OF TRUTH for FSA data
+ * All scores are RAW values from FSA API - no normalization
+ */
 export interface FSADetailed {
-  rating?: string | number | null;
+  // Core rating data
+  rating?: number | null;
   rating_date?: string | null;
   fhrs_id?: string | null;
-  health_score?: {
-    score?: number | null;
-    label?: string | null;
-  } | null;
-  detailed_sub_scores?: {
-    hygiene?: FSADetailedSubScore;
-    cleanliness?: FSADetailedSubScore;
-    management?: FSADetailedSubScore;
-  } | null;
+  
+  // Business info
+  business_name?: string | null;
+  address?: string | null;
+  postcode?: string | null;
+  
+  // RAW breakdown scores - same format as FSA Explorer
+  // These are penalty points (lower is better)
+  breakdown_scores?: FSABreakdownScores | null;
+  
+  // Historical ratings (RAW from FSA API)
   historical_ratings?: Array<{
     date?: string;
     rating_date?: string;
     rating?: number | string;
     rating_key?: string;
-    breakdown_scores?: {
-      hygiene?: number;
-      structural?: number;
-      confidence_in_management?: number;
-    };
+    breakdown_scores?: FSABreakdownScores;
     local_authority?: string;
     inspection_type?: string;
   }> | null;
+  
+  // Trend analysis (RAW from FSA API)
   trend_analysis?: {
     trend?: string;
     current_rating?: number;
-    previous_rating?: number;
-    change?: string;
+    history_count?: number;
+    consistency?: string;
+    prediction?: {
+      predicted_rating?: number;
+      predicted_label?: string;
+      confidence?: string;
+    };
   } | null;
+  
+  // Data source flag
+  data_source?: 'fsa_api' | 'fallback' | 'not_available';
+  
+  // Legacy fields for backward compatibility
+  health_score?: {
+    score?: number | null;
+    label?: string | null;
+  } | null;
+  detailed_sub_scores?: {
+    hygiene?: { raw_score?: number | null; normalized_score?: number | null; max_score: number; label?: string | null; weight: number; };
+    cleanliness?: { raw_score?: number | null; normalized_score?: number | null; max_score: number; label?: string | null; weight: number; };
+    management?: { raw_score?: number | null; normalized_score?: number | null; max_score: number; label?: string | null; weight: number; };
+  } | null;
+  data_available?: boolean;
+  note?: string;
 }
 
 export interface FinancialStability {
@@ -187,6 +222,151 @@ export interface GooglePlacesData {
   quality_indicator?: string | null;
 }
 
+export interface StaffQualityComponent {
+  score: number | null;
+  weight: number;
+  rating?: string | null;
+  note?: string;
+  reviewCount?: number;
+  source?: string;
+}
+
+export interface StaffQualityData {
+  overallScore: number;
+  category: 'EXCELLENT' | 'GOOD' | 'ADEQUATE' | 'CONCERNING' | 'POOR' | 'UNKNOWN';
+  confidence: 'high' | 'medium' | 'low';
+  components: {
+    cqc_well_led?: StaffQualityComponent;
+    cqc_effective?: StaffQualityComponent;
+    cqc_staff_sentiment?: StaffQualityComponent;
+    employee_sentiment?: StaffQualityComponent;
+  };
+  themes?: {
+    positive: string[];
+    negative: string[];
+  };
+  dataQuality?: {
+    cqc_data_age?: string;
+    review_count?: number;
+    has_insufficient_data?: boolean;
+  };
+  cqcData?: {
+    well_led?: string | null;
+    effective?: string | null;
+    last_inspection_date?: string | null;
+    staff_sentiment?: {
+      positive: number;
+      neutral: number;
+      negative: number;
+      score: number;
+    };
+  };
+  reviewCount?: number;
+  reviews?: Array<{
+    source: string;
+    rating: number;
+    sentiment: string;
+    text: string;
+    date?: string;
+    author?: string;
+  }>;
+  carehomeCoUk?: {
+    url?: string;
+    review_count?: number;
+    average_rating?: number;
+    staff_sentiment?: string;
+  };
+  indeed?: {
+    indeed_url?: string;
+    review_count?: number;
+  };
+}
+
+export interface NeighbourhoodWalkability {
+  score?: number | null;
+  rating?: string | null;
+  careHomeRelevance?: {
+    score?: number | null;
+    rating?: string | null;
+    factors?: string[];
+  } | null;
+  amenitiesNearby?: {
+    healthcare?: number | { count?: number; nearest_m?: number | null; within_400m?: number; within_800m?: number };
+    shops?: number | { count?: number; nearest_m?: number | null; within_400m?: number; within_800m?: number };
+    restaurants?: number | { count?: number; nearest_m?: number | null; within_400m?: number; within_800m?: number };
+    parks?: number | { count?: number; nearest_m?: number | null; within_400m?: number; within_800m?: number };
+    transport?: number | { count?: number; nearest_m?: number | null; within_400m?: number; within_800m?: number };
+    total?: number | { count?: number; nearest_m?: number | null; within_400m?: number; within_800m?: number };
+    grocery?: number | { count?: number; nearest_m?: number | null; within_400m?: number; within_800m?: number };
+    banks?: number | { count?: number; nearest_m?: number | null; within_400m?: number; within_800m?: number };
+  } | null;
+}
+
+export interface NeighbourhoodSocialWellbeing {
+  score?: number | null;
+  rating?: string | null;
+  localAuthority?: string | null;
+  deprivation?: {
+    index?: number | null;
+    decile?: number | null;
+    rank?: number | null;
+  } | null;
+}
+
+export interface NeighbourhoodHealthProfile {
+  score?: number | null;
+  rating?: string | null;
+  gpPracticesNearby?: number | null;
+  careHomeConsiderations?: Array<{
+    category?: string;
+    priority?: 'high' | 'medium' | 'low';
+    description?: string;
+  }> | null;
+}
+
+export interface NeighbourhoodData {
+  overallScore?: number | null;
+  overallRating?: string | null;
+  confidence?: 'high' | 'medium' | 'low' | null;
+  breakdown?: Array<{
+    name: string;
+    score: number;
+    weight: string;
+  }> | null;
+  walkability?: NeighbourhoodWalkability | null;
+  socialWellbeing?: NeighbourhoodSocialWellbeing | null;
+  healthProfile?: NeighbourhoodHealthProfile | null;
+  coordinates?: {
+    latitude?: number | null;
+    longitude?: number | null;
+  } | null;
+}
+
+export interface EnforcementAction {
+  type?: string;
+  title?: string;
+  description?: string;
+  date?: string;
+  status?: string;
+  severity?: 'high' | 'medium' | 'low';
+  link?: string;
+}
+
+export interface RegulatedActivity {
+  id?: string;
+  name?: string;
+  active?: boolean;
+  cqc_field?: string;
+}
+
+export interface LicenseFlags {
+  has_nursing_care_license?: boolean;
+  has_personal_care_license?: boolean;
+  has_surgical_procedures_license?: boolean;
+  has_treatment_license?: boolean;
+  has_diagnostic_license?: boolean;
+}
+
 export interface CQCDeepDive {
   overall_rating?: string | null;
   current_rating?: string | null;
@@ -223,11 +403,12 @@ export interface CQCDeepDive {
     responsive?: { rating?: string; explanation?: string } | null;
     well_led?: { rating?: string; explanation?: string } | null;
   } | null;
-  rating_changes?: Array<{
-    date?: string;
-    from?: string;
-    to?: string;
-  }> | null;
+  enforcement_actions?: EnforcementAction[] | null;
+  regulated_activities?: RegulatedActivity[] | null;
+  license_flags?: LicenseFlags | null;
+  days_since_inspection?: number | null;
+  rating_trend?: string | null;
+  provider_locations_count?: number | null;
 }
 
 export interface ProfessionalCareHome {
@@ -372,6 +553,8 @@ export interface ProfessionalCareHome {
     care_dementia: boolean;
     service_types: string[];
   } | null;
+  // Section 18: Neighbourhood Analysis
+  neighbourhood?: NeighbourhoodData | null;
   // Section 16: Comfort & Lifestyle
   comfortLifestyle?: {
     facilities: {
@@ -461,6 +644,9 @@ export interface ProfessionalCareHome {
     };
     notes?: string;
   } | null;
+
+  // Section 9: Staff Quality
+  staffQuality?: StaffQualityData | null;
 }
 
 export interface ScoringWeights {

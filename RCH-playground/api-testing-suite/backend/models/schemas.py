@@ -70,6 +70,7 @@ class CompaniesHouseCredentials(BaseModel):
 class GooglePlacesCredentials(BaseModel):
     """Google Places API Credentials"""
     api_key: Optional[str] = None
+    search_engine_id: Optional[str] = None  # For Google Custom Search (Indeed)
     
     class Config:
         populate_by_name = True  # Pydantic v2
@@ -79,11 +80,17 @@ class GooglePlacesCredentials(BaseModel):
         # Normalize both camelCase and snake_case to snake_case
         normalized_data = {}
         
-        # Handle both formats
+        # Handle both formats for api_key
         if 'apiKey' in data:
             normalized_data['api_key'] = data['apiKey']
         elif 'api_key' in data:
             normalized_data['api_key'] = data['api_key']
+        
+        # Handle search_engine_id for Google Custom Search
+        if 'searchEngineId' in data:
+            normalized_data['search_engine_id'] = data['searchEngineId']
+        elif 'search_engine_id' in data:
+            normalized_data['search_engine_id'] = data['search_engine_id']
         
         super().__init__(**normalized_data)
 
@@ -101,17 +108,19 @@ class GooglePlacesInsightsCredentials(BaseModel):
 
 class PerplexityCredentials(BaseModel):
     """Perplexity API Credentials"""
-    api_key: Optional[str] = Field(None, alias="apiKey")
-    apiKey: Optional[str] = None  # Support camelCase from frontend
+    api_key: Optional[str] = None
     
     class Config:
+        populate_by_name = True
         allow_population_by_field_name = True
     
     def __init__(self, **data):
-        # Normalize camelCase to snake_case
-        if 'apiKey' in data and 'api_key' not in data:
-            data['api_key'] = data.pop('apiKey')
-        super().__init__(**data)
+        normalized_data = {}
+        if 'apiKey' in data:
+            normalized_data['api_key'] = data['apiKey']
+        elif 'api_key' in data:
+            normalized_data['api_key'] = data['api_key']
+        super().__init__(**normalized_data)
 
 
 class BestTimeCredentials(BaseModel):
@@ -175,17 +184,19 @@ class OpenAICredentials(BaseModel):
 
 class FirecrawlCredentials(BaseModel):
     """Firecrawl API Credentials"""
-    api_key: Optional[str] = Field(None, alias="apiKey")
-    apiKey: Optional[str] = None  # Support camelCase from frontend
+    api_key: Optional[str] = None
     
     class Config:
+        populate_by_name = True
         allow_population_by_field_name = True
     
     def __init__(self, **data):
-        # Normalize camelCase to snake_case
-        if 'apiKey' in data and 'api_key' not in data:
-            data['api_key'] = data.pop('apiKey')
-        super().__init__(**data)
+        normalized_data = {}
+        if 'apiKey' in data:
+            normalized_data['api_key'] = data['apiKey']
+        elif 'api_key' in data:
+            normalized_data['api_key'] = data['api_key']
+        super().__init__(**normalized_data)
 
 class AnthropicCredentials(BaseModel):
     """Anthropic Claude API Credentials"""

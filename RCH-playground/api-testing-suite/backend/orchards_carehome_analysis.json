@@ -1,0 +1,360 @@
+{
+  "care_home": {
+    "name": "The Orchards Care Home",
+    "postcode": "B34 7BP",
+    "city": null
+  },
+  "carehome_co_uk": {
+    "searchazref": "20002501ORCB",
+    "url": "https://www.carehome.co.uk/carehome.cfm/searchazref/20002501ORCB",
+    "title": "The Orchards Care Home, Birmingham, West Midlands",
+    "rating": null,
+    "total_reviews": null
+  },
+  "reviews": [
+    {
+      "reviewer_initials": "S H",
+      "reviewer_connection": "Granddaughter of Resident",
+      "date": "19 November 2025",
+      "overall_rating": 5,
+      "review_text": "All the staff show care and compassion to my dad. Nothing is too much trouble. Any questions or concerns are answered quickly. Would recommend to other family members.",
+      "category_ratings": {
+        "Facilities": 5,
+        "Care / Support": 5,
+        "Cleanliness": 4,
+        "Treated with Dignity": 5,
+        "Food & Drink": 5,
+        "Staff": 5,
+        "Activities": 4,
+        "Management": 5,
+        "Safety / Security": 5,
+        "Rooms": 5,
+        "Value for Money": 5
+      },
+      "source": "carehome.co.uk",
+      "page": 1
+    },
+    {
+      "reviewer_initials": "K M",
+      "reviewer_connection": "Granddaughter of Resident",
+      "date": "7 November 2025",
+      "overall_rating": 5,
+      "review_text": "My Nan has been in the home for sometime now. She loves her room and really enjoys her meals. The activity team is fantastic and the care team are always so kind. The home is always spotless and smells clean. Office staff and management are always approachable. I would highly recommend the home to anyone looking for somewhere.",
+      "category_ratings": {
+        "Facilities": 5,
+        "Care / Support": 5,
+        "Cleanliness": 5,
+        "Treated with Dignity": 5,
+        "Food & Drink": 5,
+        "Staff": 5,
+        "Activities": 5,
+        "Management": 5,
+        "Safety / Security": 5,
+        "Rooms": 5,
+        "Value for Money": 5
+      },
+      "source": "carehome.co.uk",
+      "page": 1
+    },
+    {
+      "reviewer_initials": "A Y",
+      "reviewer_connection": "Son of Resident",
+      "date": "6 October 2025",
+      "overall_rating": 5,
+      "review_text": "My Mother has been here for a few weeks now and I am very pleased with The Orchards Care Home and the support/care she is currently receiving. I had no prior experience of care homes before this, so I was unsure if I was making the right decision based upon hospital consultants advice. This care home is clean, tidy and the staff are very friendly, supportive, caring and responsive. I am very confident that my Mother is getting the care she needs.",
+      "category_ratings": {
+        "Facilities": 5,
+        "Care / Support": 5,
+        "Cleanliness": 4,
+        "Treated with Dignity": 5,
+        "Food & Drink": 4,
+        "Staff": 5,
+        "Activities": 3,
+        "Management": 4,
+        "Safety / Security": 4,
+        "Rooms": 5,
+        "Value for Money": 3
+      },
+      "source": "carehome.co.uk",
+      "page": 1
+    },
+    {
+      "reviewer_initials": "J B",
+      "reviewer_connection": "Partner of Resident",
+      "date": "26 August 2025",
+      "overall_rating": 3,
+      "review_text": "It appears this carehome is overstretched. Not enough staff to handle residents. Not enough equipment to handle residents. Equipment which should be kept in a safe place lying anywhere. Residents being left alone in places where carers should be looking after them, not visitors who are not related. Equipment just lying around in rooms for weeks awaiting repair. I could go on.",
+      "category_ratings": {
+        "Facilities": 2,
+        "Care / Support": 4,
+        "Cleanliness": 5,
+        "Treated with Dignity": 4,
+        "Food & Drink": 4,
+        "Staff": 4,
+        "Activities": 4,
+        "Management": 2,
+        "Safety / Security": 2,
+        "Rooms": 4,
+        "Value for Money": 3
+      },
+      "source": "carehome.co.uk",
+      "page": 1
+    },
+    {
+      "reviewer_initials": "K C",
+      "reviewer_connection": "Daughter of Resident",
+      "date": "24 April 2025",
+      "overall_rating": 5,
+      "review_text": "Mom has been in this home only since May 24, and in this short time Mom has settled in very well. All the staff take very good care of Mom and any concerns are dealt with by the nurses straightaway. The activities staff are constantly keeping the residents happy and nothing is too much trouble. The management team is always approachable.",
+      "category_ratings": {
+        "Facilities": 5,
+        "Care / Support": 5,
+        "Cleanliness": 5,
+        "Treated with Dignity": 5,
+        "Food & Drink": 5,
+        "Staff": 5,
+        "Activities": 5,
+        "Management": 5,
+        "Safety / Security": 5,
+        "Rooms": 5,
+        "Value for Money": 5
+      },
+      "source": "carehome.co.uk",
+      "page": 1
+    },
+    {
+      "reviewer_initials": "V P",
+      "reviewer_connection": "Resident",
+      "date": "15 December 2023",
+      "overall_rating": 5,
+      "review_text": "The Orchards Care Home is such a nice place to be in - with caring staff. They notice when you are feeling down and spend time to cheer you up. The whole team are so courteous and professional with all residents with all residents. The activities are a time for us all to socialise, have a good laugh, and swap stories about our childhood and growing up. Sadly I have to leave here soon which doesn't make me feel good.",
+      "category_ratings": {
+        "Facilities": 4,
+        "Care / Support": 5,
+        "Cleanliness": 4,
+        "Staff": 5,
+        "Activities": 5,
+        "Management": 5,
+        "Safety / Security": 5,
+        "Rooms": 5,
+        "Value for Money": 5
+      },
+      "source": "carehome.co.uk",
+      "page": 2
+    },
+    {
+      "reviewer_initials": "L F",
+      "reviewer_connection": "Daughter of Resident",
+      "date": "15 December 2023",
+      "overall_rating": 5,
+      "review_text": "Care home is lovely, staff are brilliant, very friendly and helpful. Always plenty of activities and fun days for families to come to.",
+      "category_ratings": {
+        "Facilities": 5,
+        "Care / Support": 5,
+        "Cleanliness": 5,
+        "Staff": 5,
+        "Activities": 5,
+        "Management": 5,
+        "Safety / Security": 5,
+        "Rooms": 5,
+        "Value for Money": 5
+      },
+      "source": "carehome.co.uk",
+      "page": 2
+    },
+    {
+      "reviewer_initials": "L W",
+      "reviewer_connection": "Daughter of Resident",
+      "date": "3 October 2023",
+      "overall_rating": 5,
+      "review_text": "Although my mom has only been at The Orchards for a short amount of time the kindness and compassion that every member of staff has shown my mom and us as a family is truly overwhelming. Thank you so much.",
+      "category_ratings": {
+        "Facilities": 5,
+        "Care / Support": 5,
+        "Cleanliness": 5,
+        "Staff": 5,
+        "Activities": 0,
+        "Management": 5,
+        "Safety / Security": 5,
+        "Rooms": 5,
+        "Value for Money": 5
+      },
+      "source": "carehome.co.uk",
+      "page": 2
+    },
+    {
+      "reviewer_initials": "L H",
+      "reviewer_connection": "Daughter of Resident",
+      "date": "22 August 2023",
+      "overall_rating": 5,
+      "review_text": "I can 100% say that all the staff are fantastic, my mom has been a resident since May this year. She was difficult to start with but the staff have found a way to communicate with Mom in a calm reassuring way. Today I went to visit and sadly Mom was having one of her vasovagal episodes, the alarm was immediately raised and all staff came in to sort Mom out and bring her back around. They were all fantastic. I can relax knowing Mom is so well cared for. Thank you to all the nursing staff today.",
+      "category_ratings": {
+        "Facilities": 5,
+        "Care / Support": 5,
+        "Cleanliness": 5,
+        "Staff": 5,
+        "Activities": 5,
+        "Management": 5,
+        "Safety / Security": 5,
+        "Rooms": 5,
+        "Value for Money": 5
+      },
+      "source": "carehome.co.uk",
+      "page": 2
+    },
+    {
+      "reviewer_initials": "E D",
+      "reviewer_connection": "Daughter of Resident",
+      "date": "28 July 2023",
+      "overall_rating": 5,
+      "review_text": "All staff have been very kind and caring, both to Mom and myself. She is very hard of hearing and unfortunately, one of her hearing aids has been lost and her sight is very poor.",
+      "category_ratings": {
+        "Facilities": 5,
+        "Care / Support": 5,
+        "Cleanliness": 4,
+        "Staff": 5,
+        "Activities": 4,
+        "Management": 5,
+        "Safety / Security": 5,
+        "Rooms": 4,
+        "Value for Money": 5
+      },
+      "source": "carehome.co.uk",
+      "page": 2
+    },
+    {
+      "reviewer_initials": "C C",
+      "reviewer_connection": "Daughter of Resident",
+      "date": "25 July 2023",
+      "overall_rating": 5,
+      "review_text": "Lovely, caring staff. Mom is well looked after which pleases me. The food choice is excellent. Staff always take their time to talk to you and give updates.",
+      "category_ratings": {
+        "Facilities": 5,
+        "Care / Support": 5,
+        "Cleanliness": 5,
+        "Staff": 5,
+        "Activities": 5,
+        "Management": 5,
+        "Safety / Security": 5,
+        "Rooms": 5,
+        "Value for Money": 5
+      },
+      "source": "carehome.co.uk",
+      "page": 2
+    }
+  ],
+  "analysis": {
+    "total_reviews": 11,
+    "average_rating": 4.82,
+    "rating_distribution": {
+      "5": 10,
+      "3": 1
+    },
+    "aspect_sentiment": {
+      "staff_quality": {
+        "score": 1.0,
+        "positive_mentions": 1,
+        "negative_mentions": 0,
+        "sentiment": "positive"
+      },
+      "care_quality": {
+        "score": 0.0,
+        "positive_mentions": 1,
+        "negative_mentions": 1,
+        "sentiment": "neutral"
+      },
+      "communication": {
+        "score": 1.0,
+        "positive_mentions": 2,
+        "negative_mentions": 0,
+        "sentiment": "positive"
+      },
+      "cleanliness": {
+        "score": 0.5,
+        "positive_mentions": 3,
+        "negative_mentions": 1,
+        "sentiment": "positive"
+      }
+    },
+    "themes": {
+      "caring_staff": 3,
+      "clean_environment": 2,
+      "good_food": 2,
+      "good_communication": 1,
+      "activities": 1
+    },
+    "staff_quality_signals": {
+      "ratio": 1
+    },
+    "reviewer_connections": {
+      "Granddaughter of Resident": 2,
+      "Son of Resident": 1,
+      "Partner of Resident": 1,
+      "Daughter of Resident": 6,
+      "Resident": 1
+    },
+    "temporal_analysis": {},
+    "key_quotes": [
+      {
+        "text": "All the staff show care and compassion to my dad. Nothing is too much trouble. Any questions or concerns are answered quickly. Would recommend to other family members.",
+        "rating": 5,
+        "type": "positive"
+      },
+      {
+        "text": "My Nan has been in the home for sometime now. She loves her room and really enjoys her meals. The activity team is fantastic and the care team are always so kind. The home is always spotless and smells clean. Office staff and management are always approachable. I would highly recommend the home to a",
+        "rating": 5,
+        "type": "positive"
+      },
+      {
+        "text": "My Mother has been here for a few weeks now and I am very pleased with The Orchards Care Home and the support/care she is currently receiving. I had no prior experience of care homes before this, so I was unsure if I was making the right decision based upon hospital consultants advice. This care hom",
+        "rating": 5,
+        "type": "positive"
+      },
+      {
+        "text": "Mom has been in this home only since May 24, and in this short time Mom has settled in very well. All the staff take very good care of Mom and any concerns are dealt with by the nurses straightaway. The activities staff are constantly keeping the residents happy and nothing is too much trouble. The ",
+        "rating": 5,
+        "type": "positive"
+      },
+      {
+        "text": "The Orchards Care Home is such a nice place to be in - with caring staff. They notice when you are feeling down and spend time to cheer you up. The whole team are so courteous and professional with all residents with all residents. The activities are a time for us all to socialise, have a good laugh",
+        "rating": 5,
+        "type": "positive"
+      },
+      {
+        "text": "Care home is lovely, staff are brilliant, very friendly and helpful. Always plenty of activities and fun days for families to come to.",
+        "rating": 5,
+        "type": "positive"
+      },
+      {
+        "text": "Although my mom has only been at The Orchards for a short amount of time the kindness and compassion that every member of staff has shown my mom and us as a family is truly overwhelming. Thank you so much.",
+        "rating": 5,
+        "type": "positive"
+      },
+      {
+        "text": "I can 100% say that all the staff are fantastic, my mom has been a resident since May this year. She was difficult to start with but the staff have found a way to communicate with Mom in a calm reassuring way. Today I went to visit and sadly Mom was having one of her vasovagal episodes, the alarm wa",
+        "rating": 5,
+        "type": "positive"
+      },
+      {
+        "text": "All staff have been very kind and caring, both to Mom and myself. She is very hard of hearing and unfortunately, one of her hearing aids has been lost and her sight is very poor.",
+        "rating": 5,
+        "type": "positive"
+      },
+      {
+        "text": "Lovely, caring staff. Mom is well looked after which pleases me. The food choice is excellent. Staff always take their time to talk to you and give updates.",
+        "rating": 5,
+        "type": "positive"
+      }
+    ],
+    "staff_quality_score": {
+      "score": 100,
+      "base_score": 98.2,
+      "sentiment_adjustment": 10.0,
+      "management_adjustment": 0,
+      "confidence": "low",
+      "review_count": 11,
+      "category": "EXCELLENT"
+    }
+  },
+  "success": true
+}

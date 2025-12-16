@@ -28,6 +28,8 @@ class StaffQualityAnalyzeResponse(BaseModel):
     cqc_data: Dict[str, Any]
     reviews: List[Dict[str, Any]]
     staff_quality_score: Dict[str, Any]
+    carehome_co_uk: Optional[Dict[str, Any]] = None
+    indeed: Optional[Dict[str, Any]] = None
 
 
 @router.post("/analyze", response_model=StaffQualityAnalyzeResponse)
@@ -46,35 +48,47 @@ async def analyze_staff_quality(request: CareHomeRequest = Body(...)):
     try:
         service = StaffQualityService()
         
-        # If location_id is provided, use it directly
+        # If location_id is provided, try CQC first, fallback to CareHome.co.uk
         if request.location_id:
             try:
                 analysis = await service.analyze_by_location_id(request.location_id)
+            except (ValueError, Exception) as e:
+                # CQC failed - fallback to CareHome.co.uk if name is provided
+                if request.name:
+                    try:
+                        print(f"CQC failed for {request.location_id}, falling back to CareHome.co.uk for {request.name}")
+                        analysis = await service.analyze_carehome_reviews(
+                            name=request.name,
+                            postcode=request.postcode
+                        )
+                    except Exception as fallback_error:
+                        raise HTTPException(
+                            status_code=404,
+                            detail=f"Care home not found in CQC ({str(e)}) or CareHome.co.uk ({str(fallback_error)})"
+                        )
+                else:
+                    raise HTTPException(
+                        status_code=404,
+                        detail=f"Care home not found: {str(e)}"
+                    )
+        elif request.name or request.postcode:
+            # Use CareHome.co.uk directly (faster than CQC search)
+            # CQC search is slow and often times out
+            try:
+                analysis = await service.analyze_carehome_reviews(
+                    name=request.name,
+                    postcode=request.postcode
+                )
             except ValueError as e:
                 raise HTTPException(
                     status_code=404,
-                    detail=f"Care home not found: {str(e)}"
+                    detail=f"Care home not found on CareHome.co.uk: {str(e)}"
                 )
-        elif request.name or request.postcode:
-            # Search for care home first
-            try:
-                analysis = await service.analyze_by_search(
-                    name=request.name,
-                    postcode=request.postcode,
-                    address=request.address
+            except Exception as e:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Error analyzing care home: {str(e)}"
                 )
-            except ValueError as e:
-                # Return 404 for "not found" errors, 400 for validation errors
-                if "not found" in str(e).lower() or "no care homes" in str(e).lower():
-                    raise HTTPException(
-                        status_code=404,
-                        detail=str(e)
-                    )
-                else:
-                    raise HTTPException(
-                        status_code=400,
-                        detail=str(e)
-                    )
         else:
             raise HTTPException(
                 status_code=400,

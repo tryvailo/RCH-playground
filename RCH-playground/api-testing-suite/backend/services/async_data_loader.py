@@ -345,15 +345,48 @@ class AsyncDataLoader:
             logger.error("Database query failed", error=str(e))
             return []
     
-    async def _resolve_postcode_async(
+    async def resolve_postcode(
         self,
         postcode: str
-    ) -> Optional[Tuple[float, float]]:
-        """Resolve postcode to coordinates asynchronously"""
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Resolve postcode to full info including coordinates and local authority.
+        Public method for use by free_report_routes and other services.
+        
+        Args:
+            postcode: UK postcode string
+            
+        Returns:
+            Dict with latitude, longitude, local_authority, city etc. or None
+        """
         loop = asyncio.get_event_loop()
         resolver = self._get_postcode_resolver()
         
         if not resolver:
+            # Fallback to postcodes.io API
+            try:
+                import httpx
+                async with httpx.AsyncClient() as client:
+                    normalized = postcode.replace(' ', '').upper()
+                    response = await client.get(
+                        f"https://api.postcodes.io/postcodes/{normalized}",
+                        timeout=5.0
+                    )
+                    if response.status_code == 200:
+                        data = response.json()
+                        if data.get('status') == 200 and data.get('result'):
+                            result = data['result']
+                            return {
+                                'latitude': result.get('latitude'),
+                                'longitude': result.get('longitude'),
+                                'local_authority': result.get('admin_district'),
+                                'localAuthority': result.get('admin_district'),
+                                'city': result.get('admin_district'),
+                                'region': result.get('region'),
+                                'postcode': result.get('postcode')
+                            }
+            except Exception as e:
+                logger.warning("Postcodes.io API failed", postcode=postcode, error=str(e))
             return None
         
         try:
@@ -361,12 +394,30 @@ class AsyncDataLoader:
                 _executor,
                 lambda: resolver.resolve(postcode, use_cache=True)
             )
-            if result and hasattr(result, 'latitude') and hasattr(result, 'longitude'):
-                return (result.latitude, result.longitude)
+            if result:
+                return {
+                    'latitude': getattr(result, 'latitude', None),
+                    'longitude': getattr(result, 'longitude', None),
+                    'local_authority': getattr(result, 'local_authority', None) or getattr(result, 'admin_district', None),
+                    'localAuthority': getattr(result, 'local_authority', None) or getattr(result, 'admin_district', None),
+                    'city': getattr(result, 'city', None) or getattr(result, 'admin_district', None),
+                    'region': getattr(result, 'region', None),
+                    'postcode': postcode
+                }
             return None
         except Exception as e:
             logger.warning("Postcode resolution failed", postcode=postcode, error=str(e))
             return None
+    
+    async def _resolve_postcode_async(
+        self,
+        postcode: str
+    ) -> Optional[Tuple[float, float]]:
+        """Resolve postcode to coordinates asynchronously (internal method)"""
+        result = await self.resolve_postcode(postcode)
+        if result and result.get('latitude') and result.get('longitude'):
+            return (result['latitude'], result['longitude'])
+        return None
     
     async def _load_mock_care_homes_async(
         self,
