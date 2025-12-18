@@ -30,7 +30,7 @@ export function AreaMapBlock({ mapData, className = '' }: AreaMapBlockProps) {
     ...mapData.homes.map((home, index) => ({
       lat: home.lat,
       lon: home.lng,
-      label: `${index + 1}. ${home.name} (${home.match_type}) - ${home.distance_km.toFixed(1)}km`,
+      label: `${index + 1}. ${home.name} (${home.match_type}) - ${home.distance_km != null ? home.distance_km.toFixed(1) : 'N/A'}km`,
     })),
   ];
 
@@ -49,7 +49,7 @@ export function AreaMapBlock({ mapData, className = '' }: AreaMapBlockProps) {
         latitude={mapData.user_location.lat}
         longitude={mapData.user_location.lng}
         postcode={mapData.user_location.postcode}
-        zoom={12}
+        zoom={(mapData as any).suggested_zoom || 12}
         height="400px"
         showMultipleMarkers={markers}
       />
@@ -72,7 +72,9 @@ export function AreaMapBlock({ mapData, className = '' }: AreaMapBlockProps) {
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-gray-900 truncate">{home.name}</p>
                 <div className="flex items-center gap-2">
-                  <span className="text-xs text-gray-500">{home.distance_km.toFixed(1)} km</span>
+                  <span className="text-xs text-gray-500">
+                    {home.distance_km != null ? `${home.distance_km.toFixed(1)} km` : 'Distance N/A'}
+                  </span>
                   <span
                     className="text-xs px-2 py-0.5 rounded-full"
                     style={{

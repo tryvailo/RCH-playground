@@ -395,7 +395,7 @@ class AsyncDataLoader:
                 lambda: resolver.resolve(postcode, use_cache=True)
             )
             if result:
-                return {
+                resolved_data = {
                     'latitude': getattr(result, 'latitude', None),
                     'longitude': getattr(result, 'longitude', None),
                     'local_authority': getattr(result, 'local_authority', None) or getattr(result, 'admin_district', None),
@@ -404,6 +404,31 @@ class AsyncDataLoader:
                     'region': getattr(result, 'region', None),
                     'postcode': postcode
                 }
+                
+                # If RCH-data resolver doesn't provide coordinates, fetch from API
+                if not resolved_data.get('latitude') or not resolved_data.get('longitude'):
+                    try:
+                        import httpx
+                        async with httpx.AsyncClient() as client:
+                            normalized = postcode.replace(' ', '').upper()
+                            response = await client.get(
+                                f"https://api.postcodes.io/postcodes/{normalized}",
+                                timeout=5.0
+                            )
+                            if response.status_code == 200:
+                                data = response.json()
+                                if data.get('status') == 200 and data.get('result'):
+                                    api_result = data['result']
+                                    resolved_data['latitude'] = api_result.get('latitude')
+                                    resolved_data['longitude'] = api_result.get('longitude')
+                                    # Also update local_authority if not set
+                                    if not resolved_data.get('local_authority'):
+                                        resolved_data['local_authority'] = api_result.get('admin_district')
+                                        resolved_data['localAuthority'] = api_result.get('admin_district')
+                    except Exception as api_error:
+                        logger.warning("Failed to fetch coordinates from API", postcode=postcode, error=str(api_error))
+                
+                return resolved_data
             return None
         except Exception as e:
             logger.warning("Postcode resolution failed", postcode=postcode, error=str(e))
