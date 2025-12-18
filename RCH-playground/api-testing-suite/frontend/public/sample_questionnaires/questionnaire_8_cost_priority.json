@@ -1,0 +1,36 @@
+{
+  "user_name": "Jennifer White",
+  "care_recipient_name": "Charles White",
+  "email": "jennifer.white@example.com",
+  "phone": "+44 7123 456796",
+  "location_postcode": "B13 9PL",
+  "postcode": "B13 9PL",
+  "address": "Moseley, Birmingham",
+  "city": "Birmingham",
+  "latitude": 52.4420,
+  "longitude": -1.8880,
+  "local_authority": "Birmingham",
+  "region": "West Midlands",
+  "care_type": "residential_care",
+  "care_types": ["residential_care"],
+  "primary_care_type": "residential_care",
+  "medical_conditions": [],
+  "budget_range": "1150",
+  "budget": 1100.0,
+  "budget_max": 1100,
+  "budget_weekly_max": 1100,
+  "funding_type": "privately_funded",
+  "duration_type": "permanent",
+  "timeline": "6_plus_months",
+  "max_distance_km": 30,
+  "marketing_opt_in": false,
+  "priority_order": ["cost", "quality", "proximity"],
+  "priority_weights": [60, 25, 15],
+  "chc_probability": 18.5,
+  "preferences": {
+    "budget_conscious": true,
+    "value_focused": true,
+    "notes": "Cost-conscious user prioritizing affordability. Looking for best value within strict budget constraints. Willing to travel further for better prices."
+  }
+}
+

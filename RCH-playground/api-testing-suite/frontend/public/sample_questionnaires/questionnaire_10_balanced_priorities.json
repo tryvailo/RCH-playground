@@ -1,0 +1,37 @@
+{
+  "user_name": "Susan Gray",
+  "care_recipient_name": "Edward Gray",
+  "email": "susan.gray@example.com",
+  "phone": "+44 7123 456798",
+  "location_postcode": "B17 9QR",
+  "postcode": "B17 9QR",
+  "address": "Harborne, Birmingham",
+  "city": "Birmingham",
+  "latitude": 52.4600,
+  "longitude": -1.9500,
+  "local_authority": "Birmingham",
+  "region": "West Midlands",
+  "care_type": "nursing_care",
+  "care_types": ["nursing_care"],
+  "primary_care_type": "nursing_care",
+  "medical_conditions": ["diabetes", "heart"],
+  "budget_range": "1350",
+  "budget": 1400.0,
+  "budget_max": 1400,
+  "budget_weekly_max": 1400,
+  "funding_type": "mixed_funding",
+  "duration_type": "trial_period",
+  "timeline": "2_3_months",
+  "max_distance_km": 20,
+  "marketing_opt_in": true,
+  "priority_order": ["quality", "cost", "proximity"],
+  "priority_weights": [40, 35, 25],
+  "chc_probability": 48.7,
+  "preferences": {
+    "balanced_approach": true,
+    "trial_period": true,
+    "flexible_funding": true,
+    "notes": "Balanced priorities user looking for good quality care at reasonable cost within reasonable distance. Starting with trial period to evaluate."
+  }
+}
+

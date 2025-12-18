@@ -4,8 +4,6 @@ import {
   AlertTriangle, 
   CheckCircle2, 
   ArrowRight, 
-  ChevronDown, 
-  ChevronUp,
   Star,
   Shield,
   DollarSign,
@@ -26,6 +24,7 @@ import { AreaProfileBlock } from './AreaProfileBlock';
 import { AreaMapBlock } from './AreaMapBlock';
 import { ReportGuide } from './ReportGuide';
 import ScoringSettings from './ScoringSettings';
+import FreeReportLLMInsights from './FreeReportLLMInsights';
 import type { FreeReportData, CareHomeData, QuestionnaireResponse } from '../types';
 
 interface ReportRendererProps {
@@ -210,24 +209,59 @@ function CareHomeCard({ home, index }: { home: CareHomeData; index: number }) {
                 <div className={`w-3 h-3 rounded-full mr-1 ${getFSAColorClass(home.fsa_color)}`} />
                 FSA Rating
               </span>
-              <div className="flex items-center gap-2">
-                {home.fsa_rating != null && (
-                  <span className="font-medium text-gray-900">
-                    {typeof home.fsa_rating === 'number' ? `${home.fsa_rating}/5` : home.fsa_rating}
+              <div className="flex flex-col items-end gap-1">
+                <div className="flex items-center gap-2">
+                  {home.fsa_rating != null && (
+                    <span className="font-medium text-gray-900">
+                      {typeof home.fsa_rating === 'number' ? `${home.fsa_rating}/5` : home.fsa_rating}
+                    </span>
+                  )}
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium capitalize ${
+                    home.fsa_color === 'green' ? 'bg-green-100 text-green-800' :
+                    home.fsa_color === 'yellow' ? 'bg-yellow-100 text-yellow-800' :
+                    home.fsa_color === 'red' ? 'bg-red-100 text-red-800' :
+                    'bg-gray-100 text-gray-800'
+                  }`}>
+                    {home.fsa_color}
+                  </span>
+                </div>
+                {(home as any).fsa_rating_date && (
+                  <span className="text-xs text-gray-500">
+                    Inspected: {new Date((home as any).fsa_rating_date).toLocaleDateString()}
                   </span>
                 )}
-                <span className={`text-xs px-2 py-0.5 rounded-full font-medium capitalize ${
-                  home.fsa_color === 'green' ? 'bg-green-100 text-green-800' :
-                  home.fsa_color === 'yellow' ? 'bg-yellow-100 text-yellow-800' :
-                  home.fsa_color === 'red' ? 'bg-red-100 text-red-800' :
-                  'bg-gray-100 text-gray-800'
-                }`}>
-                  {home.fsa_color}
-                </span>
               </div>
             </div>
           )}
+          <div className="flex justify-between items-center">
+            <span className="text-gray-600 flex items-center">
+              <DollarSign className="w-4 h-4 mr-1" />
+              Value Score
+            </span>
+            <span className="font-medium text-gray-900">
+              {home.match_type === 'Best Value' ? 'High' : home.match_type === 'Premium' ? 'Premium' : 'Good'}
+            </span>
+          </div>
         </div>
+
+        {/* Key Features */}
+        {home.features && home.features.length > 0 && (
+          <div className="mt-4 pt-4 border-t border-gray-200">
+            <h4 className="text-sm font-semibold text-gray-900 mb-2">Key Features</h4>
+            <div className="flex flex-wrap gap-2">
+              {home.features.slice(0, 6).map((feature, idx) => (
+                <span key={idx} className="px-2 py-1 bg-gray-100 rounded text-xs text-gray-700">
+                  {feature}
+                </span>
+              ))}
+              {home.features.length > 6 && (
+                <span className="px-2 py-1 bg-gray-100 rounded text-xs text-gray-500">
+                  +{home.features.length - 6} more
+                </span>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Contact */}
         {(home.contact_phone || home.website) && (
@@ -259,77 +293,6 @@ function CareHomeCard({ home, index }: { home: CareHomeData; index: number }) {
   );
 }
 
-// Professional Peek Expander
-function ProfessionalPeek({ home }: { home: CareHomeData }) {
-  const [isExpanded, setIsExpanded] = useState(false);
-
-  return (
-    <div className="bg-gradient-to-br from-[#1E2A44] to-[#2D3E5F] rounded-xl shadow-lg text-white overflow-hidden">
-      <button
-        onClick={() => setIsExpanded(!isExpanded)}
-        className="w-full p-6 flex items-center justify-between hover:bg-white/5 transition-colors"
-      >
-        <div className="flex items-center">
-          <Award className="w-6 h-6 mr-3 text-[#10B981]" />
-          <div className="text-left">
-            <h3 className="text-lg font-bold">{home.name} - Professional Analysis</h3>
-            <p className="text-sm text-gray-300">Deep dive into this care home</p>
-          </div>
-        </div>
-        {isExpanded ? (
-          <ChevronUp className="w-5 h-5" />
-        ) : (
-          <ChevronDown className="w-5 h-5" />
-        )}
-      </button>
-
-      {isExpanded && (
-        <div className="px-6 pb-6 border-t border-white/10 pt-6 space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <h4 className="font-semibold mb-2">Financial Analysis</h4>
-              <ul className="space-y-1 text-sm text-gray-300">
-                <li>• Weekly cost: £{((home.price_range.min + home.price_range.max) / 2).toLocaleString()}</li>
-                <li>• Price band: {home.band}/5</li>
-                <li>• Value score: {home.match_type === 'Best Value' ? 'High' : 'Medium'}</li>
-              </ul>
-            </div>
-            <div>
-              <h4 className="font-semibold mb-2">Quality Metrics</h4>
-              <ul className="space-y-1 text-sm text-gray-300">
-                {home.fsa_color && (
-                  <li>
-                    • FSA Rating: {home.fsa_rating != null ? `${home.fsa_rating}/5` : 'N/A'} ({home.fsa_color || 'N/A'})
-                    {home.fsa_rating_date && ` - Inspected: ${new Date(home.fsa_rating_date).toLocaleDateString()}`}
-                  </li>
-                )}
-                {home.rating && <li>• CQC Rating: {home.rating}</li>}
-                <li>• Distance: {home.distance.toFixed(1)} km</li>
-              </ul>
-            </div>
-          </div>
-          {home.features && home.features.length > 0 && (
-            <div>
-              <h4 className="font-semibold mb-2">Key Features</h4>
-              <div className="flex flex-wrap gap-2">
-                {home.features.map((feature, idx) => (
-                  <span key={idx} className="px-2 py-1 bg-white/10 rounded text-sm">
-                    {feature}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-          <div className="pt-4 border-t border-white/10">
-            <p className="text-sm text-gray-300">
-              This professional analysis provides detailed insights into care quality, pricing, and suitability for your specific needs.
-            </p>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
 
 // Comparison Table Component
 function ComparisonTable({ homes }: { homes: CareHomeData[] }) {
@@ -540,6 +503,115 @@ export default function ReportRenderer({ report, questionnaire }: ReportRenderer
             <p className="text-3xl font-bold text-[#10B981]">{chcTeaserPercent.toFixed(1)}%</p>
           </div>
         )}
+
+        {/* Client Preferences Section */}
+        {questionnaire && (
+          <div className="mt-6 bg-white/10 backdrop-blur-sm rounded-lg p-6 border border-white/20">
+            <h3 className="text-xl font-semibold mb-4 text-white">Your Preferences</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Priority Order & Weights */}
+              {questionnaire.priority_order && questionnaire.priority_weights && (
+                <div className="bg-white/5 rounded-lg p-4">
+                  <p className="text-sm text-gray-300 mb-2">Priority Order</p>
+                  <div className="space-y-2">
+                    {questionnaire.priority_order.map((priority, idx) => {
+                      const weight = questionnaire.priority_weights?.[idx] || 0;
+                      const priorityLabels: Record<string, string> = {
+                        quality: 'Quality',
+                        cost: 'Cost',
+                        proximity: 'Proximity'
+                      };
+                      return (
+                        <div key={idx} className="flex items-center justify-between">
+                          <span className="text-white capitalize">
+                            {priorityLabels[priority] || priority}
+                          </span>
+                          <span className="text-[#10B981] font-semibold">{weight}%</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Timeline */}
+              {questionnaire.timeline && (
+                <div className="bg-white/5 rounded-lg p-4">
+                  <p className="text-sm text-gray-300 mb-1">Timeline</p>
+                  <p className="text-white font-semibold capitalize">
+                    {questionnaire.timeline.replace(/_/g, ' ')}
+                  </p>
+                </div>
+              )}
+
+              {/* Max Distance */}
+              {questionnaire.max_distance_km && (
+                <div className="bg-white/5 rounded-lg p-4">
+                  <p className="text-sm text-gray-300 mb-1">Max Distance</p>
+                  <p className="text-white font-semibold">{questionnaire.max_distance_km} km</p>
+                </div>
+              )}
+
+              {/* Funding Type */}
+              {questionnaire.funding_type && (
+                <div className="bg-white/5 rounded-lg p-4">
+                  <p className="text-sm text-gray-300 mb-1">Funding Type</p>
+                  <p className="text-white font-semibold capitalize">
+                    {questionnaire.funding_type.replace(/_/g, ' ')}
+                  </p>
+                </div>
+              )}
+
+              {/* Duration Type */}
+              {questionnaire.duration_type && (
+                <div className="bg-white/5 rounded-lg p-4">
+                  <p className="text-sm text-gray-300 mb-1">Duration</p>
+                  <p className="text-white font-semibold capitalize">
+                    {questionnaire.duration_type.replace(/_/g, ' ')}
+                  </p>
+                </div>
+              )}
+
+              {/* Medical Conditions */}
+              {questionnaire.medical_conditions && questionnaire.medical_conditions.length > 0 && (
+                <div className="bg-white/5 rounded-lg p-4">
+                  <p className="text-sm text-gray-300 mb-2">Medical Conditions</p>
+                  <div className="flex flex-wrap gap-2">
+                    {questionnaire.medical_conditions.map((condition, idx) => (
+                      <span
+                        key={idx}
+                        className="px-2 py-1 bg-[#10B981]/20 text-[#10B981] rounded text-sm capitalize"
+                      >
+                        {condition.replace(/_/g, ' ')}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Additional Preferences */}
+            {questionnaire.preferences && Object.keys(questionnaire.preferences).length > 0 && (
+              <div className="mt-4 bg-white/5 rounded-lg p-4">
+                <p className="text-sm text-gray-300 mb-3">Additional Preferences</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {Object.entries(questionnaire.preferences).map(([key, value]) => {
+                    if (value === false || value === null || value === '') return null;
+                    const label = key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+                    return (
+                      <div key={key} className="flex items-center gap-2">
+                        <CheckCircle2 className="w-4 h-4 text-[#10B981]" />
+                        <span className="text-white text-sm">
+                          {label}: {typeof value === 'boolean' ? (value ? 'Yes' : 'No') : String(value)}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Sections 2-4: 3 Care Home Cards */}
@@ -692,7 +764,12 @@ export default function ReportRenderer({ report, questionnaire }: ReportRenderer
       {/* Section 9: Comparison Table */}
       <ComparisonTable homes={homes} />
 
-      {/* Section 7: Checklist + Next Steps */}
+      {/* Section 10: LLM Insights */}
+      {report.llmInsights && (
+        <FreeReportLLMInsights llmInsights={report.llmInsights} />
+      )}
+
+      {/* Section 11: Checklist + Next Steps */}
       <div className="bg-white rounded-xl shadow-lg border border-gray-200 p-8">
         <h3 className="text-2xl font-bold text-gray-900 mb-6">Checklist and Next Steps</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -758,13 +835,6 @@ export default function ReportRenderer({ report, questionnaire }: ReportRenderer
         <p className="text-sm text-green-50 mt-4">Includes deep analysis of all homes and funding strategy</p>
       </div>
 
-      {/* Professional Peek Expanders */}
-      <div className="space-y-4">
-        <h3 className="text-2xl font-bold text-gray-900 mb-4">Professional Peek</h3>
-        {homes.map((home, idx) => (
-          <ProfessionalPeek key={idx} home={home} />
-        ))}
-      </div>
         </>
       ) : activeTab === 'scoring-settings' ? (
         <div className="space-y-6">

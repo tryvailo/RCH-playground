@@ -330,24 +330,6 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: '#D1FAE5',
   },
-  professionalPeek: {
-    backgroundColor: '#1E2A44',
-    color: '#FFFFFF',
-    padding: 25,
-    borderRadius: 8,
-    marginTop: 20,
-  },
-  professionalPeekTitle: {
-    fontSize: 18,
-    fontWeight: 700,
-    color: '#FFFFFF',
-    marginBottom: 15,
-  },
-  professionalPeekContent: {
-    fontSize: 10,
-    color: '#D1D5DB',
-    lineHeight: 1.6,
-  },
   footer: {
     position: 'absolute',
     bottom: 30,
@@ -639,7 +621,7 @@ const FreeReportPDF: React.FC<FreeReportPDFProps> = ({ data, questionnaire }) =>
         </View>
       </Page>
 
-      {/* Page 8: CTA + Professional Peek */}
+      {/* Page 8: CTA */}
       <Page size="A4" style={styles.page}>
         <View style={styles.ctaSection}>
           <Text style={styles.ctaTitle}>Save £50k+?</Text>
@@ -655,29 +637,6 @@ const FreeReportPDF: React.FC<FreeReportPDFProps> = ({ data, questionnaire }) =>
             Includes deep analysis of all homes and funding strategy
           </Text>
         </View>
-
-        {homes.map((home, idx) => (
-          <View key={idx} style={styles.professionalPeek}>
-            <Text style={styles.professionalPeekTitle}>
-              {home.name} - Professional Analysis
-            </Text>
-            <Text style={styles.professionalPeekContent}>
-              Deep analysis of this home includes financial assessment, quality metrics and detailed
-              funding recommendations. Professional report provides cost optimization strategy
-              and maximizes government support.
-            </Text>
-            {home.features && home.features.length > 0 && (
-              <View style={{ marginTop: 10 }}>
-                <Text style={{ fontSize: 9, fontWeight: 600, color: '#10B981', marginBottom: 5 }}>
-                  Key Features:
-                </Text>
-                <Text style={styles.professionalPeekContent}>
-                  {home.features.join(' • ')}
-                </Text>
-              </View>
-            )}
-          </View>
-        ))}
 
         <Text style={styles.footer}>
           RightCareHome Free Report • Generated {new Date().toLocaleDateString('ru-RU')}

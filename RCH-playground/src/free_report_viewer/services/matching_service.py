@@ -129,13 +129,29 @@ try:
 except ImportError:
     # Fallback: define simple classes if import fails
     class MatchingInputs:
-        def __init__(self, postcode, budget=None, care_type=None, user_lat=None, user_lon=None, max_distance_miles=None):
+        def __init__(self, postcode, budget=None, care_type=None, user_lat=None, user_lon=None, max_distance_miles=None,
+                     location_postcode=None, timeline=None, medical_conditions=None, max_distance_km=None,
+                     priority_order=None, priority_weights=None):
             self.postcode = postcode
             self.budget = budget
             self.care_type = care_type
             self.user_lat = user_lat
             self.user_lon = user_lon
             self.max_distance_miles = max_distance_miles
+            self.location_postcode = location_postcode or postcode
+            self.timeline = timeline
+            self.medical_conditions = medical_conditions or []
+            self.max_distance_km = max_distance_km
+            self.priority_order = priority_order or ['quality', 'cost', 'proximity']
+            self.priority_weights = priority_weights or [40, 35, 25]
+        
+        def get_max_distance_km(self):
+            """Get max distance in km"""
+            if self.max_distance_km:
+                return self.max_distance_km
+            if self.max_distance_miles:
+                return self.max_distance_miles * 1.60934
+            return 30.0
     
     class MatchingScore:
         def __init__(self):
@@ -1212,4 +1228,321 @@ class MatchingService:
             },
             'preset': 'spec_v3'
         }
+    
+    # ==================== SIMPLE STRATEGIC SELECTION (CARE-HOME-MATCHING) ====================
+    
+    def select_3_strategic_homes_simple(
+        self,
+        candidates: List[Dict[str, Any]],
+        user_inputs: MatchingInputs
+    ) -> Dict[str, Dict[str, Any]]:
+        """
+        Простой стратегический выбор 3 домов на основе 50-point scoring
+        
+        Стратегии (из CARE-HOME-MATCHING-ALGORITHM):
+        1. Safe Bet - Максимальная безопасность (safety_score + quality)
+        2. Best Reputation - Лучшая репутация (quality + Google reviews)
+        3. Smart Value - Оптимальное соотношение цена/качество (budget + quality/price)
+        
+        Args:
+            candidates: List of care home dicts (already filtered)
+            user_inputs: MatchingInputs with user preferences
+        
+        Returns:
+            Dict with 'safe_bet', 'best_reputation', 'smart_value' keys
+        """
+        if not candidates:
+            return {}
+        
+        # Calculate distances if coordinates available
+        if user_inputs.user_lat and user_inputs.user_lon:
+            for home in candidates:
+                if home.get('latitude') and home.get('longitude'):
+                    home['distance_km'] = self._calculate_distance(
+                        user_inputs.user_lat, user_inputs.user_lon,
+                        home['latitude'], home['longitude']
+                    )
+        
+        # Calculate 50-point scores for all candidates using spec_v3
+        scored_homes = []
+        for home in candidates:
+            score_data = self.calculate_50_point_score_v3(
+                home,
+                user_inputs,
+                user_inputs.medical_conditions
+            )
+            home['scores'] = score_data['breakdown']
+            home['match_score'] = score_data['total']
+            scored_homes.append(home)
+        
+        # Get home ID function
+        def get_home_id(home):
+            return home.get('location_id') or home.get('id') or home.get('name') or str(id(home))
+        
+        # STRATEGY 1: Safe Bet - Максимальная безопасность
+        # Используем: safety_score (10 pts) + quality (8 pts)
+        safe_bet = max(
+            scored_homes,
+            key=lambda h: (
+                h['scores'].get('safety', 0),
+                h['scores'].get('quality', 0),
+                h['match_score']
+            )
+        )
+        safe_bet = safe_bet.copy()
+        safe_bet['strategy'] = 'safe-bet'
+        safe_bet['match_reasoning'] = self._generate_safe_bet_reasoning(safe_bet)
+        safe_bet['match_type'] = 'Safe Bet'
+        
+        # STRATEGY 2: Best Reputation - Лучшая репутация
+        # Используем: quality (8 pts) + Google rating (если есть)
+        # Исключаем Safe Bet
+        safe_bet_id = get_home_id(safe_bet)
+        reputation_candidates = [
+            h for h in scored_homes 
+            if get_home_id(h) != safe_bet_id
+        ]
+        
+        if not reputation_candidates:
+            # Fallback: если только один дом, используем его для Best Reputation тоже
+            best_reputation = safe_bet.copy()
+            best_reputation['strategy'] = 'best-reputation'
+            best_reputation['match_reasoning'] = self._generate_reputation_reasoning(best_reputation)
+            best_reputation['match_type'] = 'Best Reputation'
+        else:
+            best_reputation = max(
+                reputation_candidates,
+                key=lambda h: (
+                    h['scores'].get('quality', 0),
+                    h.get('google_rating', 0) or 0,  # Google rating если есть
+                    h.get('review_count', 0) or h.get('user_ratings_total', 0) or 0,  # Количество отзывов
+                    h['match_score']
+                )
+            )
+            best_reputation = best_reputation.copy()
+            best_reputation['strategy'] = 'best-reputation'
+            best_reputation['match_reasoning'] = self._generate_reputation_reasoning(best_reputation)
+            best_reputation['match_type'] = 'Best Reputation'
+        
+        # STRATEGY 3: Smart Value - Оптимальное соотношение цена/качество
+        # Используем: budget (8 pts) + соотношение quality/price
+        # Исключаем уже выбранные дома
+        best_reputation_id = get_home_id(best_reputation)
+        value_candidates = [
+            h for h in scored_homes 
+            if get_home_id(h) != safe_bet_id 
+            and get_home_id(h) != best_reputation_id
+        ]
+        
+        if not value_candidates:
+            # Fallback: если только два дома, используем лучший из оставшихся
+            value_candidates = [h for h in scored_homes if get_home_id(h) != safe_bet_id]
+            if not value_candidates:
+                # Если только один дом, используем его для Smart Value тоже
+                smart_value = safe_bet.copy()
+                smart_value['strategy'] = 'smart-value'
+                smart_value['match_reasoning'] = self._generate_value_reasoning(smart_value, user_inputs)
+                smart_value['match_type'] = 'Smart Value'
+            else:
+                # Вычисляем value ratio для оставшихся кандидатов
+                for home in value_candidates:
+                    price = self._get_home_price(home, user_inputs.care_type)
+                    if price > 0:
+                        quality_total = home['scores'].get('quality', 0) + home['scores'].get('safety', 0)
+                        home['value_ratio'] = quality_total / (price / 100)
+                    else:
+                        home['value_ratio'] = 0
+                
+                smart_value = max(
+                    value_candidates,
+                    key=lambda h: (
+                        h.get('value_ratio', 0),
+                        h['scores'].get('budget', 0),
+                        h['scores'].get('quality', 0),
+                        h['match_score']
+                    )
+                )
+                smart_value = smart_value.copy()
+                smart_value['strategy'] = 'smart-value'
+                smart_value['match_reasoning'] = self._generate_value_reasoning(smart_value, user_inputs)
+                smart_value['match_type'] = 'Smart Value'
+        else:
+            # Вычисляем value ratio (quality per pound)
+            for home in value_candidates:
+                price = self._get_home_price(home, user_inputs.care_type)
+                if price > 0:
+                    # Value = (quality + safety) / price (нормализуем цену)
+                    quality_total = home['scores'].get('quality', 0) + home['scores'].get('safety', 0)
+                    home['value_ratio'] = quality_total / (price / 100)
+                else:
+                    home['value_ratio'] = 0
+            
+            smart_value = max(
+                value_candidates,
+                key=lambda h: (
+                    h.get('value_ratio', 0),
+                    h['scores'].get('budget', 0),  # В пределах бюджета
+                    h['scores'].get('quality', 0),
+                    h['match_score']
+                )
+            )
+            smart_value = smart_value.copy()
+            smart_value['strategy'] = 'smart-value'
+            smart_value['match_reasoning'] = self._generate_value_reasoning(smart_value, user_inputs)
+            smart_value['match_type'] = 'Smart Value'
+        
+        # Применяем приоритеты пользователя (если есть)
+        if user_inputs.priority_order and user_inputs.priority_weights:
+            for home in [safe_bet, best_reputation, smart_value]:
+                if home:
+                    home['priority_adjusted_score'] = self._apply_priority_weights(home, user_inputs)
+        
+        # Строим результат, исключая None значения
+        result = {}
+        if safe_bet:
+            result['safe_bet'] = safe_bet
+        if best_reputation:
+            result['best_reputation'] = best_reputation
+        if smart_value:
+            result['smart_value'] = smart_value
+        
+        return result
+    
+    def _generate_safe_bet_reasoning(self, home: Dict[str, Any]) -> List[str]:
+        """Простое объяснение для Safe Bet"""
+        reasons = []
+        
+        cqc_rating = home.get('rating') or home.get('overall_rating') or home.get('cqc_rating_overall', '')
+        if cqc_rating:
+            rating_lower = cqc_rating.lower()
+            if 'outstanding' in rating_lower:
+                reasons.append("Outstanding CQC rating - highest regulatory standard")
+            elif 'good' in rating_lower:
+                reasons.append("Good CQC rating - meets regulatory standards")
+        
+        fsa_rating = home.get('fsa_rating') or home.get('food_hygiene_rating')
+        if fsa_rating:
+            try:
+                fsa_int = int(fsa_rating) if isinstance(fsa_rating, (int, float, str)) else None
+                if fsa_int == 5:
+                    reasons.append("Excellent food hygiene rating (5/5)")
+            except (ValueError, TypeError):
+                pass
+        
+        safe_rating = home.get('cqc_rating_safe') or home.get('cqc_safe_rating', '')
+        if safe_rating:
+            safe_lower = safe_rating.lower()
+            if 'excellent' in safe_lower or 'outstanding' in safe_lower:
+                reasons.append("Excellent safety record")
+        
+        # Если нет причин, добавить общую
+        if not reasons:
+            safety_score = home.get('scores', {}).get('safety', 0)
+            if safety_score >= 8:
+                reasons.append("High safety score based on regulatory ratings")
+        
+        return reasons
+    
+    def _generate_reputation_reasoning(self, home: Dict[str, Any]) -> List[str]:
+        """Простое объяснение для Best Reputation"""
+        reasons = []
+        
+        cqc_rating = home.get('rating') or home.get('overall_rating') or home.get('cqc_rating_overall', '')
+        if cqc_rating:
+            rating_lower = cqc_rating.lower()
+            if 'outstanding' in rating_lower:
+                reasons.append("Outstanding CQC rating - recognised excellence")
+            elif 'good' in rating_lower:
+                reasons.append("Good CQC rating - reliable care standards")
+        
+        google_rating = home.get('google_rating')
+        review_count = home.get('review_count') or home.get('user_ratings_total', 0)
+        
+        if google_rating:
+            try:
+                google_float = float(google_rating)
+                if google_float >= 4.5:
+                    reasons.append(f"Exceptional reviews - {google_float:.1f} stars from {review_count} families")
+                elif google_float >= 4.0:
+                    reasons.append(f"Strong reviews - {google_float:.1f} stars")
+            except (ValueError, TypeError):
+                pass
+        
+        # Если нет причин, добавить общую
+        if not reasons:
+            quality_score = home.get('scores', {}).get('quality', 0)
+            if quality_score >= 6:
+                reasons.append("High quality rating from regulatory body")
+        
+        return reasons
+    
+    def _generate_value_reasoning(self, home: Dict[str, Any], user_inputs: MatchingInputs) -> List[str]:
+        """Простое объяснение для Smart Value"""
+        reasons = []
+        
+        price = self._get_home_price(home, user_inputs.care_type)
+        budget = user_inputs.budget
+        
+        if budget and price > 0:
+            if price <= budget:
+                savings = budget - price
+                if savings > 0:
+                    reasons.append(f"Within budget - saves £{savings:.0f}/week compared to your budget")
+                else:
+                    reasons.append("Within your budget")
+            else:
+                over_budget = price - budget
+                if over_budget <= 50:
+                    reasons.append(f"Slightly over budget by £{over_budget:.0f}/week")
+        
+        # Quality per pound
+        scores = home.get('scores', {})
+        quality_total = scores.get('quality', 0) + scores.get('safety', 0)
+        if price > 0:
+            quality_per_pound = quality_total / (price / 100)
+            if quality_per_pound > 1.5:
+                reasons.append("Excellent quality-to-price ratio")
+            elif quality_per_pound > 1.0:
+                reasons.append("Good value for money")
+        
+        cqc_rating = home.get('rating') or home.get('overall_rating') or home.get('cqc_rating_overall', '')
+        if cqc_rating:
+            rating_lower = cqc_rating.lower()
+            if 'good' in rating_lower or 'outstanding' in rating_lower:
+                reasons.append("High quality care at competitive rates")
+        
+        # Если нет причин, добавить общую
+        if not reasons:
+            budget_score = scores.get('budget', 0)
+            if budget_score >= 6:
+                reasons.append("Good budget fit with quality care")
+        
+        return reasons
+    
+    def _apply_priority_weights(self, home: Dict[str, Any], user_inputs: MatchingInputs) -> float:
+        """
+        Применяем приоритеты пользователя к финальному скору
+        (если есть priority_order и priority_weights)
+        """
+        if not user_inputs.priority_order or not user_inputs.priority_weights:
+            return home.get('match_score', 0)
+        
+        weights = user_inputs.priority_weights
+        priority_order = user_inputs.priority_order
+        scores = home.get('scores', {})
+        
+        # Маппинг приоритетов к категориям из 50-point
+        scores_map = {
+            'quality': scores.get('quality', 0) + scores.get('safety', 0),  # Quality = Quality + Safety
+            'cost': scores.get('budget', 0),  # Cost = Budget Fit
+            'proximity': scores.get('location', 0)  # Proximity = Location
+        }
+        
+        # Взвешенная сумма
+        priority_score = 0.0
+        for i, priority in enumerate(priority_order):
+            if i < len(weights) and priority in scores_map:
+                priority_score += scores_map[priority] * (weights[i] / 100.0)
+        
+        return priority_score
 

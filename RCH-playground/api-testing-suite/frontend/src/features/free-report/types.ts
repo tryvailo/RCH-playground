@@ -10,6 +10,15 @@ export interface QuestionnaireResponse {
   latitude?: number;
   longitude?: number;
   preferences?: Record<string, any>;
+  // Additional fields from questionnaire
+  priority_order?: string[];
+  priority_weights?: number[];
+  timeline?: string;
+  max_distance_km?: number;
+  medical_conditions?: string[];
+  funding_type?: string;
+  duration_type?: string;
+  location_postcode?: string;
 }
 
 export interface CareHome {
@@ -97,6 +106,25 @@ export interface ComparisonCriteria {
   home3: string | number;
 }
 
+export interface LLMInsights {
+  generated_at: string;
+  method: string;
+  insights: {
+    overall_explanation: {
+      summary: string;
+      key_findings: string[];
+      confidence_level: string;
+    };
+    home_insights: Array<{
+      home_name: string;
+      match_type: 'Safe Bet' | 'Best Value' | 'Premium';
+      why_selected: string;
+      key_strengths: string[];
+      considerations?: string[];
+    }>;
+  };
+}
+
 export interface FreeReportData {
   homes: CareHomeData[];
   fairCostGap: FairCostGapData;
@@ -104,6 +132,7 @@ export interface FreeReportData {
   fundingEligibility?: FundingEligibility;
   areaProfile?: AreaProfile;
   areaMap?: AreaMapData;
+  llmInsights?: LLMInsights;
 }
 
 export interface FundingEligibility {
@@ -169,6 +198,7 @@ export interface FreeReportResponse {
   funding_eligibility?: FundingEligibility;
   area_profile?: AreaProfile;
   area_map?: AreaMapData;
+  llm_insights?: LLMInsights;
   generated_at: string;
   report_id: string;
 }

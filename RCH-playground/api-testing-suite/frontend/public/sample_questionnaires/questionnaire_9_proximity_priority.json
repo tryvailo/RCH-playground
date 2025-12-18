@@ -1,0 +1,37 @@
+{
+  "user_name": "Richard Black",
+  "care_recipient_name": "Dorothy Black",
+  "email": "richard.black@example.com",
+  "phone": "+44 7123 456797",
+  "location_postcode": "B16 8LQ",
+  "postcode": "B16 8LQ",
+  "address": "Edgbaston, Birmingham",
+  "city": "Birmingham",
+  "latitude": 52.4700,
+  "longitude": -1.9200,
+  "local_authority": "Birmingham",
+  "region": "West Midlands",
+  "care_type": "dementia_care",
+  "care_types": ["dementia_care"],
+  "primary_care_type": "dementia_care",
+  "medical_conditions": ["dementia"],
+  "budget_range": "1350",
+  "budget": 1300.0,
+  "budget_max": 1300,
+  "budget_weekly_max": 1300,
+  "funding_type": "local_authority_funded",
+  "duration_type": "permanent",
+  "timeline": "1_month",
+  "max_distance_km": 5,
+  "marketing_opt_in": true,
+  "priority_order": ["proximity", "quality", "cost"],
+  "priority_weights": [50, 35, 15],
+  "chc_probability": 38.2,
+  "preferences": {
+    "close_to_family": true,
+    "frequent_visits": true,
+    "local_area": true,
+    "notes": "Proximity-focused user needing care home very close to family. Frequent visits are essential. Willing to compromise on cost for location."
+  }
+}
+

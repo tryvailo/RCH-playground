@@ -1,0 +1,38 @@
+{
+  "user_name": "Thomas Green",
+  "care_recipient_name": "Mary Green",
+  "email": "thomas.green@example.com",
+  "phone": "+44 7123 456795",
+  "location_postcode": "B15 2TT",
+  "postcode": "B15 2TT",
+  "address": "Edgbaston, Birmingham",
+  "city": "Birmingham",
+  "latitude": 52.4569,
+  "longitude": -1.9200,
+  "local_authority": "Birmingham",
+  "region": "West Midlands",
+  "care_type": "nursing_dementia_care",
+  "care_types": ["nursing_care", "dementia_care"],
+  "primary_care_type": "nursing_dementia_care",
+  "medical_conditions": ["dementia", "diabetes"],
+  "budget_range": "all",
+  "budget": 1800.0,
+  "budget_max": null,
+  "budget_weekly_max": null,
+  "funding_type": "privately_funded",
+  "duration_type": "permanent",
+  "timeline": "2_3_months",
+  "max_distance_km": 25,
+  "marketing_opt_in": true,
+  "priority_order": ["quality", "proximity", "cost"],
+  "priority_weights": [70, 20, 10],
+  "chc_probability": 52.3,
+  "preferences": {
+    "quality_focused": true,
+    "outstanding_cqc_rating": true,
+    "premium_services": true,
+    "family_involvement": true,
+    "notes": "Quality-focused user prioritizing excellent care standards over cost. Willing to pay premium for Outstanding CQC rating and specialized dementia nursing care."
+  }
+}
+

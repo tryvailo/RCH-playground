@@ -253,7 +253,7 @@ const transformBackendResponse = (
         min: home.weekly_cost * 0.9,
         max: home.weekly_cost * 1.1,
       },
-      distance: home.distance_km || 0,
+      distance: home.distance_km ?? 0, // Use nullish coalescing to allow 0.0 as valid value
       fsa_color: home.fsa_color,
       fsa_rating: home.fsa_rating,
       fsa_rating_key: home.fsa_rating_key,
@@ -264,6 +264,9 @@ const transformBackendResponse = (
       rating: home.rating,
       features: home.features,
       care_types: home.care_types,
+      address: home.address,
+      city: home.city,
+      postcode: home.postcode,
       contact_phone: home.contact_phone,
       website: home.website,
     };
@@ -291,6 +294,9 @@ const transformBackendResponse = (
     amenities: (responseData as any).area_map.amenities,
   } : undefined;
 
+  // Transform llm_insights if provided by backend
+  const llmInsights = (responseData as any).llm_insights || undefined;
+
   return {
     homes,
     fairCostGap,
@@ -298,6 +304,7 @@ const transformBackendResponse = (
     fundingEligibility,
     areaProfile,
     areaMap,
+    llmInsights,
   };
 };
 
