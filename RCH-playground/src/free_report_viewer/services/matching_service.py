@@ -668,9 +668,33 @@ class MatchingService:
         home: Dict[str, Any],
         care_type: Optional[str]
     ) -> float:
-        """Get home price based on care type"""
+        """
+        Get home price based on care type.
+        
+        UPDATED: Uses extract_weekly_price() for better handling of merged CQC + Staging data.
+        Falls back to direct field access if utils not available.
+        """
+        # Try to use shared price extractor (works with CQC + Staging merged data)
+        try:
+            import sys
+            from pathlib import Path
+            # Try to find utils.price_extractor
+            project_root = Path(__file__).parent.parent.parent.parent.parent
+            utils_path = project_root / "RCH-playground" / "api-testing-suite" / "backend" / "utils"
+            if str(utils_path) not in sys.path:
+                sys.path.insert(0, str(utils_path))
+            from price_extractor import extract_weekly_price
+            
+            price = extract_weekly_price(home, care_type)
+            if price and price > 0:
+                return float(price)
+        except (ImportError, Exception) as e:
+            # Fallback to direct field access if utils not available
+            pass
+        
+        # Fallback: Direct field access (legacy method)
         if not care_type:
-            return home.get('weekly_cost', 0)
+            return home.get('weekly_cost', 0) or 0.0
         
         care_type_lower = care_type.lower()
         
@@ -678,29 +702,44 @@ class MatchingService:
         if care_type_lower == 'residential':
             price = home.get('fee_residential_from')
             if price:
-                return float(price)
+                try:
+                    return float(price)
+                except (ValueError, TypeError):
+                    pass
         elif care_type_lower == 'nursing':
             price = home.get('fee_nursing_from')
             if price:
-                return float(price)
+                try:
+                    return float(price)
+                except (ValueError, TypeError):
+                    pass
         elif care_type_lower == 'dementia':
             price = home.get('fee_dementia_from')
             if price:
-                return float(price)
+                try:
+                    return float(price)
+                except (ValueError, TypeError):
+                    pass
         elif care_type_lower == 'respite':
             price = home.get('fee_respite_from')
             if price:
-                return float(price)
+                try:
+                    return float(price)
+                except (ValueError, TypeError):
+                    pass
         
         # Try weekly_costs dict
         weekly_costs = home.get('weekly_costs', {})
         if isinstance(weekly_costs, dict) and care_type_lower in weekly_costs:
             price = weekly_costs[care_type_lower]
             if price:
-                return float(price)
+                try:
+                    return float(price)
+                except (ValueError, TypeError):
+                    pass
         
         # Fallback to weekly_cost
-        return home.get('weekly_cost', 0)
+        return home.get('weekly_cost', 0) or 0.0
     
     def _get_home_care_types(self, home: Dict[str, Any]) -> List[str]:
         """Extract care types from home data"""
@@ -1208,10 +1247,29 @@ class MatchingService:
         location_score = self.score_location_v3(distance_km)
         budget_score = self.score_budget_v3(home_price, user_inputs.budget)
         quality_score = self.score_quality_v3(overall_rating)
-        availability_score = self.score_availability_v3(
-            home.get('beds_available'),
-            home.get('has_availability')
-        )
+        
+        # UPDATED: Use db_field_extractor for availability (works with CQC + Staging merged data)
+        try:
+            import sys
+            from pathlib import Path
+            # Try to find services.db_field_extractor
+            project_root = Path(__file__).parent.parent.parent.parent.parent
+            services_path = project_root / "RCH-playground" / "api-testing-suite" / "backend" / "services"
+            if str(services_path) not in sys.path:
+                sys.path.insert(0, str(services_path))
+            from db_field_extractor import get_availability_info
+            
+            availability_info = get_availability_info(home)
+            availability_score = self.score_availability_v3(
+                availability_info.get('beds_available'),
+                availability_info.get('has_availability')
+            )
+        except (ImportError, Exception):
+            # Fallback to direct field access if db_field_extractor not available
+            availability_score = self.score_availability_v3(
+                home.get('beds_available'),
+                home.get('has_availability')
+            )
         
         total = medical_score + safety_score + location_score + budget_score + quality_score + availability_score
         
@@ -1310,12 +1368,35 @@ class MatchingService:
             best_reputation['match_reasoning'] = self._generate_reputation_reasoning(best_reputation)
             best_reputation['match_type'] = 'Best Reputation'
         else:
+            # UPDATED: Use db_field_extractor for reviews (works with CQC + Staging merged data)
+            try:
+                import sys
+                from pathlib import Path
+                # Try to find services.db_field_extractor
+                project_root = Path(__file__).parent.parent.parent.parent.parent
+                services_path = project_root / "RCH-playground" / "api-testing-suite" / "backend" / "services"
+                if str(services_path) not in sys.path:
+                    sys.path.insert(0, str(services_path))
+                from db_field_extractor import get_review_data
+                
+                # Pre-calculate review data for all candidates
+                for home in reputation_candidates:
+                    google_rating = get_review_data(home, 'google')
+                    review_count = get_review_data(home, 'count')
+                    home['_google_rating'] = float(google_rating) if google_rating else (home.get('google_rating', 0) or 0)
+                    home['_review_count'] = int(review_count) if review_count else (home.get('review_count', 0) or home.get('user_ratings_total', 0) or 0)
+            except (ImportError, Exception):
+                # Fallback: add _google_rating and _review_count directly
+                for home in reputation_candidates:
+                    home['_google_rating'] = home.get('google_rating', 0) or 0
+                    home['_review_count'] = home.get('review_count', 0) or home.get('user_ratings_total', 0) or 0
+            
             best_reputation = max(
                 reputation_candidates,
                 key=lambda h: (
                     h['scores'].get('quality', 0),
-                    h.get('google_rating', 0) or 0,  # Google rating если есть
-                    h.get('review_count', 0) or h.get('user_ratings_total', 0) or 0,  # Количество отзывов
+                    h.get('_google_rating', 0),  # Используем предвычисленное значение
+                    h.get('_review_count', 0),   # Используем предвычисленное значение
                     h['match_score']
                 )
             )

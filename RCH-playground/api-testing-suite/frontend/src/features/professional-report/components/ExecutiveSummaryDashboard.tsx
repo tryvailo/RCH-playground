@@ -1,5 +1,5 @@
 import React from 'react';
-import { TrendingUp, Shield, DollarSign, Users, AlertCircle, Award, MapPin, Star } from 'lucide-react';
+import { TrendingUp, Shield, DollarSign, AlertCircle, Award } from 'lucide-react';
 import PriceComparisonChart from './PriceComparisonChart';
 import VerdictBadge from './VerdictBadge';
 import type { ProfessionalReportData } from '../types';
@@ -107,39 +107,6 @@ export default function ExecutiveSummaryDashboard({ report }: ExecutiveSummaryDa
       {/* Price Comparison Chart */}
       <div className="bg-white rounded-lg p-4 border border-gray-200">
         <PriceComparisonChart homes={report.careHomes} />
-      </div>
-
-      {/* Quick Stats Grid */}
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-        <div className="bg-white rounded-lg p-3 border border-gray-200">
-          <div className="flex items-center gap-2 mb-1">
-            <Users className="w-4 h-4 text-gray-500" />
-            <span className="text-xs text-gray-500">Homes Analyzed</span>
-          </div>
-          <div className="text-lg font-bold text-gray-900">
-            {report.analysisSummary.totalHomesAnalyzed}
-          </div>
-        </div>
-
-        <div className="bg-white rounded-lg p-3 border border-gray-200">
-          <div className="flex items-center gap-2 mb-1">
-            <Star className="w-4 h-4 text-gray-500" />
-            <span className="text-xs text-gray-500">Avg Match Score</span>
-          </div>
-          <div className="text-lg font-bold text-gray-900">
-            {avgMatchScore.toFixed(1)}%
-          </div>
-        </div>
-
-        <div className="bg-white rounded-lg p-3 border border-gray-200">
-          <div className="flex items-center gap-2 mb-1">
-            <MapPin className="w-4 h-4 text-gray-500" />
-            <span className="text-xs text-gray-500">Location</span>
-          </div>
-          <div className="text-lg font-bold text-gray-900">
-            {report.city}
-          </div>
-        </div>
       </div>
     </div>
   );

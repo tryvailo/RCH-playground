@@ -2,6 +2,22 @@ import React from 'react';
 import { Target, CheckCircle2, AlertTriangle, XCircle, Star, Info } from 'lucide-react';
 import type { ProfessionalReportData, ProfessionalQuestionnaireResponse } from '../types';
 
+/**
+ * PrioritiesMatchSection Component
+ * 
+ * Calculates Priority Match Score based on:
+ * 1. User priorities from section_6_priorities (if available)
+ * 2. Real category_scores from 156-point algorithm (from factorScores)
+ * 3. Priority weights from questionnaire
+ * 
+ * Formula:
+ * - For each priority: avg(category_scores for priority's categories) * priority_weight
+ * - Overall Priority Match = sum(priority_scores * weights) / sum(weights)
+ * 
+ * This should align with Avg Match Score, which uses the same 156-point algorithm
+ * but shows the average across all 5 homes.
+ */
+
 interface PrioritiesMatchSectionProps {
   report: ProfessionalReportData;
   questionnaire?: ProfessionalQuestionnaireResponse;
@@ -56,12 +72,37 @@ const extractUserPriorities = (questionnaire?: ProfessionalQuestionnaireResponse
 
   if (!questionnaire) {
     return [
-      { id: 'care_quality', label: 'Quality of Care', source: 'default', weight: 10 },
-      { id: 'safety', label: 'Safety & Security', source: 'default', weight: 9 },
-      { id: 'location', label: 'Convenient Location', source: 'default', weight: 8 },
-      { id: 'price', label: 'Affordable Pricing', source: 'default', weight: 7 },
-      { id: 'facilities', label: 'Good Facilities', source: 'default', weight: 6 },
+      { id: 'quality_reputation', label: 'Quality & Reputation', source: 'default', weight: 30 },
+      { id: 'cost_financial', label: 'Cost & Financial Stability', source: 'default', weight: 25 },
+      { id: 'location_social', label: 'Location & Social', source: 'default', weight: 25 },
+      { id: 'comfort_amenities', label: 'Comfort & Amenities', source: 'default', weight: 20 },
     ];
+  }
+
+  // Use section_6_priorities if available (NEW format)
+  const section6 = questionnaire.section_6_priorities?.q18_priority_ranking;
+  if (section6 && section6.priority_order && section6.priority_weights) {
+    const priorityLabels: Record<string, string> = {
+      'quality_reputation': 'Quality & Reputation',
+      'cost_financial': 'Cost & Financial Stability',
+      'location_social': 'Location & Social',
+      'comfort_amenities': 'Comfort & Amenities',
+      // OLD format support
+      'medical_safety': 'Medical & Safety'
+    };
+
+    section6.priority_order.forEach((priorityId, index) => {
+      if (index < section6.priority_weights.length) {
+        priorities.push({
+          id: priorityId,
+          label: priorityLabels[priorityId] || priorityId,
+          source: 'section_6_priorities',
+          weight: section6.priority_weights[index]
+        });
+      }
+    });
+
+    return priorities;
   }
 
   // Extract from care_types
@@ -152,80 +193,169 @@ const calculateHomeMatches = (
   homes: ProfessionalReportData['careHomes'],
   questionnaire?: ProfessionalQuestionnaireResponse
 ): HomeMatch[] => {
-  return homes.slice(0, 3).map((home, index) => {
+  return homes.slice(0, 5).map((home, index) => {
     const priorityScores: Record<string, PriorityMatch> = {};
     let totalScore = 0;
     let totalWeight = 0;
 
+    // Build category scores map from factorScores
+    // factorScores contains: { category, score (points 0-156), maxScore, weight }
+    // We need to normalize to 0-100 scale: (score / maxScore) * 100
+    const categoryScoresMap: Record<string, number> = {};
+    
+    // First try: use factorScores
+    if (home.factorScores && Array.isArray(home.factorScores) && home.factorScores.length > 0) {
+      home.factorScores.forEach(factor => {
+        // Map display names back to algorithm category names
+        const categoryNameMap: Record<string, string> = {
+          'Medical Capabilities': 'medical',
+          'Safety & Quality': 'safety',
+          'Location & Access': 'location',
+          'Cultural & Social': 'social',
+          'Financial Stability': 'financial',
+          'Staff Quality': 'staff',
+          'CQC Compliance': 'cqc',
+          'Additional Services': 'services'
+        };
+        
+        const algoCategory = categoryNameMap[factor.category] || factor.category.toLowerCase();
+        
+        // Normalize score to 0-100: (points / maxPoints) * 100
+        const normalizedScore = factor.maxScore > 0 
+          ? (factor.score / factor.maxScore) * 100 
+          : 0;
+        categoryScoresMap[algoCategory] = normalizedScore;
+      });
+    }
+    
+    // Fallback: use matchResult.category_scores (0-1 scale) and normalize to 0-100
+    if (Object.keys(categoryScoresMap).length === 0 && home.matchResult?.category_scores) {
+      const categoryScores = home.matchResult.category_scores;
+      Object.keys(categoryScores).forEach(category => {
+        // category_scores are in 0-1 scale, normalize to 0-100
+        const score = categoryScores[category];
+        if (typeof score === 'number' && score >= 0) {
+          categoryScoresMap[category] = score * 100;
+        }
+      });
+    }
+    
+    // Debug logging (only in development)
+    if (process.env.NODE_ENV === 'development' && Object.keys(categoryScoresMap).length === 0) {
+      console.warn(`[PrioritiesMatch] No category scores for home ${home.name}:`, {
+        factorScores: home.factorScores,
+        matchResult: home.matchResult
+      });
+    }
+
+    // Priority mapping to algorithm categories (same as backend)
+    const priorityCategoryMapping: Record<string, string[]> = {
+      'quality_reputation': ['cqc', 'staff'],
+      'cost_financial': ['financial'],
+      'location_social': ['location', 'social'],
+      'comfort_amenities': ['services'],
+      // OLD format support
+      'medical_safety': ['medical', 'safety']
+    };
+
     priorities.forEach(priority => {
       let match: PriorityMatch = { score: 0, status: 'none' };
 
-      // Check based on priority source
-      if (priority.source === 'care_types') {
-        // Check if home has matching care type
-        const cqcRating = home.cqcRating?.toLowerCase();
-        if (cqcRating === 'outstanding' || cqcRating === 'good') {
-          match = { score: 10, status: 'full' };
-        } else if (cqcRating === 'requires improvement') {
-          match = { score: 5, status: 'partial', note: 'CQC rating indicates room for improvement' };
-        } else {
-          match = { score: 3, status: 'partial', note: 'Verify care type availability' };
-        }
-      } else if (priority.source === 'medical_conditions') {
-        // Check medical capabilities from home data
-        const matchScore = home.matchScore;
-        if (matchScore >= 85) {
-          match = { score: 10, status: 'full' };
-        } else if (matchScore >= 70) {
-          match = { score: 7, status: 'partial', note: 'Verify specialist capabilities' };
-        } else {
-          match = { score: 4, status: 'partial', note: 'Ask about experience with this condition' };
-        }
-      } else if (priority.source === 'mobility_level') {
-        // Check accessibility
-        const hasAccessibility = home.safetyAnalysis?.accessibility?.wheelchair_accessible;
-        if (hasAccessibility) {
-          match = { score: 10, status: 'full' };
-        } else {
-          match = { score: 5, status: 'partial', note: 'Verify accessibility during visit' };
-        }
-      } else if (priority.source === 'dietary_requirements') {
-        // FSA rating indicates food quality
-        const fsaRating = home.fsaDetailed?.rating;
-        if (fsaRating && fsaRating >= 4) {
-          match = { score: 9, status: 'full' };
-        } else if (fsaRating && fsaRating >= 3) {
-          match = { score: 6, status: 'partial', note: 'Discuss dietary needs with kitchen staff' };
-        } else {
-          match = { score: 4, status: 'partial', note: 'Request sample menus' };
-        }
-      } else if (priority.source === 'preferred_location') {
-        // Check distance
-        const distance = parseFloat(home.distance?.replace(/[^0-9.]/g, '') || '0');
-        if (distance <= 5) {
-          match = { score: 10, status: 'full' };
-        } else if (distance <= 15) {
-          match = { score: 7, status: 'partial', note: `${distance.toFixed(1)} km away` };
-        } else {
-          match = { score: 4, status: 'partial', note: `${distance.toFixed(1)} km - consider transport options` };
+      // If using section_6_priorities, use real category scores from 156-point algorithm
+      if (priority.source === 'section_6_priorities') {
+        const categories = priorityCategoryMapping[priority.id] || [];
+        
+        if (categories.length > 0) {
+          // Calculate average score for this priority's categories
+          const categoryScores = categories
+            .map(cat => categoryScoresMap[cat] || 0)
+            .filter(score => score > 0);
+          
+          if (categoryScores.length > 0) {
+            const avgScore = categoryScores.reduce((sum, s) => sum + s, 0) / categoryScores.length;
+            match.score = Math.round(avgScore);
+            
+            // Determine status based on score
+            if (avgScore >= 80) {
+              match.status = 'full';
+            } else if (avgScore >= 50) {
+              match.status = 'partial';
+            } else {
+              match.status = 'none';
+            }
+          }
         }
       } else {
-        // Default scoring based on match score
-        const score = Math.min(10, Math.round(home.matchScore / 10));
-        if (score >= 8) {
-          match = { score, status: 'full' };
-        } else if (score >= 5) {
-          match = { score, status: 'partial' };
+        // Fallback to old logic for backward compatibility
+        if (priority.source === 'care_types') {
+          const cqcRating = home.cqcRating?.toLowerCase();
+          if (cqcRating === 'outstanding' || cqcRating === 'good') {
+            match = { score: 10, status: 'full' };
+          } else if (cqcRating === 'requires improvement') {
+            match = { score: 5, status: 'partial', note: 'CQC rating indicates room for improvement' };
+          } else {
+            match = { score: 3, status: 'partial', note: 'Verify care type availability' };
+          }
+        } else if (priority.source === 'medical_conditions') {
+          const matchScore = home.matchScore;
+          if (matchScore >= 85) {
+            match = { score: 10, status: 'full' };
+          } else if (matchScore >= 70) {
+            match = { score: 7, status: 'partial', note: 'Verify specialist capabilities' };
+          } else {
+            match = { score: 4, status: 'partial', note: 'Ask about experience with this condition' };
+          }
+        } else if (priority.source === 'mobility_level') {
+          const hasAccessibility = home.safetyAnalysis?.accessibility?.wheelchair_accessible;
+          if (hasAccessibility) {
+            match = { score: 10, status: 'full' };
+          } else {
+            match = { score: 5, status: 'partial', note: 'Verify accessibility during visit' };
+          }
+        } else if (priority.source === 'dietary_requirements') {
+          const fsaRating = home.fsaDetailed?.rating;
+          if (fsaRating && fsaRating >= 4) {
+            match = { score: 9, status: 'full' };
+          } else if (fsaRating && fsaRating >= 3) {
+            match = { score: 6, status: 'partial', note: 'Discuss dietary needs with kitchen staff' };
+          } else {
+            match = { score: 4, status: 'partial', note: 'Request sample menus' };
+          }
+        } else if (priority.source === 'preferred_location') {
+          const distance = parseFloat(home.distance?.replace(/[^0-9.]/g, '') || '0');
+          if (distance <= 5) {
+            match = { score: 10, status: 'full' };
+          } else if (distance <= 15) {
+            match = { score: 7, status: 'partial', note: `${distance.toFixed(1)} km away` };
+          } else {
+            match = { score: 4, status: 'partial', note: `${distance.toFixed(1)} km - consider transport options` };
+          }
         } else {
-          match = { score, status: 'none' };
+          // Default: use matchScore normalized to 0-100
+          const score = Math.min(100, Math.round(home.matchScore));
+          if (score >= 80) {
+            match = { score, status: 'full' };
+          } else if (score >= 50) {
+            match = { score, status: 'partial' };
+          } else {
+            match = { score, status: 'none' };
+          }
         }
       }
 
       priorityScores[priority.id] = match;
-      totalScore += match.score * priority.weight;
-      totalWeight += priority.weight * 10;
+      
+      // Calculate weighted score
+      // priority.weight is a percentage (0-100) from section_6_priorities
+      // match.score is normalized to 0-100 from category_scores
+      // Weighted contribution = match.score * (priority.weight / 100)
+      totalScore += match.score * (priority.weight / 100);
+      totalWeight += priority.weight;
     });
 
+    // Overall priority match: weighted average of priority scores
+    // This should be close to matchScore if priorities are properly applied
+    // Formula: sum(priority_score * priority_weight) / sum(priority_weights)
     const overallPriorityMatch = totalWeight > 0 ? Math.round((totalScore / totalWeight) * 100) : 0;
 
     return {
@@ -251,7 +381,7 @@ export default function PrioritiesMatchSection({ report, questionnaire }: Priori
         </div>
         <div>
           <h3 className="text-xl font-bold text-gray-900">Your Priorities Match</h3>
-          <p className="text-sm text-gray-600">How our Top 3 match your specific needs</p>
+          <p className="text-sm text-gray-600">How our Top 5 match your specific needs</p>
         </div>
       </div>
 

@@ -27,8 +27,10 @@ class CompaniesHouseAPIClient:
             raise ValueError("Invalid API key format")
         
         # Companies House uses HTTP Basic Auth: API key as username, empty password
+        # Increased timeout for reliability (accuracy > speed)
+        # Companies House API can be slow for financial data retrieval
         self.client = httpx.AsyncClient(
-            timeout=30.0,
+            timeout=60.0,
             auth=(api_key, "")  # HTTP Basic Auth
         )
     

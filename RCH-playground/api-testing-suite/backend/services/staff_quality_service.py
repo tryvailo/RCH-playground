@@ -134,7 +134,11 @@ class StaffQualityService:
         except Exception as e:
             print(f"Warning: Companies House Service not available: {e}")
     
-    async def analyze_by_location_id(self, location_id: str) -> Dict[str, Any]:
+    async def analyze_by_location_id(
+        self, 
+        location_id: str,
+        companies_house_data: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
         """Analyze staff quality for a care home by CQC location ID"""
         try:
             # Get CQC location data
@@ -380,12 +384,22 @@ class StaffQualityService:
         
         # ENHANCED SIGNALS: Companies House - Director & Financial stability
         company_signals = None
-        if self.companies_house_service and provider_name:
+        # Use provided Companies House data if available (to avoid duplicate API calls)
+        if companies_house_data and companies_house_data.get('company_number'):
+            try:
+                company_signals = self._convert_companies_house_data_to_signals(companies_house_data)
+                if company_signals:
+                    result['company_signals'] = company_signals
+                    print(f"✅ Companies House signals used from provided data for {provider_name}")
+            except Exception as e:
+                print(f"⚠️ Companies House signals conversion failed: {e}")
+        # Fallback: fetch from API only if not provided
+        elif self.companies_house_service and provider_name:
             try:
                 company_signals = await self._fetch_company_stability_signals(provider_name)
                 if company_signals:
                     result['company_signals'] = company_signals
-                    print(f"✅ Companies House signals fetched for {provider_name}")
+                    print(f"✅ Companies House signals fetched from API for {provider_name}")
             except Exception as e:
                 print(f"⚠️ Companies House signals failed: {e}")
         
@@ -2273,7 +2287,7 @@ Write in third person, professional tone. Do NOT use bullet points."""
         
         try:
             # Search for company by name
-            from api_clients.companies_house_client import CompaniesHouseClient
+            from api_clients.companies_house_client import CompaniesHouseAPIClient
             from utils.auth import credentials_store
             
             creds = credentials_store.get("default")
@@ -2284,10 +2298,10 @@ Write in third person, professional tone. Do NOT use bullet points."""
             if not api_key:
                 return None
             
-            client = CompaniesHouseClient(api_key)
+            client = CompaniesHouseAPIClient(api_key=api_key)
             
             # Search for company
-            search_results = await client.search_companies(provider_name, limit=3)
+            search_results = await client.search_companies(provider_name, items_per_page=3)
             if not search_results:
                 return None
             
@@ -2344,6 +2358,71 @@ Write in third person, professional tone. Do NOT use bullet points."""
             
         except Exception as e:
             print(f"Error fetching company stability signals: {e}")
+            return None
+    
+    def _convert_companies_house_data_to_signals(self, companies_house_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """
+        Convert Companies House enriched data to staff quality signals format.
+        This avoids duplicate API calls when data is already available.
+        """
+        try:
+            company_number = companies_house_data.get('company_number')
+            if not company_number:
+                return None
+            
+            # Extract director stability from Companies House data
+            director_stability = companies_house_data.get('director_stability', {})
+            ownership_stability = companies_house_data.get('ownership_stability', {})
+            risk_level = companies_house_data.get('risk_level', 'Medium')
+            risk_score = companies_house_data.get('risk_score', 50)
+            issues = companies_house_data.get('issues', [])
+            company_info = companies_house_data.get('company_info', {})
+            
+            signals = {
+                'company_name': company_info.get('company_name', ''),
+                'company_number': company_number,
+                'company_status': company_info.get('company_status', ''),
+                'company_age_years': company_info.get('company_age_years', 0),
+                
+                # Director stability signals
+                'director_stability': {
+                    'active_directors': director_stability.get('active_directors', 0),
+                    'resignations_last_year': director_stability.get('resignations_last_year', 0),
+                    'resignations_last_2_years': director_stability.get('resignations_last_2_years', 0),
+                    'average_tenure_years': director_stability.get('average_tenure_years', 0),
+                    'stability_label': director_stability.get('stability_label', 'Unknown'),
+                    'issues': director_stability.get('issues', [])[:3] if isinstance(director_stability.get('issues'), list) else []
+                },
+                
+                # Financial risk signals
+                'financial_risk': {
+                    'risk_level': risk_level,
+                    'risk_score': risk_score,
+                    'issues': issues[:5] if isinstance(issues, list) else []
+                },
+                
+                # Staff quality impact assessment (simplified - would need full stability_result for full assessment)
+                'staff_quality_impact': {
+                    'impact_score': 50,  # Neutral if we don't have full data
+                    'impact_label': 'Unknown',
+                    'factors': []
+                }
+            }
+            
+            # Try to assess impact if we have enough data
+            if director_stability.get('resignations_last_2_years', 0) > 2:
+                signals['staff_quality_impact']['impact_score'] = 30
+                signals['staff_quality_impact']['impact_label'] = 'Concerning'
+                signals['staff_quality_impact']['factors'].append('High director turnover')
+            
+            if risk_level in ['High', 'Critical']:
+                signals['staff_quality_impact']['impact_score'] = 20
+                signals['staff_quality_impact']['impact_label'] = 'High Risk'
+                signals['staff_quality_impact']['factors'].append(f'Financial risk: {risk_level}')
+            
+            return signals
+        except Exception as e:
+            print(f"Error converting Companies House data to signals: {e}")
             return None
     
     def _assess_company_impact_on_staff(self, stability_result) -> Dict[str, Any]:

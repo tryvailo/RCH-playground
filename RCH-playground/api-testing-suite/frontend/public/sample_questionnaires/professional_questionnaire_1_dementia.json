@@ -12,20 +12,47 @@
     "q7_budget": "5000_7000_local"
   },
   "section_3_medical_needs": {
-    "q8_care_types": ["specialised_dementia"],
-    "q9_medical_conditions": ["dementia_alzheimers", "mobility_problems"],
+    "q8_care_types": [
+      "specialised_dementia"
+    ],
+    "q9_medical_conditions": [
+      "dementia_alzheimers",
+      "mobility_problems"
+    ],
     "q10_mobility_level": "walking_aids",
     "q11_medication_management": "several_simple_routine",
-    "q12_age_range": "85_94"
+    "q12_special_equipment": [
+      "no_special_equipment"
+    ],
+    "q13_age_range": "85_94"
   },
   "section_4_safety_special_needs": {
     "q13_fall_history": "1_2_no_serious_injuries",
-    "q14_allergies": ["no_allergies"],
-    "q15_dietary_requirements": ["no_special_requirements"],
+    "q14_allergies": [
+      "no_allergies"
+    ],
+    "q15_dietary_requirements": [
+      "no_special_requirements"
+    ],
     "q16_social_personality": "moderately_sociable"
   },
   "section_5_timeline": {
     "q17_placement_timeline": "next_month"
+  },
+  "section_6_priorities": {
+    "q18_priority_ranking": {
+      "priority_order": [
+        "medical_safety",
+        "quality_reputation",
+        "cost_financial",
+        "location_social"
+      ],
+      "priority_weights": [
+        50,
+        30,
+        15,
+        5
+      ]
+    }
   }
 }
-

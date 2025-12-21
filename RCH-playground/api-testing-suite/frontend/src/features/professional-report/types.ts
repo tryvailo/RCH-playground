@@ -38,6 +38,12 @@ export interface ProfessionalQuestionnaireResponse {
   section_5_timeline: {
     q17_placement_timeline: 'urgent_2_weeks' | 'next_month' | 'planning_2_3_months' | 'exploring_6_plus_months';
   };
+  section_6_priorities?: {
+    q18_priority_ranking: {
+      priority_order: Array<'quality_reputation' | 'cost_financial' | 'location_social' | 'comfort_amenities'>;
+      priority_weights: number[]; // Must sum to 100
+    };
+  };
 }
 
 /**
@@ -647,6 +653,16 @@ export interface ProfessionalCareHome {
 
   // Section 9: Staff Quality
   staffQuality?: StaffQualityData | null;
+  
+  // Category Winners (NEW)
+  is_category_winner?: {
+    [categoryKey: string]: boolean;
+  };
+  category_labels?: string[];
+  category_reasoning?: {
+    [categoryKey: string]: string[];
+  };
+  value_ratio?: number; // For Best Cost & Financial
 }
 
 export interface ScoringWeights {

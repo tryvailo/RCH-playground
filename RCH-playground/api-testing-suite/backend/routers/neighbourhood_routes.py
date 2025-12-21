@@ -82,7 +82,7 @@ async def analyze_neighbourhood(
     include_ons: bool = Query(default=True, description="Include ONS data"),
     include_osm: bool = Query(default=True, description="Include OpenStreetMap data"),
     include_nhsbsa: bool = Query(default=True, description="Include NHSBSA data"),
-    include_environmental: bool = Query(default=False, description="Include Environmental data (noise & pollution)"),
+    include_environmental: bool = Query(default=False, description="Include Environmental data (noise only)"),
     lat: Optional[float] = Query(default=None, description="Optional: Latitude (if provided, skips postcode resolution)"),
     lon: Optional[float] = Query(default=None, description="Optional: Longitude (if provided, skips postcode resolution)"),
     address_name: Optional[str] = Query(default=None, description="Optional: Address name (e.g., care home name) for OS Places when using coordinates")

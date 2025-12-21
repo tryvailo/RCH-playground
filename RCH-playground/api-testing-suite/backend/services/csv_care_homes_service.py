@@ -1,11 +1,17 @@
 """
 CSV Care Homes Data Service
 Loads care homes data from merged_care_homes_west_midlands.csv for FREE Report matching
+
+UPDATED: Now supports hybrid approach (CQC + Staging) with fallback to legacy CSV
 """
 import csv
 import json
 from pathlib import Path
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
+import logging
+
+logger = logging.getLogger(__name__)
+
 # Use shared geo utility instead of duplicating Haversine formula
 try:
     from utils.geo import calculate_distance_km, validate_coordinates
@@ -259,21 +265,31 @@ def get_care_homes(
     max_distance_km: Optional[float] = None,
     user_lat: Optional[float] = None,
     user_lon: Optional[float] = None,
-    limit: Optional[int] = None
+    limit: Optional[int] = None,
+    min_required: int = 5,  # Minimum homes required (for auto-expansion)
+    auto_expand: bool = True  # Enable automatic radius expansion
 ) -> List[Dict]:
     """
-    Get care homes from CSV with filtering
+    Get care homes from CSV with filtering and automatic radius expansion.
+    
+    Implements STEP 2 from MVP Matching Algorithm:
+    - Calculate distance for ALL homes
+    - Sort by distance
+    - Filter by preferred radius
+    - Auto-expand if insufficient homes (MIN_REQUIRED = 5)
     
     Args:
         local_authority: Filter by local authority
         care_type: Filter by care type (residential, nursing, dementia, respite)
-        max_distance_km: Maximum distance in km
+        max_distance_km: Preferred maximum distance in km (will expand if needed)
         user_lat: User latitude for distance calculation
         user_lon: User longitude for distance calculation
         limit: Maximum number of results
+        min_required: Minimum homes required before auto-expansion stops
+        auto_expand: Enable automatic radius expansion if insufficient homes
     
     Returns:
-        List of care home dictionaries
+        List of care home dictionaries with distance_km calculated and sorted by distance
     """
     homes = load_csv_care_homes()
     
@@ -306,7 +322,7 @@ def get_care_homes(
                 filtered.append(h)
         homes = filtered
     
-    # Filter by distance AND always calculate distance_km for all homes (even if not filtering)
+    # STEP 2: Calculate distance for ALL homes and sort by distance
     # This ensures distance_km is always available in the home dict
     if user_lat and user_lon:
         for h in homes:
@@ -317,21 +333,374 @@ def get_care_homes(
                     distance = _calculate_distance_km(user_lat, user_lon, float(lat), float(lon))
                     h['distance_km'] = round(distance, 2)
                 except (ValueError, TypeError) as e:
-                    # If calculation fails, leave distance_km unset (will be None)
-                    pass
+                    # If calculation fails, set large distance so it sorts last
+                    h['distance_km'] = 9999.0
+            else:
+                # Missing coordinates - set large distance
+                h['distance_km'] = 9999.0
         
-        # Now filter by max_distance_km if specified
-        if max_distance_km:
+        # Sort by distance (closest first)
+        homes.sort(key=lambda h: h.get('distance_km', 9999.0))
+        
+        # Filter by preferred radius
+        preferred_radius = max_distance_km if max_distance_km else 100.0
+        in_preferred = [
+            h for h in homes
+            if h.get('distance_km', 9999.0) <= preferred_radius
+        ]
+        
+        # Auto-expand if insufficient homes (STEP 2 from MVP Matching Algorithm)
+        if auto_expand and len(in_preferred) < min_required:
+            EXPANSION_STEPS = [5, 10, 15, 30, 50, 75, 100]
+            expanded_radius = preferred_radius
+            
+            for step in EXPANSION_STEPS:
+                if step > preferred_radius:
+                    expanded_radius = step
+                    in_expanded = [
+                        h for h in homes
+                        if h.get('distance_km', 9999.0) <= expanded_radius
+                    ]
+                    if len(in_expanded) >= min_required:
+                        # Mark homes as preferred vs expanded
+                        for h in in_expanded:
+                            h['within_preferred_radius'] = h.get('distance_km', 9999.0) <= preferred_radius
+                            h['radius_category'] = 'preferred' if h.get('within_preferred_radius') else 'expanded'
+                        
+                        # Apply limit and return
+                        result = in_expanded[:limit] if limit else in_expanded
+                        return result
+            
+            # If even after expansion insufficient, return all we have
+            for h in in_preferred:
+                h['within_preferred_radius'] = True
+                h['radius_category'] = 'preferred'
+            result = in_preferred[:limit] if limit else in_preferred
+            return result
+        else:
+            # Enough homes in preferred radius, mark them
+            for h in in_preferred:
+                h['within_preferred_radius'] = True
+                h['radius_category'] = 'preferred'
+            homes = in_preferred
+    else:
+        # No coordinates - can't calculate distance, return as-is
+        for h in homes:
+            h['distance_km'] = None
+    
+    # Apply limit
+    if limit:
+        homes = homes[:limit]
+    
+    return homes
+
+
+def get_care_homes_hybrid(
+    local_authority: Optional[str] = None,
+    care_type: Optional[str] = None,
+    max_distance_km: Optional[float] = None,
+    user_lat: Optional[float] = None,
+    user_lon: Optional[float] = None,
+    limit: Optional[int] = None,
+    min_required: int = 5,
+    auto_expand: bool = True
+) -> List[Dict[str, Any]]:
+    """
+    Загрузить дома используя гибридный подход (CQC + Staging).
+    
+    This is the new preferred method that uses:
+    - Primary source: CQC CSV (cqc_carehomes_master_full_data_rows.csv)
+    - Auxiliary source: Staging CSV (carehome_staging_export.csv)
+    
+    Args:
+        local_authority: Filter by local authority
+        care_type: Filter by care type (residential, nursing, dementia, respite)
+        max_distance_km: Preferred maximum distance in km (will expand if needed)
+        user_lat: User latitude for distance calculation
+        user_lon: User longitude for distance calculation
+        limit: Maximum number of results
+        min_required: Minimum homes required before auto-expansion stops
+        auto_expand: Enable automatic radius expansion if insufficient homes
+    
+    Returns:
+        List[Dict]: Объединенные данные из CQC и Staging
+    """
+    try:
+        from services.cqc_data_loader import load_cqc_homes
+        from services.staging_data_loader import load_staging_data
+        from services.hybrid_data_merger import merge_cqc_and_staging
+        
+        # 1. Загрузить CQC
+        logger.info("Loading CQC homes...")
+        cqc_homes = load_cqc_homes()
+        
+        if not cqc_homes:
+            logger.warning("No CQC homes loaded, falling back to legacy CSV")
+            raise Exception("No CQC homes loaded")
+        
+        # 2. Загрузить Staging
+        logger.info("Loading Staging data...")
+        staging_list = load_staging_data()
+        
+        # 3. Объединить
+        logger.info("Merging CQC and Staging data...")
+        merged_homes = merge_cqc_and_staging(cqc_homes, staging_list)
+        
+        # 4. Фильтрация по local_authority
+        if local_authority:
+            local_authority_lower = local_authority.lower() if local_authority else ''
+            merged_homes = [
+                h for h in merged_homes
+                if (h.get('local_authority') or '').lower() == local_authority_lower or
+                   (h.get('city') or '').lower() == local_authority_lower or
+                   local_authority_lower in (h.get('local_authority') or '').lower() or
+                   local_authority_lower in (h.get('city') or '').lower()
+            ]
+        
+        # 5. Фильтрация по care_type
+        if care_type:
+            care_type_lower = care_type.lower()
             filtered = []
-            for h in homes:
-                distance_km = h.get('distance_km')
-                if distance_km is not None and distance_km <= max_distance_km:
+            for h in merged_homes:
+                # Check boolean fields
+                if care_type_lower == 'residential' and h.get('care_residential'):
                     filtered.append(h)
-                elif distance_km is None:
-                    # If distance couldn't be calculated, include the home (don't filter out)
-                    # This is safer than excluding homes with missing coordinates
+                elif care_type_lower == 'nursing' and h.get('care_nursing'):
                     filtered.append(h)
-            homes = filtered
+                elif care_type_lower == 'dementia' and h.get('care_dementia'):
+                    filtered.append(h)
+                elif care_type_lower == 'respite' and h.get('care_respite'):
+                    filtered.append(h)
+            merged_homes = filtered
+        
+        # 6. Calculate distance for ALL homes and sort by distance
+        if user_lat and user_lon:
+            for h in merged_homes:
+                lat = h.get('latitude')
+                lon = h.get('longitude')
+                if lat and lon:
+                    try:
+                        distance = _calculate_distance_km(user_lat, user_lon, float(lat), float(lon))
+                        h['distance_km'] = round(distance, 2)
+                    except (ValueError, TypeError):
+                        h['distance_km'] = 9999.0
+                else:
+                    h['distance_km'] = 9999.0
+            
+            # Sort by distance (closest first)
+            merged_homes.sort(key=lambda h: h.get('distance_km', 9999.0))
+            
+            # Filter by preferred radius
+            preferred_radius = max_distance_km if max_distance_km else 100.0
+            in_preferred = [
+                h for h in merged_homes
+                if h.get('distance_km', 9999.0) <= preferred_radius
+            ]
+            
+            # Auto-expand if insufficient homes
+            if auto_expand and len(in_preferred) < min_required:
+                EXPANSION_STEPS = [5, 10, 15, 30, 50, 75, 100]
+                expanded_radius = preferred_radius
+                
+                for step in EXPANSION_STEPS:
+                    if step > preferred_radius:
+                        expanded_radius = step
+                        in_expanded = [
+                            h for h in merged_homes
+                            if h.get('distance_km', 9999.0) <= expanded_radius
+                        ]
+                        if len(in_expanded) >= min_required:
+                            # Mark homes as preferred vs expanded
+                            for h in in_expanded:
+                                h['within_preferred_radius'] = h.get('distance_km', 9999.0) <= preferred_radius
+                                h['radius_category'] = 'preferred' if h.get('within_preferred_radius') else 'expanded'
+                            
+                            # Apply limit and return
+                            result = in_expanded[:limit] if limit else in_expanded
+                            logger.info(f"✅ Hybrid approach: {len(result)} homes (expanded to {expanded_radius}km)")
+                            return result
+                
+                # If even after expansion insufficient, return all we have
+                for h in in_preferred:
+                    h['within_preferred_radius'] = True
+                    h['radius_category'] = 'preferred'
+                result = in_preferred[:limit] if limit else in_preferred
+                logger.info(f"✅ Hybrid approach: {len(result)} homes (preferred radius only)")
+                return result
+            else:
+                # Enough homes in preferred radius
+                for h in in_preferred:
+                    h['within_preferred_radius'] = True
+                    h['radius_category'] = 'preferred'
+                merged_homes = in_preferred
+        else:
+            # No coordinates - can't calculate distance
+            for h in merged_homes:
+                h['distance_km'] = None
+        
+        # 7. Apply limit
+        if limit:
+            merged_homes = merged_homes[:limit]
+        
+        logger.info(f"✅ Hybrid approach: {len(merged_homes)} homes loaded")
+        return merged_homes
+    
+    except Exception as e:
+        logger.warning(f"Hybrid approach failed: {e}, falling back to legacy CSV")
+        raise  # Re-raise to trigger fallback in get_care_homes()
+
+
+def get_care_homes(
+    local_authority: Optional[str] = None,
+    care_type: Optional[str] = None,
+    max_distance_km: Optional[float] = None,
+    user_lat: Optional[float] = None,
+    user_lon: Optional[float] = None,
+    limit: Optional[int] = None,
+    min_required: int = 5,
+    auto_expand: bool = True,
+    use_hybrid: bool = True  # New parameter: enable hybrid approach by default
+) -> List[Dict]:
+    """
+    Get care homes from CSV with filtering and automatic radius expansion.
+    
+    UPDATED: Now tries hybrid approach (CQC + Staging) first, with fallback to legacy CSV.
+    
+    Implements STEP 2 from MVP Matching Algorithm:
+    - Calculate distance for ALL homes
+    - Sort by distance
+    - Filter by preferred radius
+    - Auto-expand if insufficient homes (MIN_REQUIRED = 5)
+    
+    Args:
+        local_authority: Filter by local authority
+        care_type: Filter by care type (residential, nursing, dementia, respite)
+        max_distance_km: Preferred maximum distance in km (will expand if needed)
+        user_lat: User latitude for distance calculation
+        user_lon: User longitude for distance calculation
+        limit: Maximum number of results
+        min_required: Minimum homes required before auto-expansion stops
+        auto_expand: Enable automatic radius expansion if insufficient homes
+        use_hybrid: If True, try hybrid approach first (default: True)
+    
+    Returns:
+        List of care home dictionaries with distance_km calculated and sorted by distance
+    """
+    # Try hybrid approach first (if enabled)
+    if use_hybrid:
+        try:
+            return get_care_homes_hybrid(
+                local_authority=local_authority,
+                care_type=care_type,
+                max_distance_km=max_distance_km,
+                user_lat=user_lat,
+                user_lon=user_lon,
+                limit=limit,
+                min_required=min_required,
+                auto_expand=auto_expand
+            )
+        except Exception as e:
+            logger.warning(f"Hybrid approach failed: {e}, falling back to legacy CSV")
+            # Fall through to legacy CSV loading
+    
+    # Fallback to legacy CSV (merged_care_homes_west_midlands.csv)
+    logger.info("Using legacy CSV (merged_care_homes_west_midlands.csv)")
+    homes = load_csv_care_homes()
+    
+    # Filter by local authority
+    if local_authority:
+        homes = [
+            h for h in homes
+            if h.get('local_authority', '').lower() == local_authority.lower() or
+               h.get('city', '').lower() == local_authority.lower() or
+               local_authority.lower() in h.get('local_authority', '').lower() or
+               local_authority.lower() in h.get('city', '').lower()
+        ]
+    
+    # Filter by care type
+    if care_type:
+        care_type_lower = care_type.lower()
+        filtered = []
+        for h in homes:
+            care_types = h.get('care_types', [])
+            if care_type_lower in [ct.lower() for ct in care_types]:
+                filtered.append(h)
+            # Also check boolean fields for compatibility
+            elif care_type_lower == 'residential' and h.get('care_residential'):
+                filtered.append(h)
+            elif care_type_lower == 'nursing' and h.get('care_nursing'):
+                filtered.append(h)
+            elif care_type_lower == 'dementia' and h.get('care_dementia'):
+                filtered.append(h)
+            elif care_type_lower == 'respite' and h.get('care_respite'):
+                filtered.append(h)
+        homes = filtered
+    
+    # STEP 2: Calculate distance for ALL homes and sort by distance
+    # This ensures distance_km is always available in the home dict
+    if user_lat and user_lon:
+        for h in homes:
+            lat = h.get('latitude')
+            lon = h.get('longitude')
+            if lat and lon:
+                try:
+                    distance = _calculate_distance_km(user_lat, user_lon, float(lat), float(lon))
+                    h['distance_km'] = round(distance, 2)
+                except (ValueError, TypeError) as e:
+                    # If calculation fails, set large distance so it sorts last
+                    h['distance_km'] = 9999.0
+            else:
+                # Missing coordinates - set large distance
+                h['distance_km'] = 9999.0
+        
+        # Sort by distance (closest first)
+        homes.sort(key=lambda h: h.get('distance_km', 9999.0))
+        
+        # Filter by preferred radius
+        preferred_radius = max_distance_km if max_distance_km else 100.0
+        in_preferred = [
+            h for h in homes
+            if h.get('distance_km', 9999.0) <= preferred_radius
+        ]
+        
+        # Auto-expand if insufficient homes (STEP 2 from MVP Matching Algorithm)
+        if auto_expand and len(in_preferred) < min_required:
+            EXPANSION_STEPS = [5, 10, 15, 30, 50, 75, 100]
+            expanded_radius = preferred_radius
+            
+            for step in EXPANSION_STEPS:
+                if step > preferred_radius:
+                    expanded_radius = step
+                    in_expanded = [
+                        h for h in homes
+                        if h.get('distance_km', 9999.0) <= expanded_radius
+                    ]
+                    if len(in_expanded) >= min_required:
+                        # Mark homes as preferred vs expanded
+                        for h in in_expanded:
+                            h['within_preferred_radius'] = h.get('distance_km', 9999.0) <= preferred_radius
+                            h['radius_category'] = 'preferred' if h.get('within_preferred_radius') else 'expanded'
+                        
+                        # Apply limit and return
+                        result = in_expanded[:limit] if limit else in_expanded
+                        return result
+            
+            # If even after expansion insufficient, return all we have
+            for h in in_preferred:
+                h['within_preferred_radius'] = True
+                h['radius_category'] = 'preferred'
+            result = in_preferred[:limit] if limit else in_preferred
+            return result
+        else:
+            # Enough homes in preferred radius, mark them
+            for h in in_preferred:
+                h['within_preferred_radius'] = True
+                h['radius_category'] = 'preferred'
+            homes = in_preferred
+    else:
+        # No coordinates - can't calculate distance, return as-is
+        for h in homes:
+            h['distance_km'] = None
     
     # Apply limit
     if limit:
@@ -344,5 +713,6 @@ def get_care_homes(
 __all__ = [
     'load_csv_care_homes',
     'get_care_homes',
+    'get_care_homes_hybrid',
 ]
 

@@ -18,6 +18,7 @@ import { LAFundingCard } from './LAFundingCard';
 import { DPAEligibilityCard } from './DPAEligibilityCard';
 import { SavingsCard } from './SavingsCard';
 import { LocalAuthorityCard } from './LocalAuthorityCard';
+import { AIInsightsSection } from './AIInsightsSection';
 import { LoadingSpinner, ErrorAlert } from '../Common';
 
 interface FundingResultsContainerProps {
@@ -100,6 +101,13 @@ export function FundingResultsContainer({
         <DPAEligibilityCard result={result.dpa} />
         <SavingsCard result={result.savings} />
       </div>
+
+      {/* AI Insights Section - Detailed analysis and sources */}
+      <AIInsightsSection 
+        chcResult={result.chc}
+        laResult={result.la}
+        dpaResult={result.dpa}
+      />
 
       <LocalAuthorityCard result={result} />
 

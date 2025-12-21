@@ -3,6 +3,8 @@ FSA FHRS API Client
 Food Standards Agency Food Hygiene Rating Scheme API
 """
 import httpx
+import asyncio
+from time import time
 from typing import List, Dict, Optional
 
 
@@ -17,25 +19,86 @@ class FSAAPIClient:
             "Accept": "application/json"
         }
         self.client = httpx.AsyncClient(timeout=30.0)
+        
+        # Rate limiting
+        self.last_request_time = 0
+        self.min_request_interval = 0.5  # 500ms between requests to avoid 403/429 errors
+    
+    async def _rate_limit(self):
+        """Ensure minimum time between requests to avoid rate limiting"""
+        elapsed = time() - self.last_request_time
+        if elapsed < self.min_request_interval:
+            await asyncio.sleep(self.min_request_interval - elapsed)
+        self.last_request_time = time()
+    
+    async def _make_request_with_retry(
+        self,
+        url: str,
+        params: Dict,
+        max_retries: int = 3
+    ) -> httpx.Response:
+        """Make HTTP request with retry logic for 429 errors"""
+        for attempt in range(max_retries):
+            try:
+                await self._rate_limit()
+                response = await self.client.get(url, params=params, headers=self.headers)
+                
+                # Handle 429 Too Many Requests with exponential backoff
+                if response.status_code == 429:
+                    if attempt < max_retries - 1:
+                        wait_time = (attempt + 1) * 2  # 2s, 4s, 6s
+                        print(f"      ⚠️ FSA API rate limited (429), waiting {wait_time}s before retry {attempt + 1}/{max_retries}")
+                        await asyncio.sleep(wait_time)
+                        continue
+                    else:
+                        response.raise_for_status()
+                
+                # Handle 403 Forbidden - check if it's HTML (blocked) or JSON (actual error)
+                if response.status_code == 403:
+                    content_type = response.headers.get("content-type", "").lower()
+                    if "text/html" in content_type:
+                        # This is a block page, not a real API error
+                        raise Exception(f"FSA API blocked request (403): Possible rate limiting or IP block. Response: HTML page")
+                
+                response.raise_for_status()
+                return response
+                
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code == 429 and attempt < max_retries - 1:
+                    wait_time = (attempt + 1) * 2
+                    print(f"      ⚠️ FSA API rate limited (429), waiting {wait_time}s before retry {attempt + 1}/{max_retries}")
+                    await asyncio.sleep(wait_time)
+                    continue
+                raise
+            except Exception as e:
+                if attempt < max_retries - 1 and ("429" in str(e) or "rate limit" in str(e).lower()):
+                    wait_time = (attempt + 1) * 2
+                    await asyncio.sleep(wait_time)
+                    continue
+                raise
+        
+        raise Exception("FSA API request failed after all retries")
     
     async def search_by_business_name(
         self,
         name: str,
-        local_authority_id: Optional[int] = None
+        local_authority_id: Optional[int] = None,
+        page_size: int = 50
     ) -> List[Dict]:
         """Search establishments by business name"""
-        params = {"name": name}
+        params = {
+            "name": name,
+            "pageSize": page_size  # Limit results to avoid CPU-intensive queries
+        }
         
         if local_authority_id:
             params["localAuthorityId"] = local_authority_id
         
         try:
-            response = await self.client.get(
+            response = await self._make_request_with_retry(
                 f"{self.base_url}/Establishments",
-                params=params,
-                headers=self.headers
+                params
             )
-            response.raise_for_status()
             data = response.json()
             establishments = data.get("establishments", [])
             
@@ -58,22 +121,22 @@ class FSAAPIClient:
         self,
         latitude: float,
         longitude: float,
-        max_distance: float = 1.0
+        max_distance: float = 1.0,
+        page_size: int = 50
     ) -> List[Dict]:
         """Search establishments by geolocation"""
         params = {
             "latitude": latitude,
             "longitude": longitude,
-            "maxDistanceLimit": max_distance
+            "maxDistanceLimit": max_distance,
+            "pageSize": page_size  # Limit results to avoid CPU-intensive queries
         }
         
         try:
-            response = await self.client.get(
+            response = await self._make_request_with_retry(
                 f"{self.base_url}/Establishments",
-                params=params,
-                headers=self.headers
+                params
             )
-            response.raise_for_status()
             data = response.json()
             return data.get("establishments", [])
         except httpx.HTTPStatusError as e:
@@ -94,12 +157,12 @@ class FSAAPIClient:
         business_type_id: int = 7835,  # 7835 = "Hospitals/Childcare/Caring Premises"
         local_authority_id: Optional[int] = None,
         name: Optional[str] = None,
-        page_size: int = 20
+        page_size: int = 50
     ) -> List[Dict]:
         """Search establishments by business type and optionally by local authority and name"""
         params = {
             "businessTypeId": business_type_id,
-            "pageSize": page_size
+            "pageSize": page_size  # Increased from 20 to 50, but still limited
         }
         
         if local_authority_id:
@@ -109,12 +172,10 @@ class FSAAPIClient:
             params["name"] = name
         
         try:
-            response = await self.client.get(
+            response = await self._make_request_with_retry(
                 f"{self.base_url}/Establishments",
-                params=params,
-                headers=self.headers
+                params
             )
-            response.raise_for_status()
             data = response.json()
             establishments = data.get("establishments", [])
             return establishments
@@ -134,10 +195,18 @@ class FSAAPIClient:
     async def get_establishment_details(self, fhrs_id: int) -> Dict:
         """Get details for a specific establishment"""
         try:
+            await self._rate_limit()
             response = await self.client.get(
                 f"{self.base_url}/Establishments/{fhrs_id}",
                 headers=self.headers
             )
+            
+            # Handle 403 Forbidden - check if it's HTML (blocked)
+            if response.status_code == 403:
+                content_type = response.headers.get("content-type", "").lower()
+                if "text/html" in content_type:
+                    raise Exception(f"FSA API blocked request (403): Possible rate limiting or IP block")
+            
             response.raise_for_status()
             data = response.json()
             
@@ -575,10 +644,18 @@ class FSAAPIClient:
     async def get_local_authorities(self) -> List[Dict]:
         """Get list of all local authorities"""
         try:
+            await self._rate_limit()
             response = await self.client.get(
                 f"{self.base_url}/Authorities",
                 headers=self.headers
             )
+            
+            # Handle 403 Forbidden
+            if response.status_code == 403:
+                content_type = response.headers.get("content-type", "").lower()
+                if "text/html" in content_type:
+                    raise Exception(f"FSA API blocked request (403): Possible rate limiting or IP block")
+            
             response.raise_for_status()
             data = response.json()
             return data.get("authorities", [])

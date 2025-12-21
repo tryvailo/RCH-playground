@@ -421,7 +421,9 @@ class GooglePlacesAPIClient:
         if photos:
             result["photos"] = [
                 {
-                    "photo_reference": photo.get("name", "").split("/")[-1] if photo.get("name") else "",
+                    # Save full photo name for Places API (New) format: places/{photo_name}
+                    # This allows us to use it directly with New API or extract ID for Legacy API
+                    "photo_reference": photo.get("name", "") if photo.get("name") else "",
                     "height": photo.get("heightPx", 0),
                     "width": photo.get("widthPx", 0)
                 }
@@ -714,6 +716,95 @@ class GooglePlacesAPIClient:
             "total_reviews": len(reviews),
             "reviews_analysis": sentiments
         }
+    
+    async def get_photo(self, photo_reference: str, maxwidth: int = 400) -> bytes:
+        """Get photo for a place using Google Places API
+        
+        Args:
+            photo_reference: Photo reference from place details
+                - Places API (New) format: "places/{place_id}/photos/{photo_name}" (full name)
+                - Legacy API format: just the photo reference ID
+            maxwidth: Maximum width of the photo in pixels
+        
+        Returns:
+            bytes: Photo image data
+        """
+        try:
+            # Try Places API (New) first if photo_reference is in New format
+            if photo_reference.startswith("places/"):
+                # Places API (New) format: places/{place_id}/photos/{photo_name}/media
+                # The photo_reference already contains the full path
+                new_url = f"{self.base_url}/{photo_reference}/media"
+                headers = {
+                    "X-Goog-Api-Key": self.api_key
+                }
+                
+                # Add maxWidthPx parameter for New API
+                params_new = {
+                    "maxWidthPx": maxwidth
+                }
+                
+                try:
+                    response = await self.client.get(new_url, headers=headers, params=params_new, follow_redirects=True)
+                    response.raise_for_status()
+                    
+                    # Check content type
+                    content_type = response.headers.get("content-type", "")
+                    if "image" in content_type:
+                        return response.content
+                    else:
+                        # Try to extract photo ID for Legacy API fallback
+                        # Format: places/{place_id}/photos/{photo_id}
+                        parts = photo_reference.split("/")
+                        if len(parts) >= 3 and parts[2] == "photos":
+                            photo_id = parts[-1]  # Last part is the photo ID
+                        else:
+                            raise Exception(f"New API returned non-image response: {content_type}")
+                except Exception as new_error:
+                    # If New API fails, try Legacy API with extracted ID
+                    # Extract photo ID from format: places/{place_id}/photos/{photo_id}
+                    parts = photo_reference.split("/")
+                    if len(parts) >= 3 and parts[2] == "photos":
+                        photo_id = parts[-1]  # Last part is the photo ID
+                    else:
+                        # Try to extract any ID from the reference
+                        photo_id = photo_reference.split("/")[-1]
+                    # Fall through to Legacy API
+            else:
+                # Legacy format or just ID
+                photo_id = photo_reference
+            
+            # Try Legacy API (more reliable for photo downloads)
+            # Legacy API format: https://maps.googleapis.com/maps/api/place/photo
+            legacy_url = f"{self.legacy_url}/photo"
+            params = {
+                "photoreference": photo_id,
+                "maxwidth": maxwidth,
+                "key": self.api_key
+            }
+            
+            response = await self.client.get(legacy_url, params=params, follow_redirects=True)
+            response.raise_for_status()
+            
+            # Check if response is actually an image
+            content_type = response.headers.get("content-type", "")
+            if "image" in content_type:
+                return response.content
+            else:
+                # If not an image, might be JSON error
+                error_text = response.text[:200] if hasattr(response, 'text') else ""
+                raise Exception(f"Legacy API returned non-image response: {content_type} - {error_text}")
+                
+        except httpx.HTTPStatusError as e:
+            error_text = ""
+            try:
+                if hasattr(e.response, 'text'):
+                    error_text = e.response.text[:200]
+            except:
+                pass
+            raise Exception(f"Google Places API photo error: HTTP {e.response.status_code} - {error_text}")
+        except Exception as e:
+            raise Exception(f"Google Places API photo error: {str(e)}")
     
     async def get_popular_times(self, place_id: str) -> Dict:
         """Get popular times for a place using Places API (New) data and enhanced simulation"""

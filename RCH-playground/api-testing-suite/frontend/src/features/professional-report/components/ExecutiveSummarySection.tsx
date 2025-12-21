@@ -45,7 +45,7 @@ const getRankBadgeStyle = (rank: number) => {
 };
 
 export default function ExecutiveSummarySection({ report, onNavigateToSection }: ExecutiveSummarySectionProps) {
-  const topHomes = report.careHomes.slice(0, 3);
+  const topHomes = report.careHomes.slice(0, 5);
   const isUrgent = report.clientNeeds?.careRequirements?.some(
     req => req.toLowerCase().includes('urgent') || req.toLowerCase().includes('immediate')
   );
@@ -105,14 +105,14 @@ export default function ExecutiveSummarySection({ report, onNavigateToSection }:
         </div>
       )}
 
-      {/* Top 3 Recommendations */}
+      {/* Top 5 Recommendations */}
       <div className="space-y-4">
         <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
           <Award className="w-5 h-5 text-[#1E2A44]" />
-          Your Top 3 Recommendations
+          Your Top 5 Recommendations
         </h3>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
           {topHomes.map((home, index) => {
             const rank = index + 1;
             const verdict = getVerdictBadge(home.matchScore);

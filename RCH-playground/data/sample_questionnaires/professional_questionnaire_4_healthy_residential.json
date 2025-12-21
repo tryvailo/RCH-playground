@@ -26,6 +26,12 @@
   },
   "section_5_timeline": {
     "q17_placement_timeline": "exploring_6_plus_months"
+  },
+  "section_6_priorities": {
+    "q18_priority_ranking": {
+      "priority_order": ["cost_financial", "quality_reputation", "location_social", "medical_safety"],
+      "priority_weights": [50, 30, 15, 5]
+    }
   }
 }
 

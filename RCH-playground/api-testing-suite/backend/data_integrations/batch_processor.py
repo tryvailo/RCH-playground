@@ -542,17 +542,17 @@ class NeighbourhoodAnalyzer:
                 else:
                     result['errors']['osm'] = 'Coordinates not available. OSM analysis requires latitude and longitude. The system attempted to resolve coordinates from OS Places or ONS but failed. Please ensure at least one of these data sources is available, or provide coordinates directly.'
         
-        # Environmental Analysis (Noise & Pollution)
+        # Environmental Analysis (Noise only - pollution removed for accuracy)
         # Wrapped in try-except to ensure it never breaks the entire request
         if include_environmental and lat and lon:
             try:
                 from .environmental_analyzer import EnvironmentalAnalyzer
                 async with EnvironmentalAnalyzer() as env_analyzer:
                     try:
-                        # Use shorter timeout to prevent hanging
+                        # Increased timeout for noise analysis (removed pollution for accuracy)
                         environmental = await asyncio.wait_for(
                             env_analyzer.analyze_environmental(lat, lon, radius_m=500),
-                            timeout=15.0  # 15 second timeout (reduced from 30)
+                            timeout=30.0  # 30 second timeout (increased from 15, only noise analysis now)
                         )
                         result['environmental'] = environmental
                     except asyncio.TimeoutError:

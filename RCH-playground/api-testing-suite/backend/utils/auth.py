@@ -7,8 +7,12 @@ from fastapi import HTTPException
 from models.schemas import ApiCredentials
 from config_manager import get_credentials
 
-# Global credentials store (will be initialized in main.py)
-credentials_store: dict = {}
+# Import credentials_store from core.dependencies to use the same instance
+try:
+    from core.dependencies import credentials_store
+except ImportError:
+    # Fallback if core.dependencies not available
+    credentials_store: dict = {}
 
 
 def get_api_credentials(service_name: str) -> Tuple[ApiCredentials, Any]:

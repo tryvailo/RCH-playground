@@ -12,20 +12,49 @@
     "q7_budget": "3000_5000_self"
   },
   "section_3_medical_needs": {
-    "q8_care_types": ["medical_nursing", "general_residential"],
-    "q9_medical_conditions": ["diabetes", "mobility_problems"],
+    "q8_care_types": [
+      "medical_nursing",
+      "general_residential"
+    ],
+    "q9_medical_conditions": [
+      "diabetes",
+      "mobility_problems"
+    ],
     "q10_mobility_level": "wheelchair_sometimes",
     "q11_medication_management": "many_complex_routine",
-    "q12_age_range": "75_84"
+    "q12_special_equipment": [
+      "hospital_bed",
+      "hoist"
+    ],
+    "q13_age_range": "75_84"
   },
   "section_4_safety_special_needs": {
     "q13_fall_history": "3_plus_or_serious_injuries",
-    "q14_allergies": ["medication_allergies"],
-    "q15_dietary_requirements": ["diabetic_diet"],
+    "q14_allergies": [
+      "medication_allergies"
+    ],
+    "q15_dietary_requirements": [
+      "diabetic_diet"
+    ],
     "q16_social_personality": "very_sociable"
   },
   "section_5_timeline": {
     "q17_placement_timeline": "urgent_2_weeks"
+  },
+  "section_6_priorities": {
+    "q18_priority_ranking": {
+      "priority_order": [
+        "medical_safety",
+        "quality_reputation",
+        "location_social",
+        "cost_financial"
+      ],
+      "priority_weights": [
+        60,
+        25,
+        10,
+        5
+      ]
+    }
   }
 }
-

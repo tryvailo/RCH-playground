@@ -97,7 +97,7 @@ const getPriorityBadge = (priority: Task['priority']) => {
 };
 
 const generateActionPlan = (report: ProfessionalReportData): { weeks: WeekPlan[]; documents: DocumentItem[] } => {
-  const homes = report.careHomes.slice(0, 3);
+  const homes = report.careHomes.slice(0, 5);
   const localAuthority = report.fairCostGapAnalysis?.local_authority || report.city || 'Your Local Council';
 
   const weeks: WeekPlan[] = [
@@ -471,7 +471,7 @@ export default function ActionPlanSection({ report }: ActionPlanSectionProps) {
   const completedCount = completedTasks.size;
   const progressPercent = totalTasks > 0 ? Math.round((completedCount / totalTasks) * 100) : 0;
 
-  const homes = report.careHomes.slice(0, 3);
+  const homes = report.careHomes.slice(0, 5);
 
   return (
     <div className="space-y-6">

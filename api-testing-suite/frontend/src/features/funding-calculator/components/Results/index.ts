@@ -8,3 +8,4 @@ export { LAFundingCard } from './LAFundingCard';
 export { DPAEligibilityCard } from './DPAEligibilityCard';
 export { SavingsCard } from './SavingsCard';
 export { LocalAuthorityCard } from './LocalAuthorityCard';
+export { AIInsightsSection } from './AIInsightsSection';

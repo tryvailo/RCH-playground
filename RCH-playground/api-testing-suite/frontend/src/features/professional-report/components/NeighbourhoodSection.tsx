@@ -1,5 +1,5 @@
 import React from 'react';
-import { MapPin, Home, Heart, Users, TrendingUp, Building2, Activity, CheckCircle2, AlertCircle } from 'lucide-react';
+import { MapPin, Home, Heart, Users, TrendingUp, Building2, CheckCircle2, AlertCircle } from 'lucide-react';
 import type { NeighbourhoodData } from '../types';
 
 interface NeighbourhoodSectionProps {
@@ -310,66 +310,6 @@ export default function NeighbourhoodSection({ neighbourhood, homeName }: Neighb
                     <div className="text-[10px] text-gray-500">Rank</div>
                   </div>
                 )}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Health Profile */}
-      {neighbourhood.healthProfile && (
-        <div className="bg-white rounded-lg p-4 border border-gray-200">
-          <div className="flex items-center gap-2 mb-3">
-            <Activity className="h-4 w-4 text-red-600" />
-            <h5 className="text-xs font-semibold text-gray-900">Health Profile (NHSBSA)</h5>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4 mb-3">
-            {/* Score */}
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-xs text-gray-600">Health Score</span>
-                {neighbourhood.healthProfile.rating && (
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded ${getRatingColor(neighbourhood.healthProfile.rating).bg} ${getRatingColor(neighbourhood.healthProfile.rating).text}`}>
-                    {neighbourhood.healthProfile.rating}
-                  </span>
-                )}
-              </div>
-              {neighbourhood.healthProfile.score !== null && neighbourhood.healthProfile.score !== undefined && (
-                <div className="text-lg font-semibold text-gray-900">{neighbourhood.healthProfile.score}/100</div>
-              )}
-            </div>
-
-            {/* GP Practices */}
-            {neighbourhood.healthProfile.gpPracticesNearby !== null && neighbourhood.healthProfile.gpPracticesNearby !== undefined && (
-              <div>
-                <span className="text-xs text-gray-600 block mb-1">GP Practices Nearby</span>
-                <div className="flex items-center gap-2">
-                  <Building2 className="h-4 w-4 text-gray-400" />
-                  <span className="text-lg font-semibold text-gray-900">{neighbourhood.healthProfile.gpPracticesNearby}</span>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Care Home Considerations */}
-          {neighbourhood.healthProfile.careHomeConsiderations && neighbourhood.healthProfile.careHomeConsiderations.length > 0 && (
-            <div className="pt-3 border-t border-gray-100">
-              <span className="text-[10px] text-gray-500 mb-2 block">Care Home Considerations:</span>
-              <div className="space-y-2">
-                {neighbourhood.healthProfile.careHomeConsiderations.map((consideration, i) => (
-                  <div key={i} className={`p-2 rounded border ${getPriorityColor(consideration.priority)}`}>
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs font-medium">{consideration.category}</span>
-                      {consideration.priority && (
-                        <span className="text-[10px] uppercase">{consideration.priority}</span>
-                      )}
-                    </div>
-                    {consideration.description && (
-                      <p className="text-[10px] opacity-80">{consideration.description}</p>
-                    )}
-                  </div>
-                ))}
               </div>
             </div>
           )}

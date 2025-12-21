@@ -123,11 +123,20 @@ class FSAEnrichmentService:
                 return cached_data
         
         try:
-            # Try searching by name first
-            establishments = await self.fsa_client.search_by_business_name(
-                name=home_name,
-                local_authority_id=None
-            )
+            # Try searching by name first (with pageSize limit)
+            try:
+                establishments = await self.fsa_client.search_by_business_name(
+                    name=home_name,
+                    local_authority_id=None,
+                    page_size=50  # Limit results to avoid 429 errors
+                )
+            except Exception as e:
+                # If 403/429 error, skip this method and try others
+                if "403" in str(e) or "429" in str(e) or "blocked" in str(e).lower():
+                    print(f"      ⚠️ FSA search by name failed for {home_name}: {e}")
+                    establishments = []
+                else:
+                    raise
             
             # Filter by postcode if available
             if postcode and establishments:
@@ -137,20 +146,38 @@ class FSAEnrichmentService:
                     if postcode_prefix and postcode_prefix in e.get("PostCode", "")
                 ]
             
-            # If no results by name, try by location
+            # If no results by name, try by location (with delay to avoid rate limiting)
             if not establishments and latitude and longitude:
-                establishments = await self.fsa_client.search_by_location(
-                    latitude=latitude,
-                    longitude=longitude,
-                    max_distance=0.5  # 0.5 km radius
-                )
+                await asyncio.sleep(0.5)  # Delay between different search methods
+                try:
+                    establishments = await self.fsa_client.search_by_location(
+                        latitude=latitude,
+                        longitude=longitude,
+                        max_distance=0.5,  # 0.5 km radius
+                        page_size=50  # Limit results
+                    )
+                except Exception as e:
+                    if "403" in str(e) or "429" in str(e) or "blocked" in str(e).lower():
+                        print(f"      ⚠️ FSA search by location failed for {home_name}: {e}")
+                        establishments = []
+                    else:
+                        raise
             
-            # If still no results, try business type search
+            # If still no results, try business type search (with delay)
             if not establishments:
-                establishments = await self.fsa_client.search_by_business_type(
-                    business_type_id=7835,  # Hospitals/Childcare/Caring Premises
-                    name=home_name
-                )
+                await asyncio.sleep(0.5)  # Delay between different search methods
+                try:
+                    establishments = await self.fsa_client.search_by_business_type(
+                        business_type_id=7835,  # Hospitals/Childcare/Caring Premises
+                        name=home_name,
+                        page_size=50  # Limit results
+                    )
+                except Exception as e:
+                    if "403" in str(e) or "429" in str(e) or "blocked" in str(e).lower():
+                        print(f"      ⚠️ FSA search by business type failed for {home_name}: {e}")
+                        establishments = []
+                    else:
+                        raise
             
             # Find best match by name similarity
             best_match = None
@@ -168,10 +195,11 @@ class FSAEnrichmentService:
                     best_match = establishments[0]
             
             if best_match:
-                # Get detailed information
+                # Get detailed information (with delay to avoid rate limiting)
                 fhrs_id = best_match.get("FHRSID")
                 if fhrs_id:
                     try:
+                        await asyncio.sleep(0.5)  # Delay before getting details
                         details = await self.fsa_client.get_establishment_details(fhrs_id)
                         
                         # Extract key information

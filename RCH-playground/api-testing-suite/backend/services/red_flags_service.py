@@ -104,34 +104,38 @@ class RedFlagsService:
         try:
             home_id = home.get('id')
             home_name = home.get('name', 'Unknown')
+        except Exception:
+            home_id = None
+            home_name = 'Unknown'
         
-        # 1. Financial Stability Warnings
-        financial_flags = self._assess_financial_stability(home)
-        red_flags.extend(financial_flags['red_flags'])
-        warnings.extend(financial_flags['warnings'])
-        risk_score += financial_flags['risk_score']
-        
-        # 2. CQC Compliance Issues
-        cqc_flags = self._assess_cqc_compliance(home)
-        red_flags.extend(cqc_flags['red_flags'])
-        warnings.extend(cqc_flags['warnings'])
-        risk_score += cqc_flags['risk_score']
-        
-        # 3. Staff Turnover Concerns
-        staff_flags = self._assess_staff_turnover(home)
-        red_flags.extend(staff_flags['red_flags'])
-        warnings.extend(staff_flags['warnings'])
-        risk_score += staff_flags['risk_score']
-        
-        # 4. Pricing Increases History
-        pricing_flags = self._assess_pricing_history(home)
-        red_flags.extend(pricing_flags['red_flags'])
-        warnings.extend(pricing_flags['warnings'])
-        risk_score += pricing_flags['risk_score']
-        
-        # Calculate overall risk level
-        overall_risk_level = self._calculate_risk_level(risk_score, len(red_flags))
-        
+        try:
+            # 1. Financial Stability Warnings
+            financial_flags = self._assess_financial_stability(home)
+            red_flags.extend(financial_flags['red_flags'])
+            warnings.extend(financial_flags['warnings'])
+            risk_score += financial_flags['risk_score']
+            
+            # 2. CQC Compliance Issues
+            cqc_flags = self._assess_cqc_compliance(home)
+            red_flags.extend(cqc_flags['red_flags'])
+            warnings.extend(cqc_flags['warnings'])
+            risk_score += cqc_flags['risk_score']
+            
+            # 3. Staff Turnover Concerns
+            staff_flags = self._assess_staff_turnover(home)
+            red_flags.extend(staff_flags['red_flags'])
+            warnings.extend(staff_flags['warnings'])
+            risk_score += staff_flags['risk_score']
+            
+            # 4. Pricing Increases History
+            pricing_flags = self._assess_pricing_history(home)
+            red_flags.extend(pricing_flags['red_flags'])
+            warnings.extend(pricing_flags['warnings'])
+            risk_score += pricing_flags['risk_score']
+            
+            # Calculate overall risk level
+            overall_risk_level = self._calculate_risk_level(risk_score, len(red_flags))
+            
             return {
                 'home_id': home_id,
                 'home_name': home_name,

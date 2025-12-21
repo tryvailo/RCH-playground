@@ -12,20 +12,46 @@
     "q7_budget": "under_3000_self"
   },
   "section_3_medical_needs": {
-    "q8_care_types": ["general_residential"],
-    "q9_medical_conditions": ["no_serious_medical"],
+    "q8_care_types": [
+      "general_residential"
+    ],
+    "q9_medical_conditions": [
+      "no_serious_medical"
+    ],
     "q10_mobility_level": "fully_mobile",
     "q11_medication_management": "simple_1_2",
-    "q12_age_range": "65_74"
+    "q12_special_equipment": [
+      "no_special_equipment"
+    ],
+    "q13_age_range": "65_74"
   },
   "section_4_safety_special_needs": {
     "q13_fall_history": "no_falls_occurred",
-    "q14_allergies": ["no_allergies"],
-    "q15_dietary_requirements": ["no_special_requirements"],
+    "q14_allergies": [
+      "no_allergies"
+    ],
+    "q15_dietary_requirements": [
+      "no_special_requirements"
+    ],
     "q16_social_personality": "very_sociable"
   },
   "section_5_timeline": {
     "q17_placement_timeline": "exploring_6_plus_months"
+  },
+  "section_6_priorities": {
+    "q18_priority_ranking": {
+      "priority_order": [
+        "cost_financial",
+        "quality_reputation",
+        "location_social",
+        "medical_safety"
+      ],
+      "priority_weights": [
+        50,
+        30,
+        15,
+        5
+      ]
+    }
   }
 }
-

@@ -131,8 +131,39 @@ class CompaniesHouseService:
             try:
                 from api_clients.companies_house_client import CompaniesHouseAPIClient
                 from utils.client_factory import get_companies_house_client
-                self._client = get_companies_house_client()
+                
+                # If api_key was provided in constructor, use it directly
+                if self.api_key:
+                    # Check if it's a placeholder
+                    placeholder_values = [
+                        "your-companies-house-api-key",
+                        "your-companies-house-key",
+                        "placeholder",
+                        "example",
+                        "test"
+                    ]
+                    if self.api_key.lower() in [p.lower() for p in placeholder_values] or self.api_key.startswith("your-"):
+                        raise ValueError(
+                            "Companies House API key is not configured. "
+                            "Please set a valid API key. "
+                            "Get your API key at: https://developer.company-information.service.gov.uk/"
+                        )
+                    self._client = CompaniesHouseAPIClient(api_key=self.api_key)
+                else:
+                    # Try to get from config
+                    self._client = get_companies_house_client()
+            except (ValueError, RuntimeError) as e:
+                # Re-raise ValueError and RuntimeError as-is (they contain useful messages)
+                raise
             except Exception as e:
+                error_msg = str(e)
+                # Check if it's a credentials configuration error
+                if "credentials not configured" in error_msg or "API key not found" in error_msg:
+                    raise ValueError(
+                        "Companies House API key is not configured. "
+                        "Please set a valid API key in config.json or environment variable COMPANIES_HOUSE_API_KEY. "
+                        "Get your API key at: https://developer.company-information.service.gov.uk/"
+                    )
                 raise RuntimeError(f"Failed to initialize Companies House client: {e}")
         return self._client
     

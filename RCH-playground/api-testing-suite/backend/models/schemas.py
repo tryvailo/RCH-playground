@@ -54,17 +54,21 @@ class CQCCredentials(BaseModel):
 
 class CompaniesHouseCredentials(BaseModel):
     """Companies House API Credentials"""
-    api_key: Optional[str] = Field(None, alias="apiKey")
+    api_key: Optional[str] = None
     apiKey: Optional[str] = None  # Support camelCase from frontend
     
     class Config:
-        allow_population_by_field_name = True
+        populate_by_name = True  # Pydantic v2
+        allow_population_by_field_name = True  # Pydantic v1 compatibility
     
     def __init__(self, **data):
         # Normalize camelCase to snake_case
-        if 'apiKey' in data and 'api_key' not in data:
-            data['api_key'] = data.pop('apiKey')
-        super().__init__(**data)
+        normalized_data = {}
+        if 'apiKey' in data:
+            normalized_data['api_key'] = data['apiKey']
+        elif 'api_key' in data:
+            normalized_data['api_key'] = data['api_key']
+        super().__init__(**normalized_data)
 
 
 class GooglePlacesCredentials(BaseModel):
@@ -232,7 +236,7 @@ class ApiCredentials(BaseModel):
     """Complete API Credentials"""
     cqc: Optional[CQCCredentials] = None
     fsa: Optional[Dict[str, Any]] = Field(default_factory=dict, description="FSA doesn't need credentials")
-    companies_house: Optional[CompaniesHouseCredentials] = Field(None, alias="companiesHouse")
+    companies_house: Optional[CompaniesHouseCredentials] = None
     companiesHouse: Optional[CompaniesHouseCredentials] = None  # Support camelCase from frontend
     google_places: Optional[GooglePlacesCredentials] = None
     google_places_insights: Optional[GooglePlacesInsightsCredentials] = Field(None, alias="googlePlacesInsights")
@@ -266,6 +270,12 @@ class ApiCredentials(BaseModel):
             elif key not in ['companiesHouse', 'googlePlaces', 'googlePlacesInsights', 'osPlaces']:
                 # Keep snake_case as is
                 normalized_data[key] = value
+        
+        # Convert dict values to credential objects if needed
+        if 'companies_house' in normalized_data and isinstance(normalized_data['companies_house'], dict):
+            normalized_data['companies_house'] = CompaniesHouseCredentials(**normalized_data['companies_house'])
+        if 'companiesHouse' in normalized_data and isinstance(normalized_data['companiesHouse'], dict):
+            normalized_data['companies_house'] = CompaniesHouseCredentials(**normalized_data['companiesHouse'])
         
         super().__init__(**normalized_data)
 

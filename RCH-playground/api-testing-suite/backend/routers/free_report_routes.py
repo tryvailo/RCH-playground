@@ -69,7 +69,9 @@ async def generate_free_report(request: Dict[str, Any] = Body(...)):
         # Extract questionnaire data
         postcode = request.get('postcode') or request.get('location_postcode', '')
         budget = request.get('budget', 0.0)
-        care_type = request.get('care_type', 'residential')
+        care_type_raw = request.get('care_type', 'residential')
+        # Normalize care_type: residential_care -> residential, nursing_care -> nursing, etc.
+        care_type = care_type_raw.replace('_care', '').replace('_', '') if care_type_raw else 'residential'
         chc_probability = request.get('chc_probability', 0.0)
         
         # Extract new fields from questionnaire (optional)
@@ -106,11 +108,13 @@ async def generate_free_report(request: Dict[str, Any] = Body(...)):
             print(f"⚠️ Postcode resolution failed: {e}")
             # Continue without postcode resolution
         
-        # Get care homes from CSV (merged_care_homes_west_midlands.csv)
+        # Get care homes using hybrid approach (CQC + Staging)
+        # Uses: cqc_carehomes_master_full_data_rows.csv (primary) + carehome_staging_export.csv (auxiliary)
         care_homes = []
         try:
             from services.csv_care_homes_service import get_care_homes as get_csv_care_homes
             loop = asyncio.get_event_loop()
+            # use_hybrid=True by default - uses CQC + Staging merged data
             care_homes = await loop.run_in_executor(
                 None,
                 lambda: get_csv_care_homes(
@@ -119,10 +123,11 @@ async def generate_free_report(request: Dict[str, Any] = Body(...)):
                     max_distance_km=30.0,
                     user_lat=user_lat,
                     user_lon=user_lon,
-                    limit=50
+                    limit=50,
+                    use_hybrid=True  # ✅ Explicitly enable hybrid approach (CQC + Staging)
                 )
             )
-            print(f"✅ Loaded {len(care_homes)} care homes from CSV database")
+            print(f"✅ Loaded {len(care_homes)} care homes from hybrid database (CQC + Staging)")
         except Exception as e:
             print(f"⚠️ CSV data load failed: {e}")
             # Fallback to database only (no mock data)
@@ -214,6 +219,9 @@ async def generate_free_report(request: Dict[str, Any] = Body(...)):
                     location_filtered.append(h)
             filtered_homes = location_filtered
         
+        print(f"🔍 After all filters: {len(filtered_homes)} homes available for matching")
+        print(f"🔍 Filtered homes with prices > 0: {sum(1 for h in filtered_homes if extract_weekly_price(h, care_type) > 0)}")
+        
         # Use improved matching algorithm if available
         if MATCHING_SERVICE_AVAILABLE and MatchingService and MatchingInputs:
             try:
@@ -234,7 +242,15 @@ async def generate_free_report(request: Dict[str, Any] = Body(...)):
                 
                 # Use MatchingService with spec_v3 preset
                 matching_service = MatchingService.with_preset('spec_v3')
+                print(f"🔍 Calling select_3_strategic_homes_simple with {len(filtered_homes)} filtered homes")
                 selected_homes_dict = matching_service.select_3_strategic_homes_simple(filtered_homes, matching_inputs)
+                
+                print(f"🔍 select_3_strategic_homes_simple returned: {list(selected_homes_dict.keys())}")
+                for key, home in selected_homes_dict.items():
+                    if home:
+                        home_name = home.get('name', 'Unknown')
+                        price = extract_weekly_price(home, care_type)
+                        print(f"   {key}: {home_name} - Price: £{price}/week")
                 
                 # Convert to expected format (list of dicts with 'home' and 'match_type')
                 top_3_homes = []
@@ -265,7 +281,7 @@ async def generate_free_report(request: Dict[str, Any] = Body(...)):
                         'match_reasoning': smart_value.get('match_reasoning', [])
                     })
                 
-                print(f"✅ Used improved matching algorithm: selected {len(top_3_homes)} homes")
+                print(f"✅ Used improved matching algorithm: selected {len(top_3_homes)} homes before price filter")
                 use_improved_algorithm = True
                 
             except Exception as e:
@@ -273,6 +289,9 @@ async def generate_free_report(request: Dict[str, Any] = Body(...)):
                 import traceback
                 traceback.print_exc()
                 use_improved_algorithm = False
+                # Log the error details for debugging
+                print(f"🔍 Error details: {type(e).__name__}: {str(e)}")
+                print(f"🔍 filtered_homes count: {len(filtered_homes) if 'filtered_homes' in locals() else 'N/A'}")
         else:
             use_improved_algorithm = False
         
@@ -384,6 +403,7 @@ async def generate_free_report(request: Dict[str, Any] = Body(...)):
         # Find Safe Bet (best overall balance)
         safe_bet = None
         safe_bet_score = -1
+        print(f"🔍 Legacy method: Searching for Safe Bet among {len(top_homes)} homes")
         for scored in top_homes:
             home_data = scored['home']
             weekly_price_val = extract_weekly_price(home_data, care_type)
@@ -412,14 +432,24 @@ async def generate_free_report(request: Dict[str, Any] = Body(...)):
                 if balance_score > safe_bet_score:
                     safe_bet_score = balance_score
                     safe_bet = scored
+                    print(f"✅ Found Safe Bet candidate: {home_data.get('name', 'Unknown')} - Score: {balance_score}, Price: £{weekly_price_val}, CQC: {cqc_score}")
             elif cqc_score >= 3 and weekly_price_val == 0:
                 # Log homes with missing prices
                 home_name = home_data.get('name', 'Unknown')
                 print(f"⚠️ Skipping {home_name} for Safe Bet: price is £0")
+            elif cqc_score < 3:
+                home_name = home_data.get('name', 'Unknown')
+                print(f"⚠️ Skipping {home_name} for Safe Bet: CQC score {cqc_score} < 3 (need Good/Outstanding)")
+        
+        if safe_bet:
+            print(f"✅ Safe Bet selected: {safe_bet.get('home', {}).get('name', 'Unknown')}")
+        else:
+            print(f"⚠️ No Safe Bet found among {len(top_homes)} homes")
         
         # Find Best Value (best price/quality ratio)
         best_value = None
         best_value_score = -1
+        print(f"🔍 Legacy method: Searching for Best Value among {len(top_homes)} homes (excluding Safe Bet)")
         for scored in top_homes:
             home_data = scored['home']
             if scored == safe_bet:
@@ -440,6 +470,16 @@ async def generate_free_report(request: Dict[str, Any] = Body(...)):
                 if value_score > best_value_score:
                     best_value_score = value_score
                     best_value = scored
+                    print(f"✅ Found Best Value candidate: {home_data.get('name', 'Unknown')} - Score: {value_score}, Price: £{weekly_price_val}, CQC: {cqc_score}")
+            elif weekly_price_val == 0:
+                print(f"⚠️ Skipping {home_data.get('name', 'Unknown')} for Best Value: price is £0")
+            elif cqc_score < 2:
+                print(f"⚠️ Skipping {home_data.get('name', 'Unknown')} for Best Value: CQC score {cqc_score} < 2 (need Requires Improvement+)")
+        
+        if best_value:
+            print(f"✅ Best Value selected: {best_value.get('home', {}).get('name', 'Unknown')}")
+        else:
+            print(f"⚠️ No Best Value found among {len(top_homes)} homes (excluding Safe Bet)")
         
         # Find Premium (highest quality within reasonable price uplift range)
         # Premium MUST be more expensive than user's budget in ANY case
@@ -469,13 +509,13 @@ async def generate_free_report(request: Dict[str, Any] = Body(...)):
             max_premium_absolute = safe_bet_price + 300
             max_premium_price = min(max_premium_percentage, max_premium_absolute)
             
-            print(f"💰 Premium price range (initial): £{min_premium_price:.0f} - £{max_premium_price:.0f} (Safe Bet: £{safe_bet_price:.0f}, Budget: £{budget:.0f})")
+            print(f"💰 Premium price range (initial): £{min_premium_price or 0:.0f} - £{max_premium_price or 0:.0f} (Safe Bet: £{safe_bet_price or 0:.0f}, Budget: £{budget or 0:.0f})")
         else:
             # If no Safe Bet, use budget as reference
             if budget > 0:
                 min_premium_price = budget * 1.05
                 max_premium_price = min(budget * 1.30, budget + 300)
-                print(f"💰 Premium price range (based on budget): £{min_premium_price:.0f} - £{max_premium_price:.0f} (Budget: £{budget:.0f})")
+                print(f"💰 Premium price range (based on budget): £{min_premium_price or 0:.0f} - £{max_premium_price or 0:.0f} (Budget: £{budget or 0:.0f})")
         
         # Helper function to find Premium from a list of homes
         def find_premium_from_homes(homes_to_search, min_price, max_price, search_context=""):
@@ -522,7 +562,7 @@ async def generate_free_report(request: Dict[str, Any] = Body(...)):
                         # Fallback: at least more expensive than Safe Bet
                         if weekly_price_val <= safe_bet_price:
                             is_premium_candidate = False
-                            rejection_reason = f"Not more expensive than Safe Bet: £{weekly_price_val} <= £{safe_bet_price:.0f}"
+                            rejection_reason = f"Not more expensive than Safe Bet: £{weekly_price_val} <= £{safe_bet_price or 0:.0f}"
                     
                     if is_premium_candidate:
                         premium_candidate_score = cqc_score * 10
@@ -540,7 +580,7 @@ async def generate_free_report(request: Dict[str, Any] = Body(...)):
                         if premium_candidate_score > premium_score:
                             premium_score = premium_candidate_score
                             premium = scored
-                            print(f"✅ Premium candidate {search_context}: {home_name} - £{weekly_price_val}/week (score: {premium_candidate_score:.1f})")
+                            print(f"✅ Premium candidate {search_context}: {home_name} - £{weekly_price_val}/week (score: {premium_candidate_score or 0:.1f})")
                     else:
                         candidates_rejected.append({
                             'name': home_name,
@@ -569,9 +609,11 @@ async def generate_free_report(request: Dict[str, Any] = Body(...)):
             try:
                 from services.csv_care_homes_service import get_care_homes as get_csv_care_homes
                 loop = asyncio.get_event_loop()
+                # Use hybrid approach (CQC + Staging)
                 expanded_care_homes = await loop.run_in_executor(
                     None,
                     lambda: get_csv_care_homes(
+                        use_hybrid=True,  # Explicitly enable hybrid approach
                         local_authority=local_authority,
                         care_type=care_type,
                         max_distance_km=expanded_max_distance,
@@ -643,7 +685,7 @@ async def generate_free_report(request: Dict[str, Any] = Body(...)):
                 max_premium_absolute_expanded = safe_bet_price + 300
                 max_premium_price_expanded = min(max_premium_percentage_expanded, max_premium_absolute_expanded)
                 
-                print(f"💰 Premium price range (expanded): £{min_premium_price_expanded:.0f} - £{max_premium_price_expanded:.0f} (Safe Bet: £{safe_bet_price:.0f}, Budget: £{budget:.0f})")
+                print(f"💰 Premium price range (expanded): £{min_premium_price_expanded or 0:.0f} - £{max_premium_price_expanded or 0:.0f} (Safe Bet: £{safe_bet_price or 0:.0f}, Budget: £{budget or 0:.0f})")
                 
                 # Search in expanded homes
                 find_premium_from_homes(expanded_top_homes, min_premium_price_expanded, max_premium_price_expanded, "(expanded search)")
@@ -698,7 +740,7 @@ async def generate_free_report(request: Dict[str, Any] = Body(...)):
                             fallback_candidates_rejected.append({
                                 'name': home_name,
                                 'price': weekly_price_val,
-                                'reason': f"Price £{weekly_price_val} < Safe Bet £{safe_bet_price:.0f} and < Budget £{budget:.0f}"
+                                'reason': f"Price £{weekly_price_val} < Safe Bet £{safe_bet_price or 0:.0f} and < Budget £{budget or 0:.0f}"
                             })
                             continue
                         
@@ -714,7 +756,7 @@ async def generate_free_report(request: Dict[str, Any] = Body(...)):
                         if premium_candidate_score > premium_score:
                             premium_score = premium_candidate_score
                             premium = scored
-                            print(f"✅ Premium (final fallback): {home_name} - £{weekly_price_val}/week, CQC score: {cqc_score} (total score: {premium_candidate_score:.1f})")
+                            print(f"✅ Premium (final fallback): {home_name} - £{weekly_price_val}/week, CQC score: {cqc_score} (total score: {premium_candidate_score or 0:.1f})")
                 
                 if fallback_candidates_checked > 0 and not premium:
                     print(f"⚠️ Checked {fallback_candidates_checked} final fallback Premium candidates, none selected:")
@@ -783,12 +825,17 @@ async def generate_free_report(request: Dict[str, Any] = Body(...)):
         if safe_bet:
             safe_bet['match_type'] = 'Safe Bet'
             selected_homes.append(safe_bet)
+            print(f"✅ Legacy: Safe Bet selected: {safe_bet.get('home', {}).get('name', 'Unknown')}")
         if best_value:
             best_value['match_type'] = 'Best Value'
             selected_homes.append(best_value)
+            print(f"✅ Legacy: Best Value selected: {best_value.get('home', {}).get('name', 'Unknown')}")
         if premium:
             premium['match_type'] = 'Premium'
             selected_homes.append(premium)
+            print(f"✅ Legacy: Premium selected: {premium.get('home', {}).get('name', 'Unknown')}")
+        
+        print(f"🔍 Legacy method: Found {len(selected_homes)} homes before fallback")
         
         # If we have less than 3, fill with top scored homes
         # IMPORTANT: Maintain price ordering - Premium must be >= Safe Bet
@@ -816,8 +863,8 @@ async def generate_free_report(request: Dict[str, Any] = Body(...)):
                 home_name = home_data.get('name')
                 if home_name in selected_home_names:
                     continue
-                    home_data = scored.get('home', {})
-                    weekly_price_val = extract_weekly_price(home_data, care_type)
+                
+                weekly_price_val = extract_weekly_price(home_data, care_type)
                     
                     # Skip homes with zero price
                     if weekly_price_val <= 0:
@@ -869,12 +916,12 @@ async def generate_free_report(request: Dict[str, Any] = Body(...)):
                             if meets_budget or exceeds_safe_bet or at_least_safe_bet:
                                 if not meets_budget and not exceeds_safe_bet:
                                     # Only warn if it's the last resort (>= Safe Bet but < budget)
-                                    print(f"⚠️ Accepting {home_data.get('name', 'Unknown')} as Premium (price £{weekly_price_val} >= Safe Bet £{safe_bet_price_for_fallback:.0f} but < Budget £{budget:.0f})")
+                                    print(f"⚠️ Accepting {home_data.get('name', 'Unknown')} as Premium (price £{weekly_price_val} >= Safe Bet £{safe_bet_price_for_fallback or 0:.0f} but < Budget £{budget or 0:.0f})")
                                 scored['match_type'] = 'Premium'
                             else:
                                 # Price too low - skip
                                 if safe_bet_price_for_fallback:
-                                    print(f"⚠️ Skipping {home_data.get('name', 'Unknown')} for Premium fallback: price £{weekly_price_val} < Safe Bet £{safe_bet_price_for_fallback:.0f}")
+                                    print(f"⚠️ Skipping {home_data.get('name', 'Unknown')} for Premium fallback: price £{weekly_price_val} < Safe Bet £{safe_bet_price_for_fallback or 0:.0f}")
                                 else:
                                     print(f"⚠️ Skipping {home_data.get('name', 'Unknown')} for Premium fallback: price £{weekly_price_val} < Budget £{budget:.0f}")
                                 continue
@@ -947,6 +994,9 @@ async def generate_free_report(request: Dict[str, Any] = Body(...)):
         # Format homes for response
         care_homes_list = []
         print(f"🔍 Formatting {len(top_3_homes)} homes for response...")
+        print(f"🔍 Top 3 homes before price filter: {[h.get('match_type', 'Unknown') for h in top_3_homes]}")
+        
+        homes_skipped_price = 0
         for scored in top_3_homes:
             home = scored['home']
             print(f"🔍 Processing home: {home.get('name', 'Unknown')}, lat={home.get('latitude')}, lon={home.get('longitude')}")
@@ -959,6 +1009,7 @@ async def generate_free_report(request: Dict[str, Any] = Body(...)):
                 home_name = home.get('name', 'Unknown')
                 match_type = scored.get('match_type', 'Unknown')
                 print(f"⚠️ WARNING: Skipping {home_name} ({match_type}) from final list: price is £{weekly_price}")
+                homes_skipped_price += 1
                 continue
             
             # Calculate distance using reusable method
@@ -1183,6 +1234,36 @@ async def generate_free_report(request: Dict[str, Any] = Body(...)):
             })
             print(f"✅ Added {home.get('name', 'Unknown')} to care_homes_list: lat={home.get('latitude')}, lon={home.get('longitude')}")
         
+        if homes_skipped_price > 0:
+            print(f"⚠️ WARNING: {homes_skipped_price} homes were skipped due to zero/missing price")
+            print(f"⚠️ Final care_homes_list count: {len(care_homes_list)} (expected 3)")
+        
+        # CRITICAL: If we have less than 3 homes, try to fill from filtered_homes
+        if len(care_homes_list) < 3:
+            print(f"⚠️ CRITICAL: Only {len(care_homes_list)} homes in final list, trying to fill from filtered_homes")
+            # Get homes that weren't selected yet
+            selected_names = {h.get('name') for h in care_homes_list}
+            # Use filtered_homes if available, otherwise try to get from top_homes
+            homes_to_fill = filtered_homes if 'filtered_homes' in locals() else (top_homes if 'top_homes' in locals() else [])
+            for home in homes_to_fill[:20]:  # Check top 20
+                if len(care_homes_list) >= 3:
+                    break
+                home_name = home.get('name') if isinstance(home, dict) else home.get('home', {}).get('name')
+                if not home_name or home_name in selected_names:
+                    continue
+                # Extract home dict if needed
+                home_dict = home if isinstance(home, dict) else home.get('home', {})
+                weekly_price = extract_weekly_price(home_dict, care_type)
+                if weekly_price > 0:
+                    # Add as additional home (simplified format)
+                    care_homes_list.append({
+                        'id': home_dict.get('cqc_location_id') or home_dict.get('location_id') or home_dict.get('id') or str(uuid.uuid4()),
+                        'name': home_name,
+                        'match_type': 'Additional' if isinstance(home, dict) else home.get('match_type', 'Additional')
+                    })
+                    selected_names.add(home_name)
+                    print(f"✅ Added additional home: {home_name} (price: £{weekly_price}/week)")
+        
         # Build area map data (MUST be after care_homes_list is populated)
         # Separate from area_profile to ensure it's always generated
         try:
@@ -1361,6 +1442,7 @@ async def generate_free_report(request: Dict[str, Any] = Body(...)):
             total_homes_in_area = len(care_homes)  # Will be updated below with actual count
             
             # Get ALL homes in local_authority for accurate area statistics (without filters)
+            # Uses hybrid approach (CQC + Staging)
             try:
                 from services.csv_care_homes_service import get_care_homes as get_csv_care_homes
                 loop = asyncio.get_event_loop()
@@ -1368,6 +1450,7 @@ async def generate_free_report(request: Dict[str, Any] = Body(...)):
                     None,
                     lambda: get_csv_care_homes(
                         local_authority=local_authority,
+                        use_hybrid=True,  # Explicitly enable hybrid approach
                         care_type=None,  # No care_type filter for total count
                         max_distance_km=None,  # No distance filter for total count
                         user_lat=None,

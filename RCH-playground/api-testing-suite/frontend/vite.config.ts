@@ -10,20 +10,20 @@ export default defineConfig({
     },
   },
   server: {
-    port: 5173,
+    port: 3001,
     proxy: {
       '/api': {
-        target: 'http://localhost:8000',
+        target: 'http://localhost:8001',
         changeOrigin: true,
         timeout: 300000, // 5 minutes timeout for long-running requests (professional report generation)
         proxyTimeout: 300000,
       },
       '/health': {
-        target: 'http://localhost:8000',
+        target: 'http://localhost:8001',
         changeOrigin: true,
       },
       '/ws': {
-        target: 'http://localhost:8000',
+        target: 'http://localhost:8001',
         ws: true,
         changeOrigin: true,
         secure: false,

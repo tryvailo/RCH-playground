@@ -1,8 +1,9 @@
 """
 Environmental Analysis Module
-Calculates noise and pollution levels based on OS Features API data (roads, infrastructure)
+Calculates noise levels based on OS Features API data (roads, infrastructure)
 
-Uses proximity to roads, road types, and traffic density as indicators
+Uses proximity to roads, road types, and traffic density as indicators.
+Note: Pollution data removed as it was inaccurate (requires real air quality measurements).
 """
 import httpx
 from typing import Dict, Any, List, Optional
@@ -17,25 +18,28 @@ from .cache_manager import get_cache_manager
 
 class EnvironmentalAnalyzer:
     """
-    Analyzes environmental factors (noise and pollution) based on OS Features API data
+    Analyzes noise levels based on OS Features API data
     
     Uses:
     - Road proximity and types
     - Road density
     - Infrastructure proximity
+    
+    Note: Only noise analysis is provided. Pollution data was removed as it requires
+    real air quality measurements, not estimates based on road proximity.
     """
     
     FEATURES_URL = "https://api.os.uk/features/v1/wfs"
     
-    # Road type classifications for noise/pollution estimation
+    # Road type classifications for noise estimation
     ROAD_TYPES = {
-        'motorway': {'noise_factor': 1.0, 'pollution_factor': 1.0, 'traffic_density': 'very_high'},
-        'trunk': {'noise_factor': 0.85, 'pollution_factor': 0.85, 'traffic_density': 'high'},
-        'primary': {'noise_factor': 0.70, 'pollution_factor': 0.70, 'traffic_density': 'high'},
-        'secondary': {'noise_factor': 0.55, 'pollution_factor': 0.55, 'traffic_density': 'medium'},
-        'tertiary': {'noise_factor': 0.40, 'pollution_factor': 0.40, 'traffic_density': 'medium'},
-        'residential': {'noise_factor': 0.25, 'pollution_factor': 0.25, 'traffic_density': 'low'},
-        'service': {'noise_factor': 0.15, 'pollution_factor': 0.15, 'traffic_density': 'very_low'},
+        'motorway': {'noise_factor': 1.0, 'traffic_density': 'very_high'},
+        'trunk': {'noise_factor': 0.85, 'traffic_density': 'high'},
+        'primary': {'noise_factor': 0.70, 'traffic_density': 'high'},
+        'secondary': {'noise_factor': 0.55, 'traffic_density': 'medium'},
+        'tertiary': {'noise_factor': 0.40, 'traffic_density': 'medium'},
+        'residential': {'noise_factor': 0.25, 'traffic_density': 'low'},
+        'service': {'noise_factor': 0.15, 'traffic_density': 'very_low'},
     }
     
     # Distance thresholds (in meters)
@@ -103,7 +107,7 @@ class EnvironmentalAnalyzer:
     
     def _calculate_distance_decay(self, distance_m: float) -> float:
         """
-        Calculate distance decay factor for noise/pollution
+        Calculate distance decay factor for noise
         Uses inverse square law approximation
         """
         if distance_m <= 0:
@@ -115,7 +119,7 @@ class EnvironmentalAnalyzer:
         # Decay factor (inverse square with minimum threshold)
         decay = (base_distance / max(distance_m, base_distance)) ** 1.5
         
-        # Apply minimum threshold (noise/pollution doesn't completely disappear)
+        # Apply minimum threshold (noise doesn't completely disappear)
         return max(decay, 0.05)  # Minimum 5% impact even at far distances
     
     async def _fetch_roads_nearby(
@@ -309,7 +313,6 @@ class EnvironmentalAnalyzer:
             # Get road type factors
             road_factors = self.ROAD_TYPES.get(road_type, {
                 'noise_factor': 0.30,
-                'pollution_factor': 0.30,
                 'traffic_density': 'low'
             })
             
@@ -352,117 +355,6 @@ class EnvironmentalAnalyzer:
         
         return recommendations
     
-    async def analyze_pollution_level(
-        self,
-        latitude: float,
-        longitude: float,
-        radius_m: int = 500
-    ) -> Dict[str, Any]:
-        """
-        Calculate air pollution level based on nearby roads and traffic
-        
-        Args:
-            latitude: Location latitude
-            longitude: Location longitude
-            radius_m: Search radius in meters
-            
-        Returns:
-            Pollution analysis with score (0-100) and rating
-        """
-        # Check cache
-        cache_key = f"pollution_{latitude}_{longitude}_{radius_m}"
-        cached = self.cache.get('environmental', cache_key)
-        if cached:
-            return cached
-        
-        try:
-            # Pollution is closely related to noise (both from traffic)
-            # Use similar methodology but with different weighting
-            
-            # Fetch nearby roads (would use OS Features API)
-            roads = await self._fetch_roads_nearby(latitude, longitude, radius_m)
-            
-            # Calculate pollution based on actual road data
-            pollution_score = await self._estimate_pollution_from_roads(latitude, longitude, radius_m)
-            
-            # Categorize pollution level
-            if pollution_score >= 70:
-                rating = "Very High"
-                description = "High air pollution expected. Close to major traffic routes."
-            elif pollution_score >= 55:
-                rating = "High"
-                description = "Elevated air pollution. Near busy roads or industrial areas."
-            elif pollution_score >= 40:
-                rating = "Moderate"
-                description = "Moderate air pollution. Typical urban levels."
-            elif pollution_score >= 25:
-                rating = "Low"
-                description = "Low air pollution. Good air quality expected."
-            else:
-                rating = "Very Low"
-                description = "Very low air pollution. Excellent air quality."
-            
-            result = {
-                'location': {'latitude': latitude, 'longitude': longitude},
-                'pollution_score': round(pollution_score, 1),
-                'rating': rating,
-                'description': description,
-                'radius_analyzed_m': radius_m,
-                'factors': {
-                    'major_roads_nearby': pollution_score > 50,
-                    'traffic_density': 'high' if pollution_score > 50 else 'medium' if pollution_score > 30 else 'low',
-                    'urban_area': pollution_score > 40
-                },
-                'recommendations': self._get_pollution_recommendations(pollution_score),
-                'fetched_at': datetime.now().isoformat()
-            }
-            
-            self.cache.set('environmental', cache_key, result)
-            return result
-            
-        except Exception as e:
-            return {
-                'error': str(e),
-                'location': {'latitude': latitude, 'longitude': longitude},
-                'pollution_score': None,
-                'rating': 'Unknown',
-                'fetched_at': datetime.now().isoformat()
-            }
-    
-    async def _estimate_pollution_from_roads(self, lat: float, lon: float, radius_m: int) -> float:
-        """
-        Estimate pollution level based on actual road data
-        Pollution is typically 0.85x of noise level (similar sources but disperses more)
-        """
-        try:
-            # Get noise score first (based on roads)
-            noise_score = await self._estimate_noise_from_roads(lat, lon, radius_m)
-            
-            # Pollution is slightly lower than noise (air disperses more than sound)
-            pollution_score = noise_score * 0.85
-            
-            return round(pollution_score, 1)
-        except Exception as e:
-            print(f"Error estimating pollution, using fallback: {e}")
-            # Fallback to moderate level
-            return 30.0
-    
-    def _get_pollution_recommendations(self, pollution_score: float) -> List[str]:
-        """Get recommendations based on pollution level"""
-        recommendations = []
-        
-        if pollution_score >= 60:
-            recommendations.append("Consider air filtration systems for care home")
-            recommendations.append("Monitor air quality regularly")
-            recommendations.append("Position outdoor areas away from road-facing side")
-        elif pollution_score >= 40:
-            recommendations.append("Air quality is acceptable but monitor during high traffic periods")
-            recommendations.append("Consider air quality monitoring")
-        else:
-            recommendations.append("Air quality is good for care home residents")
-        
-        return recommendations
-    
     async def analyze_environmental(
         self,
         latitude: float,
@@ -470,7 +362,10 @@ class EnvironmentalAnalyzer:
         radius_m: int = 500
     ) -> Dict[str, Any]:
         """
-        Comprehensive environmental analysis (noise + pollution)
+        Environmental analysis (noise only)
+        
+        Note: Pollution data removed as it requires real air quality measurements,
+        not estimates based on road proximity.
         
         Args:
             latitude: Location latitude
@@ -478,38 +373,15 @@ class EnvironmentalAnalyzer:
             radius_m: Search radius in meters
             
         Returns:
-            Combined environmental analysis
+            Noise analysis only
         """
         noise = await self.analyze_noise_level(latitude, longitude, radius_m)
-        pollution = await self.analyze_pollution_level(latitude, longitude, radius_m)
-        
-        # Calculate overall environmental score
-        if noise.get('noise_score') is not None and pollution.get('pollution_score') is not None:
-            overall_score = (noise['noise_score'] + pollution['pollution_score']) / 2
-        else:
-            overall_score = None
         
         return {
             'location': {'latitude': latitude, 'longitude': longitude},
             'noise': noise,
-            'pollution': pollution,
-            'overall_environmental_score': round(overall_score, 1) if overall_score else None,
-            'overall_rating': self._get_overall_rating(overall_score) if overall_score else 'Unknown',
             'fetched_at': datetime.now().isoformat()
         }
-    
-    def _get_overall_rating(self, score: float) -> str:
-        """Get overall environmental rating"""
-        if score >= 70:
-            return "Poor"
-        elif score >= 55:
-            return "Below Average"
-        elif score >= 40:
-            return "Average"
-        elif score >= 25:
-            return "Good"
-        else:
-            return "Excellent"
     
     async def close(self):
         """Close HTTP client"""

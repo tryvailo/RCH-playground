@@ -273,20 +273,21 @@ class GooglePlacesEnrichmentService:
                 popular_times = insights_data.get('popular_times', {})
                 summary = insights_data.get('summary', {})
                 
+                # Dwell time
                 google_places_data['average_dwell_time_minutes'] = dwell_time.get('average_dwell_time_minutes')
+                
+                # Repeat visitor rate (convert percentage to decimal 0-1)
                 repeat_visitor_rate_percent = repeat_rate.get('repeat_visitor_rate_percent')
                 if repeat_visitor_rate_percent is not None:
-                    # Store as decimal (0-1) for consistency with matching service
                     google_places_data['repeat_visitor_rate'] = repeat_visitor_rate_percent / 100
+                
+                # Footfall trend
                 google_places_data['footfall_trend'] = footfall.get('trend_direction')
+                
+                # Popular times
                 google_places_data['popular_times'] = popular_times
-                google_places_data['family_engagement_score'] = summary.get('family_engagement_score')
-                google_places_data['quality_indicator'] = summary.get('quality_indicator')
-                if google_places_data['repeat_visitor_rate']:
-                    # Convert percentage to decimal for consistency
-                    google_places_data['repeat_visitor_rate'] = google_places_data['repeat_visitor_rate'] / 100
-                google_places_data['footfall_trend'] = footfall.get('trend_direction')
-                google_places_data['popular_times'] = popular_times
+                
+                # Family engagement metrics
                 google_places_data['family_engagement_score'] = summary.get('family_engagement_score')
                 google_places_data['quality_indicator'] = summary.get('quality_indicator')
             

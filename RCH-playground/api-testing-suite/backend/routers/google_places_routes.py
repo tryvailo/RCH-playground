@@ -148,58 +148,46 @@ async def google_places_details(place_id: str):
         raise HTTPException(status_code=500, detail=f"Google Places API error: {str(e)}")
 
 
-@router.get("/photo/{photo_reference}")
+@router.get("/photo/{photo_reference:path}")
 async def google_places_photo(photo_reference: str, maxwidth: int = Query(400)):
-    """Get photo for a place"""
+    """Get photo for a place
+    
+    Note: photo_reference can be in format:
+    - Places API (New): "places/{place_id}/photos/{photo_id}"
+    - Legacy API: just the photo reference ID
+    """
     try:
+        # URL decode the photo_reference in case it was encoded
+        from urllib.parse import unquote
+        photo_reference = unquote(photo_reference)
+        
         client = get_google_places_client()
         
         photo_data = await client.get_photo(photo_reference, maxwidth=maxwidth)
         
+        # Generate a safe filename from photo_reference
+        safe_filename = photo_reference.split("/")[-1] if "/" in photo_reference else photo_reference
+        safe_filename = safe_filename[:50]  # Limit filename length
+        
         return Response(
             content=photo_data,
             media_type="image/jpeg",
-            headers={"Content-Disposition": f"inline; filename={photo_reference}.jpg"}
+            headers={"Content-Disposition": f"inline; filename={safe_filename}.jpg"}
         )
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Google Places API error: {str(e)}")
 
 
 @router.get("/{place_id}/popular-times")
 async def google_places_popular_times(place_id: str):
-    """Get popular times for a place (BestTime API integration)"""
+    """Get popular times for a place using Google Places New API"""
     try:
         if not place_id:
             raise HTTPException(status_code=400, detail="Place ID is required")
         
-        from utils.client_factory import get_besttime_client
-        from utils.auth import credentials_store
-        
-        # Check if BestTime credentials are configured
-        # BestTime uses private_key and public_key, not api_key, so we check directly
-        creds = credentials_store.get("default")
-        if not creds:
-            raise HTTPException(
-                status_code=400,
-                detail="BestTime credentials not configured. Please configure BestTime API credentials (private_key and public_key) in the settings."
-            )
-        
-        besttime_creds = getattr(creds, 'besttime', None)
-        if not besttime_creds:
-            raise HTTPException(
-                status_code=400,
-                detail="BestTime credentials not configured. Please configure BestTime API credentials (private_key and public_key) in the settings."
-            )
-        
-        private_key = getattr(besttime_creds, 'private_key', None)
-        public_key = getattr(besttime_creds, 'public_key', None)
-        if not private_key or not public_key:
-            raise HTTPException(
-                status_code=400,
-                detail="BestTime credentials not configured. Please configure BestTime API credentials (private_key and public_key) in the settings."
-            )
-        
-        client = get_besttime_client()
+        client = get_google_places_client()
         popular_times = await client.get_popular_times(place_id)
         
         return {
@@ -215,40 +203,13 @@ async def google_places_popular_times(place_id: str):
 
 @router.get("/{place_id}/dwell-time")
 async def google_places_dwell_time(place_id: str):
-    """Get average dwell time for a place"""
+    """Get average dwell time for a place using Google Places New API"""
     try:
         if not place_id:
             raise HTTPException(status_code=400, detail="Place ID is required")
         
-        from utils.client_factory import get_besttime_client
-        from utils.auth import credentials_store
-        
-        # Check if BestTime credentials are configured
-        # BestTime uses private_key and public_key, not api_key, so we check directly
-        creds = credentials_store.get("default")
-        if not creds:
-            raise HTTPException(
-                status_code=400,
-                detail="BestTime credentials not configured. Please configure BestTime API credentials (private_key and public_key) in the settings."
-            )
-        
-        besttime_creds = getattr(creds, 'besttime', None)
-        if not besttime_creds:
-            raise HTTPException(
-                status_code=400,
-                detail="BestTime credentials not configured. Please configure BestTime API credentials (private_key and public_key) in the settings."
-            )
-        
-        private_key = getattr(besttime_creds, 'private_key', None)
-        public_key = getattr(besttime_creds, 'public_key', None)
-        if not private_key or not public_key:
-            raise HTTPException(
-                status_code=400,
-                detail="BestTime credentials not configured. Please configure BestTime API credentials (private_key and public_key) in the settings."
-            )
-        
-        client = get_besttime_client()
-        dwell_time = await client.get_dwell_time(place_id)
+        client = get_google_places_client()
+        dwell_time = await client.calculate_dwell_time(place_id)
         
         return {
             "status": "success",
@@ -263,45 +224,18 @@ async def google_places_dwell_time(place_id: str):
 
 @router.get("/{place_id}/repeat-visitors")
 async def google_places_repeat_visitors(place_id: str):
-    """Get repeat visitor rate for a place"""
+    """Get repeat visitor rate for a place using Google Places New API"""
     try:
         if not place_id:
             raise HTTPException(status_code=400, detail="Place ID is required")
         
-        from utils.client_factory import get_besttime_client
-        from utils.auth import credentials_store
-        
-        # Check if BestTime credentials are configured
-        # BestTime uses private_key and public_key, not api_key, so we check directly
-        creds = credentials_store.get("default")
-        if not creds:
-            raise HTTPException(
-                status_code=400,
-                detail="BestTime credentials not configured. Please configure BestTime API credentials (private_key and public_key) in the settings."
-            )
-        
-        besttime_creds = getattr(creds, 'besttime', None)
-        if not besttime_creds:
-            raise HTTPException(
-                status_code=400,
-                detail="BestTime credentials not configured. Please configure BestTime API credentials (private_key and public_key) in the settings."
-            )
-        
-        private_key = getattr(besttime_creds, 'private_key', None)
-        public_key = getattr(besttime_creds, 'public_key', None)
-        if not private_key or not public_key:
-            raise HTTPException(
-                status_code=400,
-                detail="BestTime credentials not configured. Please configure BestTime API credentials (private_key and public_key) in the settings."
-            )
-        
-        client = get_besttime_client()
-        repeat_visitors = await client.get_repeat_visitor_rate(place_id)
+        client = get_google_places_client()
+        repeat_visitors = await client.calculate_repeat_visitor_rate(place_id)
         
         return {
             "status": "success",
             "place_id": place_id,
-            "repeat_visitors": repeat_visitors
+            "repeat_visitor_rate": repeat_visitors
         }
     except HTTPException:
         raise
@@ -311,39 +245,12 @@ async def google_places_repeat_visitors(place_id: str):
 
 @router.get("/{place_id}/visitor-geography")
 async def google_places_visitor_geography(place_id: str):
-    """Get visitor geography data for a place"""
+    """Get visitor geography data for a place using Google Places New API"""
     try:
         if not place_id:
             raise HTTPException(status_code=400, detail="Place ID is required")
         
-        from utils.client_factory import get_besttime_client
-        from utils.auth import credentials_store
-        
-        # Check if BestTime credentials are configured
-        # BestTime uses private_key and public_key, not api_key, so we check directly
-        creds = credentials_store.get("default")
-        if not creds:
-            raise HTTPException(
-                status_code=400,
-                detail="BestTime credentials not configured. Please configure BestTime API credentials (private_key and public_key) in the settings."
-            )
-        
-        besttime_creds = getattr(creds, 'besttime', None)
-        if not besttime_creds:
-            raise HTTPException(
-                status_code=400,
-                detail="BestTime credentials not configured. Please configure BestTime API credentials (private_key and public_key) in the settings."
-            )
-        
-        private_key = getattr(besttime_creds, 'private_key', None)
-        public_key = getattr(besttime_creds, 'public_key', None)
-        if not private_key or not public_key:
-            raise HTTPException(
-                status_code=400,
-                detail="BestTime credentials not configured. Please configure BestTime API credentials (private_key and public_key) in the settings."
-            )
-        
-        client = get_besttime_client()
+        client = get_google_places_client()
         geography = await client.get_visitor_geography(place_id)
         
         return {
@@ -359,39 +266,12 @@ async def google_places_visitor_geography(place_id: str):
 
 @router.get("/{place_id}/footfall-trends")
 async def google_places_footfall_trends(place_id: str, months: int = Query(12)):
-    """Get footfall trends for a place"""
+    """Get footfall trends for a place using Google Places New API"""
     try:
         if not place_id:
             raise HTTPException(status_code=400, detail="Place ID is required")
         
-        from utils.client_factory import get_besttime_client
-        from utils.auth import credentials_store
-        
-        # Check if BestTime credentials are configured
-        # BestTime uses private_key and public_key, not api_key, so we check directly
-        creds = credentials_store.get("default")
-        if not creds:
-            raise HTTPException(
-                status_code=400,
-                detail="BestTime credentials not configured. Please configure BestTime API credentials (private_key and public_key) in the settings."
-            )
-        
-        besttime_creds = getattr(creds, 'besttime', None)
-        if not besttime_creds:
-            raise HTTPException(
-                status_code=400,
-                detail="BestTime credentials not configured. Please configure BestTime API credentials (private_key and public_key) in the settings."
-            )
-        
-        private_key = getattr(besttime_creds, 'private_key', None)
-        public_key = getattr(besttime_creds, 'public_key', None)
-        if not private_key or not public_key:
-            raise HTTPException(
-                status_code=400,
-                detail="BestTime credentials not configured. Please configure BestTime API credentials (private_key and public_key) in the settings."
-            )
-        
-        client = get_besttime_client()
+        client = get_google_places_client()
         trends = await client.get_footfall_trends(place_id, months=months)
         
         return {
@@ -407,40 +287,13 @@ async def google_places_footfall_trends(place_id: str, months: int = Query(12)):
 
 @router.get("/{place_id}/insights")
 async def google_places_insights(place_id: str):
-    """Get comprehensive insights for a place"""
+    """Get comprehensive insights for a place using Google Places New API"""
     try:
         if not place_id:
             raise HTTPException(status_code=400, detail="Place ID is required")
         
-        from utils.client_factory import get_besttime_client
-        from utils.auth import credentials_store
-        
-        # Check if BestTime credentials are configured before attempting to get client
-        # BestTime uses private_key and public_key, not api_key, so we check directly
-        creds = credentials_store.get("default")
-        if not creds:
-            raise HTTPException(
-                status_code=400,
-                detail="BestTime credentials not configured. Please configure BestTime API credentials (private_key and public_key) in the settings."
-            )
-        
-        besttime_creds = getattr(creds, 'besttime', None)
-        if not besttime_creds:
-            raise HTTPException(
-                status_code=400,
-                detail="BestTime credentials not configured. Please configure BestTime API credentials (private_key and public_key) in the settings."
-            )
-        
-        private_key = getattr(besttime_creds, 'private_key', None)
-        public_key = getattr(besttime_creds, 'public_key', None)
-        if not private_key or not public_key:
-            raise HTTPException(
-                status_code=400,
-                detail="BestTime credentials not configured. Please configure BestTime API credentials (private_key and public_key) in the settings."
-            )
-        
-        client = get_besttime_client()
-        insights = await client.get_all_insights(place_id)
+        client = get_google_places_client()
+        insights = await client.get_places_insights(place_id)
         
         return {
             "status": "success",
@@ -455,40 +308,27 @@ async def google_places_insights(place_id: str):
 
 @router.post("/{place_id}/analyze")
 async def analyze_places_insights(place_id: str):
-    """Analyze and summarize insights for a place"""
+    """Analyze and summarize insights for a place using Google Places New API"""
     try:
         if not place_id:
             raise HTTPException(status_code=400, detail="Place ID is required")
         
-        from utils.client_factory import get_besttime_client
-        from utils.auth import credentials_store
+        client = get_google_places_client()
+        insights = await client.get_places_insights(place_id)
         
-        # Check if BestTime credentials are configured
-        # BestTime uses private_key and public_key, not api_key, so we check directly
-        creds = credentials_store.get("default")
-        if not creds:
-            raise HTTPException(
-                status_code=400,
-                detail="BestTime credentials not configured. Please configure BestTime API credentials (private_key and public_key) in the settings."
-            )
-        
-        besttime_creds = getattr(creds, 'besttime', None)
-        if not besttime_creds:
-            raise HTTPException(
-                status_code=400,
-                detail="BestTime credentials not configured. Please configure BestTime API credentials (private_key and public_key) in the settings."
-            )
-        
-        private_key = getattr(besttime_creds, 'private_key', None)
-        public_key = getattr(besttime_creds, 'public_key', None)
-        if not private_key or not public_key:
-            raise HTTPException(
-                status_code=400,
-                detail="BestTime credentials not configured. Please configure BestTime API credentials (private_key and public_key) in the settings."
-            )
-        
-        client = get_besttime_client()
-        analysis = await client.analyze_place_insights(place_id)
+        # Generate analysis from insights
+        summary = insights.get("summary", {})
+        analysis = {
+            "place_id": place_id,
+            "family_engagement_score": summary.get("family_engagement_score"),
+            "quality_indicator": summary.get("quality_indicator"),
+            "recommendations": summary.get("recommendations", []),
+            "key_insights": [
+                f"Dwell time: {insights.get('dwell_time', {}).get('average_dwell_time_minutes', 0)} minutes",
+                f"Repeat visitor rate: {insights.get('repeat_visitor_rate', {}).get('repeat_visitor_rate_percent', 0)}%",
+                f"Footfall trend: {insights.get('footfall_trends', {}).get('trend_direction', 'Unknown')}"
+            ]
+        }
         
         return {
             "status": "success",

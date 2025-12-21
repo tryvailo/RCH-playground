@@ -54,8 +54,30 @@ class OSPlacesLoader:
                 with open(config_path) as f:
                     config = json.load(f)
                     os_config = config.get('os_places', {})
-                    self.api_key = os_config.get('api_key')
-                    self.api_secret = os_config.get('api_secret')
+                    api_key = os_config.get('api_key')
+                    api_secret = os_config.get('api_secret')
+                    
+                    # Check if API key is a placeholder
+                    if api_key:
+                        placeholder_values = [
+                            "your-os-places-api-key",
+                            "your-os-places-key",
+                            "your-os-api-key",
+                            "placeholder",
+                            "example",
+                            "test"
+                        ]
+                        if api_key.lower() in [p.lower() for p in placeholder_values] or api_key.startswith("your-"):
+                            print("⚠️ OS Places API key appears to be a placeholder, OS Places features will be disabled")
+                            self.api_key = None
+                            self.api_secret = None
+                        else:
+                            self.api_key = api_key
+                            self.api_secret = api_secret
+                    else:
+                        self.api_key = None
+                        self.api_secret = None
+                    
                     # Use custom endpoint if provided, otherwise use default
                     if os_config.get('places_endpoint'):
                         # Remove trailing slash if present

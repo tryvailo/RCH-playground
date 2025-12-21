@@ -73,7 +73,9 @@ class CQCAPIClient:
         # Use primary key by default, fallback to secondary if primary fails
         self.current_subscription_key = self.primary_subscription_key
         
-        self.client = httpx.AsyncClient(timeout=30.0)
+        # Increased timeout for reliability (accuracy > speed)
+        # CQC API can be slow, especially for detailed location data
+        self.client = httpx.AsyncClient(timeout=60.0)
     
     def _get_headers(self) -> Dict[str, str]:
         """Get HTTP headers with subscription key authentication"""
@@ -338,27 +340,53 @@ class CQCAPIClient:
         Get detailed information for a specific location.
         
         Based on cqc_location from cqcr R package.
+        
+        FIX: CQC Public API may not require authentication - try without headers if 401.
         """
         params = {}
         
         try:
+            # First try with subscription key (if available)
+            headers = self._get_headers()
             response = await self.client.get(
                 f"{self.base_url}/locations/{location_id}",
                 params=self._add_partner_code(params),
-                headers=self._get_headers()
+                headers=headers
             )
             response.raise_for_status()
             return response.json()
         except httpx.HTTPStatusError as e:
-            if e.response.status_code in (401, 403) and self._switch_to_secondary_key():
-                response = await self.client.get(
-                    f"{self.base_url}/locations/{location_id}",
-                    params=self._add_partner_code(params),
-                    headers=self._get_headers()
-                )
-                response.raise_for_status()
-                return response.json()
-            raise Exception(f"CQC API error: {e.response.status_code} - {e.response.text}")
+            # If 401/403, try without subscription key (CQC Public API may be free)
+            if e.response.status_code in (401, 403):
+                # Try switching to secondary key first
+                if self._switch_to_secondary_key():
+                    try:
+                        response = await self.client.get(
+                            f"{self.base_url}/locations/{location_id}",
+                            params=self._add_partner_code(params),
+                            headers=self._get_headers()
+                        )
+                        response.raise_for_status()
+                        return response.json()
+                    except httpx.HTTPStatusError:
+                        pass  # Fall through to try without headers
+                
+                # Try without subscription key (CQC Public API may not require auth)
+                try:
+                    print(f"      ⚠️ CQC API 401/403 with subscription key, trying without authentication...")
+                    response = await self.client.get(
+                        f"{self.base_url}/locations/{location_id}",
+                        params=self._add_partner_code(params),
+                        headers={"Accept": "application/json"}  # Only Accept header, no auth
+                    )
+                    response.raise_for_status()
+                    print(f"      ✅ CQC API worked without authentication")
+                    return response.json()
+                except httpx.HTTPStatusError as e2:
+                    # If still fails, raise original error
+                    raise Exception(f"CQC API error: {e.response.status_code} - {e.response.text}")
+            else:
+                raise Exception(f"CQC API error: {e.response.status_code} - {e.response.text}")
         except Exception as e:
             raise Exception(f"CQC API error: {str(e)}")
     

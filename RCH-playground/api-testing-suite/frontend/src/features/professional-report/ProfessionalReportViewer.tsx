@@ -748,24 +748,6 @@ export default function ProfessionalReportViewer() {
                           />
                         </div>
 
-                        {/* Analysis Summary */}
-                        <div className="p-4 bg-blue-50 rounded-lg border border-blue-200 mb-6">
-                          <h3 className="font-semibold text-blue-900 mb-2">Analysis Summary</h3>
-                          <div className="grid grid-cols-3 gap-4 text-sm">
-                            <div>
-                              <div className="text-blue-600">Homes Analyzed</div>
-                              <div className="text-2xl font-bold text-blue-900">{report.analysisSummary.totalHomesAnalyzed}</div>
-                            </div>
-                            <div>
-                              <div className="text-blue-600">Factors Analyzed</div>
-                              <div className="text-2xl font-bold text-blue-900">{report.analysisSummary.factorsAnalyzed}</div>
-                            </div>
-                            <div>
-                              <div className="text-blue-600">Analysis Time</div>
-                              <div className="text-lg font-bold text-blue-900">{report.analysisSummary.analysisTime}</div>
-                            </div>
-                          </div>
-                        </div>
 
                         {/* Dynamic Weights Explanation */}
                         {report.appliedWeights && (
@@ -890,9 +872,38 @@ export default function ProfessionalReportViewer() {
                                     #{index + 1}
                                   </span>
                                   <div className="flex-1 text-left">
-                                    <div className="font-semibold text-gray-900 text-lg">{home.name}</div>
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <div className="font-semibold text-gray-900 text-lg">{home.name}</div>
+                                      {/* Category Winner Badges */}
+                                      {home.category_labels && home.category_labels.length > 0 && (
+                                        <div className="flex flex-wrap gap-1">
+                                          {home.category_labels.map((label, idx) => {
+                                            const isAutomatic = label.includes('Medical & Safety');
+                                            return (
+                                              <span
+                                                key={idx}
+                                                className={`text-xs font-semibold px-2 py-0.5 rounded ${
+                                                  isAutomatic
+                                                    ? 'bg-red-100 text-red-700 border border-red-300'
+                                                    : 'bg-blue-100 text-blue-700 border border-blue-300'
+                                                }`}
+                                                title={isAutomatic ? 'Determined automatically from your medical needs' : 'Based on your priorities'}
+                                              >
+                                                {isAutomatic && '🏥 '}
+                                                {label}
+                                              </span>
+                                            );
+                                          })}
+                                        </div>
+                                      )}
+                                    </div>
                                     <div className="text-sm text-gray-600">
                                       {home.location} • Match: <span className="font-semibold text-[#10B981]">{home.matchScore.toFixed(1)}%</span> • £{home.weeklyPrice}/week
+                                      {home.value_ratio && home.value_ratio > 0 && (
+                                        <span className="ml-2 text-xs text-emerald-600 font-medium">
+                                          • Value: {home.value_ratio.toFixed(2)}x
+                                        </span>
+                                      )}
                                     </div>
                                     {/* Match Reason and Waiting List Status */}
                                     <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
@@ -954,6 +965,39 @@ export default function ProfessionalReportViewer() {
                                       </span>
                                     </div>
                                   </div>
+
+                                  {/* Category Reasoning (if available) */}
+                                  {home.category_reasoning && Object.keys(home.category_reasoning).length > 0 && (
+                                    <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-4 border border-blue-200">
+                                      <h5 className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                                        <span className="text-blue-600">💡</span>
+                                        Why This Home Was Recommended
+                                      </h5>
+                                      <div className="space-y-2">
+                                        {Object.entries(home.category_reasoning).map(([categoryKey, reasons]) => {
+                                          const categoryLabel = home.category_labels?.find((_, idx) => {
+                                            const keys = Object.keys(home.category_reasoning || {});
+                                            return keys[idx] === categoryKey;
+                                          }) || categoryKey;
+                                          
+                                          return (
+                                            <div key={categoryKey} className="text-sm">
+                                              <div className="font-medium text-gray-800 mb-1">
+                                                {categoryLabel}:
+                                              </div>
+                                              <ul className="list-disc list-inside text-gray-700 space-y-1 ml-2">
+                                                {Array.isArray(reasons) ? reasons.map((reason, idx) => (
+                                                  <li key={idx}>{reason}</li>
+                                                )) : (
+                                                  <li>{String(reasons)}</li>
+                                                )}
+                                              </ul>
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
+                                  )}
 
                                   {/* Match Score Radar Chart */}
                                   <div className="mt-4">
@@ -2170,7 +2214,7 @@ export default function ProfessionalReportViewer() {
                       ) : (
                         // Fallback to generated actions if nextSteps not available
                         <div className="space-y-3">
-                          {report.careHomes.slice(0, 3).map((home, index) => {
+                          {report.careHomes.slice(0, 5).map((home, index) => {
                             const priority: 'high' | 'medium' | 'low' = index === 0 ? 'high' : index === 1 ? 'high' : 'medium';
                             const timeline = index === 0 ? 'Within 7 days' : 'Within 14 days';
                             const action = index === 0
