@@ -137,6 +137,11 @@ async def generate_free_report(request: FreeReportRequest):
                 )
             )
             print(f"✅ Loaded {len(care_homes)} care homes from hybrid database (CQC + Staging)")
+            print(f"📊 STEP 1 - Initial load: {len(care_homes)} homes")
+            # Log sample of homes for debugging
+            if care_homes:
+                sample = care_homes[0]
+                print(f"   Sample home: {sample.get('name', 'Unknown')} | Rating: {sample.get('rating') or sample.get('cqc_rating_overall', 'N/A')} | Price: {extract_weekly_price(sample, care_type)}")
         except Exception as e:
             print(f"⚠️ CSV data load failed: {e}")
             # Fallback to database only (no mock data)
@@ -156,6 +161,7 @@ async def generate_free_report(request: FreeReportRequest):
                 )
                 if care_homes:
                     print(f"✅ Loaded {len(care_homes)} care homes from database")
+                    print(f"📊 STEP 1 - Initial load (DB fallback): {len(care_homes)} homes")
             except Exception as db_error:
                 print(f"⚠️ Database query also failed: {db_error}")
                 care_homes = []
@@ -195,41 +201,101 @@ async def generate_free_report(request: FreeReportRequest):
         
         # Apply filters according to FREE Report specification
         # Filter 1: Quality (CQC Good or Outstanding)
+        print(f"\n{'='*80}")
+        print(f"📊 STEP 2 - Quality Filter (CQC Good or Outstanding)")
+        print(f"{'='*80}")
+        print(f"   Input: {len(care_homes)} homes")
+        
+        # Count homes by rating before filter
+        rating_counts = {}
+        for h in care_homes:
+            rating = (h.get('rating') or h.get('overall_rating') or h.get('cqc_rating_overall') or 'Unknown').lower()
+            rating_counts[rating] = rating_counts.get(rating, 0) + 1
+        print(f"   Rating distribution: {rating_counts}")
+        
         filtered_homes = [
             h for h in care_homes
             if (h.get('rating') or h.get('overall_rating') or h.get('cqc_rating_overall') or '').lower() in ['good', 'outstanding']
         ]
+        print(f"   Output: {len(filtered_homes)} homes (removed {len(care_homes) - len(filtered_homes)} homes)")
         
         # Filter 2: Budget (remove >£200 above budget)
+        # NOTE: In free report, budget is always in weekly format (not monthly)
+        print(f"\n📊 STEP 3 - Budget Filter (budget + £200)")
+        print(f"   Input: {len(filtered_homes)} homes")
+        print(f"   Budget: £{budget}/week")
+        
         if budget > 0:
-            budget_weekly = budget / 4.33 if budget > 1000 else budget  # Assume monthly if > 1000
+            # Budget is already in weekly format for free report
+            budget_weekly = budget
+            budget_max = budget_weekly + 200
+            print(f"   Max price: £{budget_max}/week")
+            
+            # Count homes by price before filter
+            price_stats = {'with_price': 0, 'no_price': 0, 'within_budget': 0, 'over_budget': 0}
+            for h in filtered_homes:
+                price = extract_weekly_price(h, care_type)
+                if price > 0:
+                    price_stats['with_price'] += 1
+                    if price <= budget_max:
+                        price_stats['within_budget'] += 1
+                    else:
+                        price_stats['over_budget'] += 1
+                else:
+                    price_stats['no_price'] += 1
+            print(f"   Price stats: {price_stats}")
+            
+            homes_before_budget_filter = len(filtered_homes)
             filtered_homes = [
                 h for h in filtered_homes
-                if extract_weekly_price(h, care_type) <= (budget_weekly + 200)
+                if extract_weekly_price(h, care_type) <= budget_max
             ]
+            print(f"   Output: {len(filtered_homes)} homes (removed {homes_before_budget_filter - len(filtered_homes)} homes)")
+        else:
+            print(f"   No budget filter (budget = 0)")
         
         # Filter 3: Location (max_distance_km or default 30km)
+        print(f"\n📊 STEP 4 - Location Filter (max {max_distance_km or 30.0}km)")
+        print(f"   Input: {len(filtered_homes)} homes")
+        print(f"   User location: ({user_lat}, {user_lon})")
+        
         max_distance = max_distance_km if max_distance_km else 30.0
         if user_lat and user_lon:
             location_filtered = []
+            homes_with_coords = 0
+            homes_without_coords = 0
+            homes_too_far = 0
             for h in filtered_homes:
                 h_lat = h.get('latitude')
                 h_lon = h.get('longitude')
                 if h_lat and h_lon:
+                    homes_with_coords += 1
                     try:
                         distance = calculate_distance_km(float(user_lat), float(user_lon), float(h_lat), float(h_lon))
                         if distance <= max_distance:
                             h['distance_km'] = distance
                             location_filtered.append(h)
+                        else:
+                            homes_too_far += 1
                     except (ValueError, TypeError):
-                        pass
+                        # Include homes with invalid coordinates (will be filtered later)
+                        location_filtered.append(h)
                 else:
+                    homes_without_coords += 1
                     # Include homes without coordinates (will be filtered later)
                     location_filtered.append(h)
+            print(f"   Homes with coordinates: {homes_with_coords}")
+            print(f"   Homes without coordinates: {homes_without_coords}")
+            print(f"   Homes too far (> {max_distance}km): {homes_too_far}")
             filtered_homes = location_filtered
+            print(f"   Output: {len(filtered_homes)} homes")
+        else:
+            print(f"   No location filter (no user coordinates)")
         
-        print(f"🔍 After all filters: {len(filtered_homes)} homes available for matching")
-        print(f"🔍 Filtered homes with prices > 0: {sum(1 for h in filtered_homes if extract_weekly_price(h, care_type) > 0)}")
+        print(f"\n{'='*80}")
+        print(f"📊 SUMMARY - After all filters: {len(filtered_homes)} homes available for matching")
+        print(f"   Homes with prices > 0: {sum(1 for h in filtered_homes if extract_weekly_price(h, care_type) > 0)}")
+        print(f"{'='*80}\n")
         
         # Use improved matching algorithm if available
         if MATCHING_SERVICE_AVAILABLE and MatchingService and MatchingInputs:
@@ -262,6 +328,7 @@ async def generate_free_report(request: FreeReportRequest):
                         print(f"   {key}: {home_name} - Price: £{price}/week")
                 
                 # Convert to expected format (list of dicts with 'home' and 'match_type')
+                # Map improved matching keys to legacy format
                 top_3_homes = []
                 if selected_homes_dict.get('safe_bet'):
                     safe_bet = selected_homes_dict['safe_bet']
@@ -272,25 +339,49 @@ async def generate_free_report(request: FreeReportRequest):
                         'match_reasoning': safe_bet.get('match_reasoning', [])
                     })
                 
-                if selected_homes_dict.get('best_reputation'):
-                    best_reputation = selected_homes_dict['best_reputation']
+                # Map 'best_reputation' or 'best_value' to 'Best Value'
+                best_value_home = selected_homes_dict.get('best_reputation') or selected_homes_dict.get('best_value')
+                if best_value_home:
                     top_3_homes.append({
-                        'home': best_reputation,
-                        'match_type': 'Best Reputation',
-                        'score': best_reputation.get('match_score', 0),
-                        'match_reasoning': best_reputation.get('match_reasoning', [])
+                        'home': best_value_home,
+                        'match_type': 'Best Value',
+                        'score': best_value_home.get('match_score', 0),
+                        'match_reasoning': best_value_home.get('match_reasoning', [])
                     })
                 
-                if selected_homes_dict.get('smart_value'):
-                    smart_value = selected_homes_dict['smart_value']
+                # Map 'smart_value' or 'premium' to 'Premium'
+                premium_home = selected_homes_dict.get('smart_value') or selected_homes_dict.get('premium')
+                if premium_home:
                     top_3_homes.append({
-                        'home': smart_value,
-                        'match_type': 'Smart Value',
-                        'score': smart_value.get('match_score', 0),
-                        'match_reasoning': smart_value.get('match_reasoning', [])
+                        'home': premium_home,
+                        'match_type': 'Premium',
+                        'score': premium_home.get('match_score', 0),
+                        'match_reasoning': premium_home.get('match_reasoning', [])
                     })
                 
-                print(f"✅ Used improved matching algorithm: selected {len(top_3_homes)} homes before price filter")
+                print(f"\n{'='*80}")
+                print(f"📊 STEP 5 - Improved Matching Algorithm")
+                print(f"{'='*80}")
+                print(f"   Input: {len(filtered_homes)} filtered homes")
+                print(f"   Selected homes dict keys: {list(selected_homes_dict.keys())}")
+                print(f"   Selected homes: {len(top_3_homes)}")
+                if len(top_3_homes) == 0:
+                    print(f"   ⚠️ WARNING: No homes selected by improved matching!")
+                    print(f"   Available keys in result: {list(selected_homes_dict.keys())}")
+                    for key, value in selected_homes_dict.items():
+                        if value:
+                            print(f"      {key}: {value.get('name', 'Unknown') if isinstance(value, dict) else 'Present'}")
+                        else:
+                            print(f"      {key}: None")
+                else:
+                    for idx, home_dict in enumerate(top_3_homes, 1):
+                        home = home_dict.get('home', {})
+                        match_type = home_dict.get('match_type', 'Unknown')
+                        name = home.get('name', 'Unknown')
+                        price = extract_weekly_price(home, care_type)
+                        rating = home.get('rating') or home.get('cqc_rating_overall', 'N/A')
+                        print(f"   {idx}. {match_type}: {name} | Price: £{price} | Rating: {rating}")
+                print(f"{'='*80}\n")
                 use_improved_algorithm = True
                 
             except Exception as e:
@@ -306,14 +397,21 @@ async def generate_free_report(request: FreeReportRequest):
         
         # Fallback to old matching method if new one not available or failed
         if not use_improved_algorithm:
+            print(f"\n{'='*80}")
+            print(f"📊 STEP 5 - Legacy Matching Algorithm")
+            print(f"{'='*80}")
+            print(f"   Input: {len(filtered_homes)} filtered homes")
             # Simple matching - select top 3 homes (legacy method)
             scored_homes = []
+            homes_skipped_no_price = 0
             for home in filtered_homes:
                 # Skip homes with zero or missing price
                 weekly_price = extract_weekly_price(home, care_type)
                 if weekly_price <= 0:
-                    home_name = home.get('name', 'Unknown')
-                    print(f"⚠️ Skipping {home_name} from scoring: price is £{weekly_price} (missing or invalid)")
+                    homes_skipped_no_price += 1
+                    if homes_skipped_no_price <= 5:  # Log first 5 only
+                        home_name = home.get('name', 'Unknown')
+                        print(f"⚠️ Skipping {home_name} from scoring: price is £{weekly_price} (missing or invalid)")
                     continue
                 
                 score = 50.0  # Base score
@@ -940,13 +1038,19 @@ async def generate_free_report(request: FreeReportRequest):
                 if remaining_slots == 0:
                     break
         
+            print(f"   Homes skipped (no price): {homes_skipped_no_price}")
+            print(f"   Homes scored: {len(scored_homes)}")
+            print(f"{'='*80}\n")
+        
         # Ensure we have exactly 3 homes
         top_3_homes = selected_homes[:3]
         
         # Log selected homes with prices for verification
         print("\n" + "="*80)
-        print("SELECTED HOMES FOR FREE REPORT:")
+        print("📊 STEP 6 - Selected Homes Summary (Legacy Method)")
         print("="*80)
+        print(f"   Total selected: {len(selected_homes)}")
+        print(f"   Top 3 homes: {len(top_3_homes)}")
         for idx, scored in enumerate(top_3_homes, 1):
             home = scored.get('home', {})
             match_type = scored.get('match_type', 'Unknown')
@@ -1001,10 +1105,13 @@ async def generate_free_report(request: FreeReportRequest):
                     print(f"✅ Price ordering correct: Safe Bet (£{safe_bet_price}) >= Best Value (£{best_value_price})")
         
         # Format homes for response
-        care_homes_list = []
-        print(f"🔍 Formatting {len(top_3_homes)} homes for response...")
-        print(f"🔍 Top 3 homes before price filter: {[h.get('match_type', 'Unknown') for h in top_3_homes]}")
+        print(f"\n{'='*80}")
+        print(f"📊 STEP 7 - Formatting Homes for Response")
+        print(f"{'='*80}")
+        print(f"   Input: {len(top_3_homes)} selected homes")
+        print(f"   Match types: {[h.get('match_type', 'Unknown') for h in top_3_homes]}")
         
+        care_homes_list = []
         homes_skipped_price = 0
         for scored in top_3_homes:
             home = scored['home']
@@ -1017,9 +1124,11 @@ async def generate_free_report(request: FreeReportRequest):
             if weekly_price <= 0:
                 home_name = home.get('name', 'Unknown')
                 match_type = scored.get('match_type', 'Unknown')
-                print(f"⚠️ WARNING: Skipping {home_name} ({match_type}) from final list: price is £{weekly_price}")
+                print(f"   ⚠️ Skipping {home_name} ({match_type}): price is £{weekly_price}")
                 homes_skipped_price += 1
                 continue
+            
+            print(f"   ✅ Processing {home.get('name', 'Unknown')} ({scored.get('match_type', 'Unknown')}) - Price: £{weekly_price}")
             
             # Calculate distance using reusable method
             distance_km = await calculate_home_distance(
@@ -1272,6 +1381,10 @@ async def generate_free_report(request: FreeReportRequest):
                     })
                     selected_names.add(home_name)
                     print(f"✅ Added additional home: {home_name} (price: £{weekly_price}/week)")
+        
+        print(f"   Output: {len(care_homes_list)} homes in final list")
+        print(f"   Homes skipped (no price): {homes_skipped_price}")
+        print(f"{'='*80}\n")
         
         # Build area map data (MUST be after care_homes_list is populated)
         # Separate from area_profile to ensure it's always generated
@@ -1650,7 +1763,7 @@ async def generate_free_report(request: FreeReportRequest):
                         f"Found {len(care_homes)} homes matching your criteria in {local_authority or 'your area'}",
                         f"Average weekly cost in area: £{area_profile.get('average_weekly_cost', 0) if area_profile else 0}",
                         f"All selected homes have CQC ratings of 'Good' or better",
-                        f"Fair Cost Gap analysis shows market prices exceed MSIF fair cost by {round(gap_percent, 1)}%"
+                        f"Fair Cost Gap analysis shows market prices exceed MSIF fair cost by {fair_cost_gap.get('gap_percent', 0)}%"
                     ],
                     'confidence_level': 'high'
                 },

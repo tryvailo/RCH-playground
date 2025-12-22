@@ -327,8 +327,49 @@ export const useGenerateFreeReport = () => {
 
         // Step 2: Try to generate report from backend
         try {
+          // Normalize care_type to match backend enum (residential, nursing, dementia, respite)
+          const normalizeCareType = (careType?: string): string | undefined => {
+            if (!careType) return undefined;
+            const normalized = careType.toLowerCase().trim();
+            // Map common variations to backend enum values
+            if (normalized.includes('residential') && !normalized.includes('dementia')) {
+              return 'residential';
+            }
+            if (normalized.includes('nursing')) {
+              return 'nursing';
+            }
+            if (normalized.includes('dementia')) {
+              return 'dementia';
+            }
+            if (normalized.includes('respite')) {
+              return 'respite';
+            }
+            // Default fallback
+            return normalized;
+          };
+
+          // Normalize postcode (remove spaces, ensure uppercase)
+          const normalizePostcode = (postcode?: string): string | undefined => {
+            if (!postcode) return undefined;
+            return postcode.replace(/\s+/g, '').toUpperCase().trim();
+          };
+
+          // Prepare request data with normalization
+          const requestData: any = {
+            postcode: normalizePostcode(questionnaire.postcode || questionnaire.location_postcode) || '',
+            budget: questionnaire.budget || 0,
+            care_type: normalizeCareType(questionnaire.care_type) || 'residential',
+            chc_probability: questionnaire.chc_probability || 35,
+            // Optional fields
+            location_postcode: normalizePostcode(questionnaire.location_postcode) || undefined,
+            timeline: questionnaire.timeline || undefined,
+            medical_conditions: questionnaire.medical_conditions || [],
+            max_distance_km: questionnaire.max_distance_km || 30,
+            priority_order: questionnaire.priority_order || ['quality', 'cost', 'proximity'],
+            priority_weights: questionnaire.priority_weights || [40, 35, 25],
+          };
+
           // Include scoring settings if available
-          const requestData: any = { ...questionnaire };
           if ((questionnaire as any).scoring_weights) {
             requestData.scoring_weights = (questionnaire as any).scoring_weights;
           }
@@ -337,6 +378,15 @@ export const useGenerateFreeReport = () => {
           }
           
           const url = API_BASE_URL ? `${API_BASE_URL}/api/free-report` : '/api/free-report';
+          
+          console.log('📤 Sending free report request:', {
+            url,
+            postcode: requestData.postcode,
+            budget: requestData.budget,
+            care_type: requestData.care_type,
+            chc_probability: requestData.chc_probability,
+          });
+          
           const response = await axios.post<FreeReportResponse>(
             url,
             requestData,
@@ -345,34 +395,52 @@ export const useGenerateFreeReport = () => {
             }
           );
 
+          console.log('✅ Free report response received:', {
+            care_homes_count: response.data.care_homes?.length || 0,
+            report_id: response.data.report_id,
+          });
+
           // Transform backend response to FreeReportData
           return transformBackendResponse(response.data, msifLowerBound);
         } catch (error) {
-          // If backend is not ready, use mock data
-          if (
-            axios.isAxiosError(error) &&
-            (error.code === 'ECONNREFUSED' ||
+          // Log detailed error information
+          if (axios.isAxiosError(error)) {
+            console.error('❌ Free report API error:', {
+              message: error.message,
+              code: error.code,
+              status: error.response?.status,
+              statusText: error.response?.statusText,
+              data: error.response?.data,
+              url: error.config?.url,
+            });
+            
+            // If backend is not ready, use mock data
+            if (
+              error.code === 'ECONNREFUSED' ||
               error.code === 'ERR_NETWORK' ||
               error.response?.status === 404 ||
-              error.response?.status === 500)
-          ) {
-            console.warn('Backend not available, using mock data');
-            
-            // Recalculate Fair Cost Gap with fetched MSIF
-            const marketPrice = questionnaire.budget || 1200;
-            const fairCostGap = calculateFairCostGap(marketPrice, msifLowerBound);
-            
-            const mockData = generateMockReportData(questionnaire);
-            return {
-              ...mockData,
-              fairCostGap, // Use calculated gap with real MSIF if available
-            };
+              error.response?.status === 500
+            ) {
+              console.warn('⚠️ Backend not available, using mock data');
+              
+              // Recalculate Fair Cost Gap with fetched MSIF
+              const marketPrice = questionnaire.budget || 1200;
+              const fairCostGap = calculateFairCostGap(marketPrice, msifLowerBound);
+              
+              const mockData = generateMockReportData(questionnaire);
+              return {
+                ...mockData,
+                fairCostGap, // Use calculated gap with real MSIF if available
+              };
+            }
+          } else {
+            console.error('❌ Unexpected error:', error);
           }
           throw error;
         }
       } catch (error) {
         // Final fallback: use mock data with fallback MSIF
-        console.warn('All API calls failed, using full mock data');
+        console.warn('⚠️ All API calls failed, using full mock data', error);
         return generateMockReportData(questionnaire);
       }
     },
