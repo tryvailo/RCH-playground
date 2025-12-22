@@ -24,14 +24,6 @@
   "anthropic": {
     "api_key": "your-anthropic-api-key"
   },
-  "besttime": {
-    "private_key": "your-besttime-private-key",
-    "public_key": "your-besttime-public-key"
-  },
-  "autumna": {
-    "proxy_url": "your-proxy-url",
-    "use_proxy": false
-  },
   "os_places": {
     "api_key": "your-os-places-api-key",
     "api_secret": "your-os-places-api-secret",

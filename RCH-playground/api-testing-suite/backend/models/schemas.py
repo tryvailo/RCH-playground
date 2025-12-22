@@ -127,44 +127,6 @@ class PerplexityCredentials(BaseModel):
         super().__init__(**normalized_data)
 
 
-class BestTimeCredentials(BaseModel):
-    """BestTime.app API Credentials"""
-    private_key: Optional[str] = Field(None, alias="privateKey")
-    privateKey: Optional[str] = None  # Support camelCase from frontend
-    public_key: Optional[str] = Field(None, alias="publicKey")
-    publicKey: Optional[str] = None  # Support camelCase from frontend
-    
-    class Config:
-        allow_population_by_field_name = True
-    
-    def __init__(self, **data):
-        # Normalize camelCase to snake_case
-        if 'privateKey' in data and 'private_key' not in data:
-            data['private_key'] = data.pop('privateKey')
-        if 'publicKey' in data and 'public_key' not in data:
-            data['public_key'] = data.pop('publicKey')
-        super().__init__(**data)
-
-
-class AutumnaCredentials(BaseModel):
-    """Autumna Scraping Credentials"""
-    proxy_url: Optional[str] = Field(None, alias="proxyUrl")
-    proxyUrl: Optional[str] = None  # Support camelCase from frontend
-    use_proxy: bool = Field(default=False, alias="useProxy")
-    useProxy: Optional[bool] = None  # Support camelCase from frontend
-    
-    class Config:
-        allow_population_by_field_name = True
-    
-    def __init__(self, **data):
-        # Normalize camelCase to snake_case
-        if 'proxyUrl' in data and 'proxy_url' not in data:
-            data['proxy_url'] = data.pop('proxyUrl')
-        if 'useProxy' in data and 'use_proxy' not in data:
-            data['use_proxy'] = data.pop('useProxy')
-        super().__init__(**data)
-
-
 class OpenAICredentials(BaseModel):
     """OpenAI API Credentials"""
     api_key: Optional[str] = None
@@ -242,8 +204,6 @@ class ApiCredentials(BaseModel):
     google_places_insights: Optional[GooglePlacesInsightsCredentials] = Field(None, alias="googlePlacesInsights")
     googlePlacesInsights: Optional[GooglePlacesInsightsCredentials] = None  # Support camelCase from frontend
     perplexity: Optional[PerplexityCredentials] = None
-    besttime: Optional[BestTimeCredentials] = None
-    autumna: Optional[AutumnaCredentials] = None
     openai: Optional[OpenAICredentials] = None
     firecrawl: Optional[FirecrawlCredentials] = None
     anthropic: Optional[AnthropicCredentials] = None
@@ -251,7 +211,8 @@ class ApiCredentials(BaseModel):
     osPlaces: Optional[OSPlacesCredentials] = None  # Support camelCase from frontend
     
     class Config:
-        allow_population_by_field_name = True
+        populate_by_name = True  # Pydantic v2
+        allow_population_by_field_name = True  # Pydantic v1 compatibility
     
     def __init__(self, **data):
         # Normalize camelCase to snake_case for top-level fields
@@ -263,19 +224,102 @@ class ApiCredentials(BaseModel):
             'osPlaces': 'os_places',
         }
         
+        # Filter out None and empty string values to avoid validation errors
+        filtered_data = {}
         for key, value in data.items():
+            # Skip None values and empty strings (but keep empty dicts for credentials)
+            if value is not None and value != "":
+                filtered_data[key] = value
+            elif isinstance(value, dict):
+                # Keep dicts even if empty - they might be credential objects
+                filtered_data[key] = value
+        
+        for key, value in filtered_data.items():
             if key in field_mapping:
                 # Map camelCase to snake_case
-                normalized_data[field_mapping[key]] = value
+                target_key = field_mapping[key]
+                # If target already exists, merge the data
+                if target_key in normalized_data and isinstance(normalized_data[target_key], dict) and isinstance(value, dict):
+                    normalized_data[target_key].update(value)
+                else:
+                    normalized_data[target_key] = value
             elif key not in ['companiesHouse', 'googlePlaces', 'googlePlacesInsights', 'osPlaces']:
                 # Keep snake_case as is
                 normalized_data[key] = value
         
         # Convert dict values to credential objects if needed
+        # Filter out empty strings and None values from credential dicts before creating objects
+        def clean_credential_dict(d: dict) -> dict:
+            """Remove empty strings and None values from credential dict"""
+            cleaned = {}
+            for k, v in d.items():
+                if v is not None and v != "":
+                    cleaned[k] = v
+            return cleaned
+        
         if 'companies_house' in normalized_data and isinstance(normalized_data['companies_house'], dict):
-            normalized_data['companies_house'] = CompaniesHouseCredentials(**normalized_data['companies_house'])
+            try:
+                cleaned_dict = clean_credential_dict(normalized_data['companies_house'])
+                if cleaned_dict:  # Only create if there's at least one non-empty value
+                    normalized_data['companies_house'] = CompaniesHouseCredentials(**cleaned_dict)
+                else:
+                    del normalized_data['companies_house']
+            except Exception as e:
+                print(f"⚠️ Error creating CompaniesHouseCredentials: {e}")
+                if 'companies_house' in normalized_data:
+                    del normalized_data['companies_house']
         if 'companiesHouse' in normalized_data and isinstance(normalized_data['companiesHouse'], dict):
-            normalized_data['companies_house'] = CompaniesHouseCredentials(**normalized_data['companiesHouse'])
+            try:
+                cleaned_dict = clean_credential_dict(normalized_data['companiesHouse'])
+                if cleaned_dict:
+                    normalized_data['companies_house'] = CompaniesHouseCredentials(**cleaned_dict)
+                if 'companiesHouse' in normalized_data:
+                    del normalized_data['companiesHouse']
+            except Exception as e:
+                print(f"⚠️ Error creating CompaniesHouseCredentials from camelCase: {e}")
+                if 'companiesHouse' in normalized_data:
+                    del normalized_data['companiesHouse']
+        
+        # Convert other credential objects from dicts
+        # Process in order: first handle snake_case, then remove camelCase duplicates
+        credential_handlers = [
+            ('cqc', CQCCredentials),
+            ('google_places', GooglePlacesCredentials),
+            ('perplexity', PerplexityCredentials),
+            ('openai', OpenAICredentials),
+            ('firecrawl', FirecrawlCredentials),
+            ('anthropic', AnthropicCredentials),
+        ]
+        
+        for key, cred_class in credential_handlers:
+            if key in normalized_data and isinstance(normalized_data[key], dict):
+                try:
+                    cleaned_dict = clean_credential_dict(normalized_data[key])
+                    if cleaned_dict:  # Only create if there's at least one non-empty value
+                        normalized_data[key] = cred_class(**cleaned_dict)
+                    else:
+                        # Remove empty credential dict
+                        del normalized_data[key]
+                except Exception as e:
+                    print(f"⚠️ Error creating {cred_class.__name__}: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    if key in normalized_data:
+                        del normalized_data[key]
+        
+        # Clean up any remaining camelCase duplicates that were already converted
+        camel_to_snake_map = {
+            'companiesHouse': 'companies_house',
+            'googlePlaces': 'google_places',
+            'googlePlacesInsights': 'google_places_insights',
+            'osPlaces': 'os_places',
+        }
+        for camel_key in camel_to_snake_map.keys():
+            if camel_key in normalized_data:
+                # Check if snake_case version already exists
+                snake_key = camel_to_snake_map.get(camel_key, camel_key)
+                if snake_key in normalized_data:
+                    del normalized_data[camel_key]
         
         super().__init__(**normalized_data)
 
@@ -339,7 +383,7 @@ class ComprehensiveTestRequest(BaseModel):
     city: Optional[str] = None
     postcode: Optional[str] = None
     apis_to_test: Optional[List[str]] = Field(
-        default_factory=lambda: ["cqc", "fsa", "companies_house", "google_places", "perplexity", "besttime", "autumna"],
+        default_factory=lambda: ["cqc", "fsa", "companies_house", "google_places", "perplexity"],
         description="List of APIs to test"
     )
     apisToTest: Optional[List[str]] = None  # Support camelCase from frontend

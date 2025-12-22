@@ -12,9 +12,11 @@ rch_data_src_path = project_root / "RCH-data" / "src"
 if str(rch_data_src_path) not in sys.path:
     sys.path.insert(0, str(rch_data_src_path))
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Body, Query
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Body, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
+from fastapi.exceptions import RequestValidationError
+from pydantic import ValidationError
 import asyncio
 import json
 from typing import Dict, List, Optional, Any
@@ -27,7 +29,6 @@ from api_clients.fsa_client import FSAAPIClient
 from api_clients.companies_house_client import CompaniesHouseAPIClient
 from api_clients.google_places_client import GooglePlacesAPIClient
 from api_clients.perplexity_client import PerplexityAPIClient
-from api_clients.besttime_client import BestTimeClient
 from api_clients.openai_client import OpenAIClient
 from api_clients.firecrawl_client import FirecrawlAPIClient
 
@@ -76,11 +77,48 @@ app = FastAPI(
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:5173"],
+    allow_origins=["http://localhost:3000", "http://localhost:5173", "http://localhost:3001"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# Exception handler for validation errors
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """Handle Pydantic validation errors with detailed logging"""
+    import traceback
+    error_details = exc.errors()
+    error_msg = f"Validation error: {error_details}"
+    print(f"❌ Request validation error on {request.url.path}:")
+    print(f"❌ Errors: {json.dumps(error_details, indent=2, default=str)}")
+    try:
+        body = await request.body()
+        if body:
+            try:
+                body_json = json.loads(body)
+                # Mask sensitive data
+                safe_body = {}
+                for k, v in body_json.items() if isinstance(body_json, dict) else {}:
+                    if isinstance(v, dict):
+                        safe_body[k] = {sk: "***" if "key" in sk.lower() or "secret" in sk.lower() else sv for sk, sv in v.items()}
+                    else:
+                        safe_body[k] = "***" if "key" in k.lower() or "secret" in k.lower() else v
+                print(f"❌ Request body (masked): {json.dumps(safe_body, indent=2, default=str)}")
+            except:
+                print(f"❌ Request body (raw, first 500 chars): {body[:500]}")
+    except Exception as e:
+        print(f"⚠️ Could not read request body: {e}")
+    traceback.print_exc()
+    return JSONResponse(
+        status_code=422,
+        content={
+            "detail": error_details,
+            "message": "Request validation failed",
+            "path": str(request.url.path)
+        }
+    )
 
 
 # RCH-data routes

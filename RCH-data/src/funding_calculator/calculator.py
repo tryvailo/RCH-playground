@@ -383,7 +383,17 @@ class FundingEligibilityCalculator:
         # Combined probability (CHC OR LA top-up)
         combined_prob = min(1.0, chc_savings_prob + la_savings_prob * (1 - chc_savings_prob))
         
-        # Weekly savings
+        # Determine if savings are hypothetical (low probability) or real (high probability)
+        # Threshold: if combined probability < 50%, consider it hypothetical
+        PROBABILITY_THRESHOLD = 0.5  # 50%
+        is_hypothetical = combined_prob < PROBABILITY_THRESHOLD
+        highest_probability = max(chc_savings_prob, la_savings_prob)
+        
+        # Calculate hypothetical savings (what they would save IF they got funding)
+        hypothetical_weekly_savings = weekly_gap if weekly_gap > 0 else 0.0
+        
+        # Calculate expected savings (probability-weighted)
+        # If probability is low, we still calculate it but mark as hypothetical
         weekly_savings = weekly_gap * combined_prob
         
         # Annual savings
@@ -400,7 +410,9 @@ class FundingEligibilityCalculator:
             "chc_savings": weekly_gap * chc_savings_prob * 52,
             "la_top_up_savings": weekly_gap * la_savings_prob * (1 - chc_savings_prob) * 52,
             "weekly_gap": weekly_gap,
-            "combined_probability": combined_prob
+            "combined_probability": combined_prob,
+            "is_hypothetical": is_hypothetical,
+            "highest_probability": highest_probability
         }
         
         return SavingsResult(
@@ -408,7 +420,10 @@ class FundingEligibilityCalculator:
             five_year_gbp=five_year_savings,
             lifetime_gbp=lifetime_savings,
             weekly_savings=weekly_savings,
-            breakdown=breakdown
+            breakdown=breakdown,
+            is_hypothetical=is_hypothetical,
+            highest_probability=highest_probability,
+            hypothetical_weekly_savings=hypothetical_weekly_savings if is_hypothetical else None
         )
     
     def calculate_full_eligibility(

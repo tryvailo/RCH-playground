@@ -40,14 +40,6 @@ export default function ApiConfig() {
           perplexity: {
             apiKey: creds.perplexity?.apiKey || '',
           },
-          besttime: {
-            privateKey: creds.besttime?.privateKey || '',
-            publicKey: creds.besttime?.publicKey || '',
-          },
-          autumna: {
-            proxyUrl: creds.autumna?.proxyUrl || '',
-            useProxy: creds.autumna?.useProxy || false,
-          },
           openai: {
             apiKey: creds.openai?.apiKey || '',
           },
@@ -68,79 +60,101 @@ export default function ApiConfig() {
   const handleSave = async () => {
     setSaving(true);
     try {
-      // Filter out empty credentials before sending
-      const cleanedData: ApiCredentials = {};
+      // Convert camelCase to snake_case and filter out empty credentials
+      const cleanedData: any = {};
       
-      // Only include sections that have at least one non-empty field
+      // CQC - snake_case
       if (formData.cqc && (
         formData.cqc.partnerCode?.trim() ||
         formData.cqc.primarySubscriptionKey?.trim() ||
-        formData.cqc.secondarySubscriptionKey?.trim()
+        formData.cqc.secondarySubscriptionKey?.trim() ||
+        formData.cqc.useWithoutCode !== undefined
       )) {
-        cleanedData.cqc = formData.cqc;
+        cleanedData.cqc = {
+          partnerCode: formData.cqc.partnerCode || '',
+          primarySubscriptionKey: formData.cqc.primarySubscriptionKey || '',
+          secondarySubscriptionKey: formData.cqc.secondarySubscriptionKey || '',
+          useWithoutCode: formData.cqc.useWithoutCode ?? true,
+        };
       }
       
+      // Companies House - convert to snake_case
       if (formData.companiesHouse?.apiKey?.trim()) {
-        cleanedData.companiesHouse = formData.companiesHouse;
+        cleanedData.companies_house = {
+          api_key: formData.companiesHouse.apiKey,
+        };
       }
       
+      // Google Places - convert to snake_case
       if (formData.googlePlaces?.apiKey?.trim()) {
-        cleanedData.googlePlaces = formData.googlePlaces;
+        cleanedData.google_places = {
+          api_key: formData.googlePlaces.apiKey,
+        };
       }
       
+      // Perplexity - convert to snake_case
       if (formData.perplexity?.apiKey?.trim()) {
-        cleanedData.perplexity = formData.perplexity;
+        cleanedData.perplexity = {
+          api_key: formData.perplexity.apiKey,
+        };
       }
       
-      if (formData.besttime && (
-        formData.besttime.privateKey?.trim() ||
-        formData.besttime.publicKey?.trim()
-      )) {
-        cleanedData.besttime = formData.besttime;
-      }
-      
-      if (formData.autumna && (
-        formData.autumna.proxyUrl?.trim() ||
-        formData.autumna.useProxy
-      )) {
-        cleanedData.autumna = formData.autumna;
-      }
-      
+      // OpenAI - convert to snake_case
       if (formData.openai?.apiKey?.trim()) {
-        cleanedData.openai = formData.openai;
+        cleanedData.openai = {
+          api_key: formData.openai.apiKey,
+        };
       }
       
+      // Firecrawl - convert to snake_case
       if (formData.firecrawl?.apiKey?.trim()) {
-        cleanedData.firecrawl = formData.firecrawl;
+        cleanedData.firecrawl = {
+          api_key: formData.firecrawl.apiKey,
+        };
       }
       
-      await axios.post('/api/config/credentials', cleanedData);
+      console.log('Saving credentials with snake_case:', Object.keys(cleanedData));
+      console.log('Cleaned data structure:', JSON.stringify(cleanedData, null, 2));
+      
+      // Don't send empty object - require at least one API
+      if (Object.keys(cleanedData).length === 0) {
+        alert('❌ Please configure at least one API');
+        setSaving(false);
+        return;
+      }
+      
+      const response = await axios.post('/api/config/credentials', cleanedData);
+      console.log('Save response:', response.data);
+      
       // Reload credentials from server to ensure they were saved correctly
       await loadCredentials();
-      alert('✅ Credentials saved successfully!');
+      alert('✅ Credentials saved successfully!\n\n' + response.data.message);
     } catch (error: any) {
-      let errorMessage = error.message;
+      console.error('Save error:', error.response?.data || error);
+      let errorMessage = 'Unknown error occurred';
       
       if (error.response?.data?.detail) {
         const detail = error.response.data.detail;
         
-        // Handle FastAPI validation errors (array of objects)
         if (Array.isArray(detail)) {
-          errorMessage = detail
+          // FastAPI validation errors
+          errorMessage = 'Validation errors:\n' + detail
             .map((err: any) => {
-              const field = err.loc?.join('.') || 'field';
-              return `${field}: ${err.msg || err.message || 'validation error'}`;
+              const field = err.loc?.join('.') || 'unknown field';
+              return `• ${field}: ${err.msg || 'validation error'}`;
             })
             .join('\n');
         } else if (typeof detail === 'string') {
           errorMessage = detail;
         } else if (typeof detail === 'object') {
-          // Try to extract a meaningful message from the object
           errorMessage = detail.message || detail.error || JSON.stringify(detail);
         }
+      } else if (error.message) {
+        errorMessage = error.message;
       }
       
-      alert(`❌ Failed to save: ${errorMessage}`);
+      console.error('Detailed error:', errorMessage);
+      alert(`❌ Save failed:\n\n${errorMessage}`);
     } finally {
       setSaving(false);
     }
@@ -434,83 +448,6 @@ export default function ApiConfig() {
         </div>
       </div>
 
-      {/* BestTime */}
-      <div className={`bg-white rounded-lg shadow p-6 border-l-4 ${hasApiKey('besttime', 'privateKey') && hasApiKey('besttime', 'publicKey') ? 'border-green-500' : 'border-yellow-500'}`}>
-        <div className="flex justify-between items-center mb-4">
-          <div className="flex items-center gap-3">
-            <h2 className="text-lg font-semibold">BestTime.app API</h2>
-            {getStatusBadge(hasApiKey('besttime', 'privateKey') && hasApiKey('besttime', 'publicKey'))}
-          </div>
-          <button
-            onClick={() => handleTest('besttime')}
-            className="text-sm text-blue-600 hover:text-blue-700 disabled:opacity-50"
-            disabled={testing === 'besttime' || !hasApiKey('besttime', 'privateKey') || !hasApiKey('besttime', 'publicKey')}
-          >
-            {testing === 'besttime' ? 'Testing...' : 'Test Connection'}
-          </button>
-        </div>
-        <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Private Key {!hasApiKey('besttime', 'privateKey') && <span className="text-red-500">*</span>}
-            </label>
-            <PasswordInput
-              value={formData.besttime?.privateKey || ''}
-              onChange={(e) => updateField('besttime', 'privateKey', e.target.value)}
-              placeholder="Enter your Private Key (pri_...)"
-              fieldId="besttime-private"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Public Key {!hasApiKey('besttime', 'publicKey') && <span className="text-red-500">*</span>}
-            </label>
-            <PasswordInput
-              value={formData.besttime?.publicKey || ''}
-              onChange={(e) => updateField('besttime', 'publicKey', e.target.value)}
-              placeholder="Enter your Public Key (pub_...)"
-              fieldId="besttime-public"
-            />
-          </div>
-          <p className="text-xs text-gray-500">
-            Get your keys at{' '}
-            <a href="https://besttime.app" target="_blank" className="text-info">
-              besttime.app
-            </a>
-          </p>
-        </div>
-      </div>
-
-      {/* Autumna */}
-      <div className="bg-white rounded-lg shadow p-6">
-        <h2 className="text-lg font-semibold mb-4">Autumna Scraping</h2>
-        <div className="space-y-4">
-          <div className="flex items-center">
-            <input
-              type="checkbox"
-              checked={formData.autumna?.useProxy ?? false}
-              onChange={(e) => updateField('autumna', 'useProxy', e.target.checked)}
-              className="mr-2"
-            />
-            <label className="text-sm text-gray-700">Use proxy for scraping</label>
-          </div>
-          {formData.autumna?.useProxy && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Proxy URL
-              </label>
-              <input
-                type="text"
-                value={formData.autumna?.proxyUrl || ''}
-                onChange={(e) => updateField('autumna', 'proxyUrl', e.target.value)}
-                className="w-full border border-gray-300 rounded-md px-3 py-2"
-                placeholder="http://user:pass@proxy:port"
-              />
-            </div>
-          )}
-        </div>
-      </div>
-
       {/* OpenAI */}
       <div className={`bg-white rounded-lg shadow p-6 border-l-4 ${hasApiKey('openai') ? 'border-green-500' : 'border-yellow-500'}`}>
         <div className="flex justify-between items-center mb-4">
@@ -587,7 +524,7 @@ export default function ApiConfig() {
         </div>
         <button
           onClick={handleSave}
-          disabled={saving || !hasChanges}
+          disabled={saving}
           className="inline-flex items-center px-6 py-3 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <Save className="w-4 h-4 mr-2" />

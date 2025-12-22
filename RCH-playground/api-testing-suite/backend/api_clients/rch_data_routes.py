@@ -419,8 +419,36 @@ async def calculate_funding_eligibility(request: PatientProfileRequest):
             result_dict = result.model_dump(mode='json')
             # Ensure result_dict is a mutable dict
             result_dict = dict(result_dict)
+            
+            # ========================================================================
+            # VALIDATE SAVINGS - EDGE CASE HANDLING
+            # ========================================================================
+            print("🔍 STEP 0: Validating savings for edge cases...")
+            savings = result_dict.get('savings', {})
+            
+            # Clamp all savings to >= 0 (no negative values)
+            savings['weekly_savings'] = max(0, savings.get('weekly_savings', 0))
+            savings['annual_gbp'] = max(0, savings.get('annual_gbp', 0))
+            savings['five_year_gbp'] = max(0, savings.get('five_year_gbp', 0))
+            savings['lifetime_gbp'] = max(0, savings.get('lifetime_gbp', 0))
+            
+            # Validate ratios (weekly * 52 = annual, etc.)
+            if savings['weekly_savings'] > 0:
+                expected_annual = savings['weekly_savings'] * 52
+                if abs(savings['annual_gbp'] - expected_annual) > 0.01:
+                    logger.warning(f"Correcting annual savings: {savings['annual_gbp']} → {expected_annual}")
+                    savings['annual_gbp'] = expected_annual
+                
+                expected_five_year = savings['weekly_savings'] * 260
+                if abs(savings['five_year_gbp'] - expected_five_year) > 0.01:
+                    logger.warning(f"Correcting 5-year savings: {savings['five_year_gbp']} → {expected_five_year}")
+                    savings['five_year_gbp'] = expected_five_year
+            
+            result_dict['savings'] = savings
+            
             elapsed_time = time.time() - start_time
             logger.info(f"Funding calculation completed successfully in {elapsed_time:.2f}s")
+            logger.info(f"✅ Savings validated: weekly=£{savings['weekly_savings']:.2f}, annual=£{savings['annual_gbp']:.2f}")
             logger.info(f"📦 Result dict keys before insights: {list(result_dict.keys())}")
             
             # ========================================================================

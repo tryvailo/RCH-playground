@@ -161,6 +161,10 @@ class SavingsResult(BaseModel):
     lifetime_gbp: Optional[float] = Field(None, ge=0, description="Lifetime savings estimate")
     weekly_savings: float = Field(..., ge=0, description="Weekly savings in GBP")
     breakdown: Dict[str, float] = Field(default_factory=dict, description="Savings breakdown by source")
+    # New fields to distinguish between real and hypothetical savings
+    is_hypothetical: bool = Field(default=False, description="Whether savings are hypothetical (low probability) or real (high probability)")
+    highest_probability: float = Field(default=0.0, ge=0, le=1.0, description="Highest probability among all funding sources")
+    hypothetical_weekly_savings: Optional[float] = Field(None, ge=0, description="Hypothetical weekly savings if funding were received (only if is_hypothetical=True)")
 
 
 class FundingEligibilityResult(BaseModel):

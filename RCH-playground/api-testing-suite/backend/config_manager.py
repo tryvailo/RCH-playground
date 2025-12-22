@@ -6,7 +6,7 @@ import json
 import os
 from pathlib import Path
 from typing import Dict, Optional
-from models.schemas import ApiCredentials, CQCCredentials, CompaniesHouseCredentials, GooglePlacesCredentials, PerplexityCredentials, BestTimeCredentials, AutumnaCredentials, OpenAICredentials, FirecrawlCredentials, AnthropicCredentials
+from models.schemas import ApiCredentials, CQCCredentials, CompaniesHouseCredentials, GooglePlacesCredentials, PerplexityCredentials, OpenAICredentials, FirecrawlCredentials, AnthropicCredentials
 
 
 CONFIG_FILE = Path(__file__).parent / "config.json"
@@ -38,13 +38,40 @@ def save_config(credentials: ApiCredentials) -> None:
         # Create directory if it doesn't exist
         CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
         
-        # Convert to dict and save
-        with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
-            json.dump(credentials.dict(exclude_none=True), f, indent=2, ensure_ascii=False)
+        # Convert to dict and save - support both Pydantic v1 and v2
+        try:
+            # Try Pydantic v2 method first
+            if hasattr(credentials, 'model_dump'):
+                data = credentials.model_dump(exclude_none=False, mode='json')
+            else:
+                # Fallback to Pydantic v1 method
+                data = credentials.dict(exclude_none=False)
+        except Exception as e:
+            print(f"Error converting credentials to dict: {e}")
+            import traceback
+            traceback.print_exc()
+            raise
         
-        print(f"Configuration saved to {CONFIG_FILE}")
+        # Clean up empty dict values - only keep non-empty dicts
+        cleaned_data = {}
+        for key, value in data.items():
+            if value is not None:
+                if isinstance(value, dict) and value:  # Only keep non-empty dicts
+                    cleaned_data[key] = value
+                elif not isinstance(value, dict):  # Keep non-dict values
+                    cleaned_data[key] = value
+        
+        if not cleaned_data:
+            raise ValueError("No credentials to save")
+        
+        with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
+            json.dump(cleaned_data, f, indent=2, ensure_ascii=False)
+        
+        print(f"✓ Configuration saved to {CONFIG_FILE}")
     except Exception as e:
-        print(f"Error saving config: {e}")
+        print(f"❌ Error saving config: {e}")
+        import traceback
+        traceback.print_exc()
         raise
 
 
@@ -71,20 +98,6 @@ def load_from_env() -> ApiCredentials:
     # Perplexity
     if os.getenv("PERPLEXITY_API_KEY"):
         creds.perplexity = PerplexityCredentials(api_key=os.getenv("PERPLEXITY_API_KEY"))
-    
-    # BestTime
-    if os.getenv("BESTTIME_PRIVATE_KEY") and os.getenv("BESTTIME_PUBLIC_KEY"):
-        creds.besttime = BestTimeCredentials(
-            private_key=os.getenv("BESTTIME_PRIVATE_KEY"),
-            public_key=os.getenv("BESTTIME_PUBLIC_KEY")
-        )
-    
-    # Autumna
-    if os.getenv("AUTUMNA_PROXY_URL"):
-        creds.autumna = AutumnaCredentials(
-            proxy_url=os.getenv("AUTUMNA_PROXY_URL"),
-            use_proxy=bool(os.getenv("AUTUMNA_USE_PROXY", "false").lower() == "true")
-        )
     
     # OpenAI
     if os.getenv("OPENAI_API_KEY"):
@@ -123,12 +136,6 @@ def get_credentials() -> ApiCredentials:
     
     # Perplexity
     merged.perplexity = env_creds.perplexity or config_creds.perplexity
-    
-    # BestTime
-    merged.besttime = env_creds.besttime or config_creds.besttime
-    
-    # Autumna
-    merged.autumna = env_creds.autumna or config_creds.autumna
     
     # OpenAI
     merged.openai = env_creds.openai or config_creds.openai
