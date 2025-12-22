@@ -9,8 +9,6 @@ from api_clients.fsa_client import FSAAPIClient
 from api_clients.companies_house_client import CompaniesHouseAPIClient
 from api_clients.google_places_client import GooglePlacesAPIClient
 from api_clients.perplexity_client import PerplexityAPIClient
-from api_clients.besttime_client import BestTimeClient
-from api_clients.autumna_scraper import AutumnaScraper
 from api_clients.firecrawl_client import FirecrawlAPIClient
 from api_clients.openai_client import OpenAIClient
 from utils.auth import get_api_credentials, get_cqc_credentials, credentials_store
@@ -194,46 +192,6 @@ def get_perplexity_client() -> PerplexityAPIClient:
         raise ValueError(f"Perplexity API configuration error: {e.detail}")
 
 
-def get_besttime_client() -> BestTimeClient:
-    """Get configured BestTime client"""
-    try:
-        creds, service_creds = get_api_credentials("besttime")
-        private_key = getattr(service_creds, 'private_key', None)
-        public_key = getattr(service_creds, 'public_key', None)
-        if not private_key or not public_key:
-            raise ValueError("BestTime credentials not configured (private_key and public_key required)")
-        
-        # Check if keys are placeholders
-        placeholder_values = [
-            "your-besttime-private-key",
-            "your-besttime-public-key",
-            "your-besttime-key",
-            "placeholder",
-            "example",
-            "test"
-        ]
-        if (private_key.lower() in [p.lower() for p in placeholder_values] or private_key.startswith("your-") or
-            public_key.lower() in [p.lower() for p in placeholder_values] or public_key.startswith("your-")):
-            raise ValueError(
-                "BestTime API keys are not configured. "
-                "Please set valid keys in config.json or environment variables BESTTIME_PRIVATE_KEY and BESTTIME_PUBLIC_KEY. "
-                "Get your API keys at: https://besttime.app/dashboard"
-            )
-        
-        return BestTimeClient(private_key=private_key, public_key=public_key)
-    except HTTPException as e:
-        raise ValueError(f"BestTime API configuration error: {e.detail}")
-
-
-def get_autumna_scraper() -> AutumnaScraper:
-    """Get configured Autumna scraper"""
-    creds = credentials_store.get("default")
-    proxy_url = None
-    if creds and hasattr(creds, 'autumna') and creds.autumna:
-        use_proxy = getattr(creds.autumna, 'use_proxy', False)
-        if use_proxy:
-            proxy_url = getattr(creds.autumna, 'proxy_url', None)
-    return AutumnaScraper(proxy=proxy_url)
 
 
 def get_firecrawl_client() -> FirecrawlAPIClient:

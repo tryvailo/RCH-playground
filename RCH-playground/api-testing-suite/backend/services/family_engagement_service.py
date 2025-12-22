@@ -25,7 +25,6 @@ logger = logging.getLogger(__name__)
 class DataSource(Enum):
     """Data source for Family Engagement - Marketing names only"""
     ESTIMATED = "Community Insights"      # Level 1: Proxy from reviews
-    BESTTIME = "Visitor Analytics"         # Level 2: BestTime.app API
     BIGQUERY = "Advanced Analytics"      # Level 3: Google Places Insights
     HYBRID = "Multi-Source Intelligence"  # Mixed sources
 

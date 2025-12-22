@@ -235,3 +235,4 @@ review_count = google_data.get('review_count') or home.get('google_review_count'
 - ✅ Тестирование на реальных данных
 - ✅ Документация для разработчиков
 
+

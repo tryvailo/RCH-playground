@@ -41,16 +41,6 @@ class DataFusionAnalyzer:
                 profile["quality_indicators"]["google_rating"] = details.get("rating")
                 profile["quality_indicators"]["review_count"] = details.get("user_ratings_total", 0)
         
-        if "besttime" in api_results and api_results["besttime"].get("status") == "success":
-            bt_data = api_results["besttime"]
-            if bt_data.get("analysis"):
-                analysis = bt_data["analysis"]
-                profile["unique_insights"].append({
-                    "source": "BestTime",
-                    "insight": f"Activity score: {analysis.get('activity_score', 0)}/100",
-                    "interpretation": self._interpret_besttime_score(analysis.get("activity_score", 0))
-                })
-        
         if "companies_house" in api_results and api_results["companies_house"].get("status") == "success":
             ch_data = api_results["companies_house"]
             if ch_data.get("sample"):
@@ -67,15 +57,6 @@ class DataFusionAnalyzer:
         profile["correlations"] = self._find_correlations(api_results)
         
         return profile
-    
-    def _interpret_besttime_score(self, score: int) -> str:
-        """Interpret BestTime activity score"""
-        if score >= 70:
-            return "High family engagement - families visit frequently and spend quality time"
-        elif score >= 50:
-            return "Moderate engagement - some family involvement"
-        else:
-            return "Low engagement - potential red flag for care quality"
     
     def _calculate_risk_score(self, profile: Dict) -> int:
         """Calculate overall risk score (0-100, higher = more risk)"""

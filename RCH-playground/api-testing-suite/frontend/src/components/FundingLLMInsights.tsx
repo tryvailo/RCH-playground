@@ -47,6 +47,12 @@ interface FundingLLMInsightsProps {
 }
 
 export default function FundingLLMInsights({ insights }: FundingLLMInsightsProps) {
+  console.log('🔍 [FundingLLMInsights] Component mounted with insights:', {
+    hasInsights: !!insights,
+    insightsKeys: insights ? Object.keys(insights) : [],
+    model: insights?.model,
+  });
+  
   const { overall_explanation, chc_explanation, la_funding_explanation, dpa_explanation, expert_advice, actionable_next_steps } = insights.insights;
 
   const getConfidenceColor = (level: string) => {

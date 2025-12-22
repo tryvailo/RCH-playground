@@ -19,8 +19,6 @@ from api_clients.fsa_client import FSAAPIClient
 from api_clients.companies_house_client import CompaniesHouseAPIClient
 from api_clients.google_places_client import GooglePlacesAPIClient
 from api_clients.perplexity_client import PerplexityAPIClient
-from api_clients.besttime_client import BestTimeClient
-from api_clients.autumna_scraper import AutumnaScraper
 from api_clients.firecrawl_client import FirecrawlAPIClient
 from services.test_runner import TestRunner
 from services.data_fusion import DataFusionAnalyzer
@@ -247,94 +245,6 @@ async def test_perplexity(request: TestRequest):
     except Exception as e:
         return ApiTestResult(
             api_name="Perplexity",
-            status="failure",
-            response_time=0,
-            data_returned=False,
-            data_quality={"completeness": 0, "accuracy": 0, "freshness": "N/A"},
-            errors=[str(e)],
-            warnings=[],
-            raw_response={},
-            cost_incurred=0.0
-        )
-
-
-@router.post("/besttime", response_model=ApiTestResult)
-async def test_besttime(request: TestRequest):
-    """Test BestTime.app API"""
-    try:
-        from utils.client_factory import get_besttime_client
-        client = get_besttime_client()
-        
-        venue_name = request.home_name or "Care Home"
-        address = f"{request.address}, {request.city}, {request.postcode}, UK" if request.address else request.city
-        
-        start_time = datetime.now()
-        forecast = await client.create_forecast(venue_name, address)
-        response_time = (datetime.now() - start_time).total_seconds()
-        
-        cost = 0.016 if forecast else 0.0  # 2 credits * $0.008
-        
-        return ApiTestResult(
-            api_name="BestTime",
-            status="success" if forecast else "partial",
-            response_time=response_time,
-            data_returned=forecast is not None,
-            data_quality={
-                "completeness": 100 if forecast else 0,
-                "accuracy": 85,
-                "freshness": "Recent"
-            },
-            errors=[],
-            warnings=["Data may not be available for all venues"] if not forecast else [],
-            raw_response={"forecast": forecast} if forecast else {"message": "No forecast data available"},
-            cost_incurred=cost
-        )
-    except Exception as e:
-        return ApiTestResult(
-            api_name="BestTime",
-            status="failure",
-            response_time=0,
-            data_returned=False,
-            data_quality={"completeness": 0, "accuracy": 0, "freshness": "N/A"},
-            errors=[str(e)],
-            warnings=[],
-            raw_response={},
-            cost_incurred=0.0
-        )
-
-
-@router.post("/autumna", response_model=ApiTestResult)
-async def test_autumna(request: TestRequest):
-    """Test Autumna scraping"""
-    try:
-        from utils.client_factory import get_autumna_scraper
-        
-        scraper = get_autumna_scraper()
-        
-        location = request.city or "Brighton"
-        
-        start_time = datetime.now()
-        homes = await scraper.search_care_homes(location, page=1)
-        response_time = (datetime.now() - start_time).total_seconds()
-        
-        return ApiTestResult(
-            api_name="Autumna",
-            status="success" if homes else "partial",
-            response_time=response_time,
-            data_returned=len(homes) > 0,
-            data_quality={
-                "completeness": 100 if homes else 0,
-                "accuracy": 80,
-                "freshness": "Recent"
-            },
-            errors=[],
-            warnings=["Scraping may be blocked without proxy"] if not homes else [],
-            raw_response={"homes_found": len(homes), "sample": homes[:3] if homes else []},
-            cost_incurred=0.0
-        )
-    except Exception as e:
-        return ApiTestResult(
-            api_name="Autumna",
             status="failure",
             response_time=0,
             data_returned=False,

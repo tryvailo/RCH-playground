@@ -369,9 +369,14 @@ export default function FundingCalculator() {
           dataKeys: Object.keys(response.data || {}),
           hasLlmInsights: 'llmInsights' in (response.data || {}),
           llmInsightsType: typeof (response.data || {}).llmInsights,
+          llmInsightsLength: (response.data || {}).llmInsights ? Object.keys((response.data || {}).llmInsights).length : 0,
         });
         
-        return response.data;
+        // Ensure llmInsights is returned as-is
+        const rawData = response.data;
+        console.log('🔍 [Funding Calculator] Raw data llmInsights:', rawData.llmInsights ? 'PRESENT' : 'MISSING');
+        
+        return rawData;
       } catch (err: any) {
         lastError = err;
         const errorInfo = handleError(err, `attempt ${attempt + 1}`);
@@ -527,6 +532,13 @@ export default function FundingCalculator() {
       // Use retry logic for network/server errors
       const resultData = await retryRequest(requestData);
       
+      // CRITICAL DEBUG: Log the raw response before any modifications
+      console.log('🔍 [CRITICAL] Raw resultData immediately after API call:', {
+        hasLlmInsights: 'llmInsights' in resultData,
+        allKeys: Object.keys(resultData),
+        llmInsightsValue: resultData.llmInsights,
+      });
+      
       // Add means test breakdown for display
       if (resultData.la_support) {
         resultData._means_test_breakdown = {
@@ -545,13 +557,26 @@ export default function FundingCalculator() {
       }
       
       // Debug: Log LLM insights if present
+      console.log('🔍 [DEBUG] After modifications, before setState:', {
+        hasLlmInsights: 'llmInsights' in resultData,
+        allKeys: Object.keys(resultData),
+      });
+      
       if (resultData.llmInsights) {
         console.log('✅ LLM Insights received:', resultData.llmInsights);
       } else {
         console.log('⚠️ No LLM Insights in response. Available keys:', Object.keys(resultData));
       }
       
-      setResult(resultData);
+      // Create a fresh copy with all properties to ensure nothing is lost
+      const resultToSet = { ...resultData };
+      console.log('🔍 [FINAL] About to setState with resultToSet:', {
+        hasLlmInsights: 'llmInsights' in resultToSet,
+        resultDataHasIt: 'llmInsights' in resultData,
+        isSameObject: resultToSet === resultData,
+      });
+      
+      setResult(resultToSet);
       setRetryCount(0); // Reset retry count on success
     } catch (err: any) {
       const errorInfo = handleError(err, 'funding calculation');
@@ -1303,6 +1328,15 @@ export default function FundingCalculator() {
 
       {result && (
         <div className="bg-white rounded-lg shadow p-6 space-y-6">
+          {/* Debug: Log result state */}
+          {(() => {
+            console.log('🔍 [RENDER] Result state:', {
+              hasLlmInsights: 'llmInsights' in result,
+              resultKeys: Object.keys(result),
+            });
+            return null;
+          })()}
+          
           <div className="flex items-center gap-2 text-green-600">
             <CheckCircle className="w-5 h-5" />
             <span className="font-semibold">Funding eligibility calculated!</span>
@@ -1583,6 +1617,16 @@ export default function FundingCalculator() {
 
           {/* LLM Insights Section - Always show, even if empty */}
           <div className="border-t pt-6">
+            {(() => {
+              console.log('🔍 [RENDER LLM Section] Checking llmInsights:', {
+                resultLLMInsights: result.llmInsights,
+                isPresent: 'llmInsights' in result,
+                type: typeof result.llmInsights,
+                keys: result.llmInsights ? Object.keys(result.llmInsights) : [],
+              });
+              return null;
+            })()}
+            
             {result.llmInsights ? (
               <FundingLLMInsights insights={result.llmInsights} />
             ) : (

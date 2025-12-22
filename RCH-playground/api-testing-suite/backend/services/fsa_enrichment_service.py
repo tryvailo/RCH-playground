@@ -1,14 +1,21 @@
 """
 FSA Enrichment Service
 Enriches care homes with FSA FHRS (Food Hygiene Rating Scheme) data
+
+Now inherits from BaseEnrichmentService for unified interface.
 """
 import asyncio
+import logging
+import time
 from typing import List, Dict, Optional, Any
 from api_clients.fsa_client import FSAAPIClient
 from utils.cache import get_cache_manager
+from services.enrichment_service_base import BaseEnrichmentService, EnrichmentResult
+
+logger = logging.getLogger(__name__)
 
 
-class FSAEnrichmentService:
+class FSAEnrichmentService(BaseEnrichmentService):
     """Service to enrich care homes with FSA FHRS data"""
     
     def __init__(self, use_cache: bool = True, cache_ttl: int = 604800):
@@ -19,10 +26,55 @@ class FSAEnrichmentService:
             use_cache: Whether to use Redis cache
             cache_ttl: Cache TTL in seconds (default 7 days for FSA)
         """
+        super().__init__(timeout_seconds=30)
+        
         self.fsa_client = FSAAPIClient()
         self.use_cache = use_cache
         self.cache_ttl = cache_ttl
         self.cache = get_cache_manager() if use_cache else None
+    
+    @property
+    def service_name(self) -> str:
+        """Service identifier for unified interface"""
+        return 'fsa'
+    
+    async def enrich(
+        self,
+        home: Dict[str, Any],
+        **kwargs
+    ) -> EnrichmentResult:
+        """
+        Unified enrich method for BaseEnrichmentService interface.
+        
+        Args:
+            home: Care home object
+            **kwargs: Not used, FSA data queried by home info
+        
+        Returns:
+            EnrichmentResult with FSA data or error
+        """
+        start_time = time.time()
+        home_id = home.get('cqc_location_id') or home.get('id')
+        
+        try:
+            enriched_home = await self.enrich_care_home(home)
+            fsa_data = enriched_home.get('fsa_detailed', {})
+            
+            return EnrichmentResult(
+                source=self.service_name,
+                status='success',
+                data=fsa_data,
+                processing_time=time.time() - start_time
+            )
+        except Exception as e:
+            logger.error(f"FSA enrichment error for {home.get('name')}: {str(e)}", exc_info=True)
+            return EnrichmentResult(
+                source=self.service_name,
+                status='failed',
+                data={},
+                error=str(e),
+                processing_time=time.time() - start_time
+            )
     
     def _get_cache_key(self, home_name: str, postcode: str) -> str:
         """Generate cache key for FSA data"""

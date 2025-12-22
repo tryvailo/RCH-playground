@@ -1,34 +1,38 @@
 {
+  "_comment": "API Configuration - Replace null values with your real API keys",
+  "_instructions": "1. Get CQC keys from https://api-portal.service.cqc.org.uk/",
+  "_instructions_2": "2. Get Companies House from https://developer.company-information.service.gov.uk/",
+  "_instructions_3": "3. Get Google Places from https://console.cloud.google.com/",
+  "_do_not_commit": "IMPORTANT: Never commit real API keys to git. Use .env for production.",
   "cqc": {
-    "partner_code": "YourPartnerCode",
-    "use_without_code": false,
-    "primary_subscription_key": "your-primary-subscription-key",
-    "secondary_subscription_key": "your-secondary-subscription-key"
-  },
-  "fsa": {},
-  "google_places": {
-    "api_key": "your-google-places-api-key",
-    "search_engine_id": "your-search-engine-id"
-  },
-  "perplexity": {
-    "api_key": "your-perplexity-api-key"
-  },
-  "openai": {
-    "api_key": "your-openai-api-key"
-  },
-  "firecrawl": {
-    "api_key": "your-firecrawl-api-key"
+    "partner_code": null,
+    "use_without_code": true,
+    "primary_subscription_key": null,
+    "secondary_subscription_key": null
   },
   "companies_house": {
-    "api_key": "your-companies-house-api-key"
+    "api_key": null
   },
-  "os_places": {
-    "api_key": "your-os-places-api-key",
-    "api_secret": "your-os-places-api-secret",
-    "places_endpoint": "https://api.os.uk/search/places/v1/",
-    "features_endpoint": "https://api.os.uk/features/v1/wfs"
+  "google_places": {
+    "api_key": null,
+    "search_engine_id": null
+  },
+  "perplexity": {
+    "api_key": null
+  },
+  "openai": {
+    "api_key": null
+  },
+  "firecrawl": {
+    "api_key": null
   },
   "anthropic": {
-    "api_key": "your-anthropic-api-key"
+    "api_key": null
+  },
+  "os_places": {
+    "api_key": null,
+    "api_secret": null,
+    "places_endpoint": "https://api.os.uk/search/places/v1/",
+    "features_endpoint": "https://api.os.uk/features/v1/wfs"
   }
 }

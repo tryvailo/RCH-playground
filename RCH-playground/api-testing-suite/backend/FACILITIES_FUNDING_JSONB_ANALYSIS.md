@@ -220,3 +220,4 @@ parking_onsite BOOLEAN DEFAULT FALSE,
 
 **Последнее обновление:** 2025-12-20
 
+

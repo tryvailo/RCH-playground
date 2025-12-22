@@ -1,17 +1,21 @@
 """
 Google Places Enrichment Service
 Enriches care homes with Google Places reviews and sentiment analysis
+
+Now inherits from BaseEnrichmentService for unified interface.
 """
 import asyncio
+import time
 from typing import List, Dict, Optional, Any
 from api_clients.google_places_client import GooglePlacesAPIClient
 from utils.cache import get_cache_manager
 import logging
+from services.enrichment_service_base import BaseEnrichmentService, EnrichmentResult
 
 logger = logging.getLogger(__name__)
 
 
-class GooglePlacesEnrichmentService:
+class GooglePlacesEnrichmentService(BaseEnrichmentService):
     """Service to enrich care homes with Google Places reviews and sentiment analysis"""
     
     def __init__(self, api_key: str, use_cache: bool = True, cache_ttl: int = 86400):

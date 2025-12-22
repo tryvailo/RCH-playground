@@ -5,16 +5,20 @@ Enriches care home data with comprehensive financial information including:
 - Bankruptcy risk score (0-100) based on Altman Z-score
 - UK industry benchmarks comparison
 - Red flags detection
+
+Now inherits from BaseEnrichmentService for unified interface.
 """
 from typing import Dict, Any, Optional, List
 from datetime import datetime, date, timedelta
 import logging
+import time
 from api_clients.companies_house_client import CompaniesHouseAPIClient
+from services.enrichment_service_base import BaseEnrichmentService, EnrichmentResult
 
 logger = logging.getLogger(__name__)
 
 
-class FinancialEnrichmentService:
+class FinancialEnrichmentService(BaseEnrichmentService):
     """Service for enriching care home data with comprehensive financial information"""
     
     # UK Care Home Industry Benchmarks (based on industry research)
@@ -36,6 +40,8 @@ class FinancialEnrichmentService:
             companies_house_client: Optional Companies House API client instance.
             api_key: Optional API key for Companies House (if client not provided).
         """
+        super().__init__(timeout_seconds=30)
+        
         if companies_house_client:
             self.companies_house_client = companies_house_client
         elif api_key:
@@ -49,6 +55,65 @@ class FinancialEnrichmentService:
             else:
                 # Create a mock client that will return default data
                 self.companies_house_client = None
+    
+    @property
+    def service_name(self) -> str:
+        """Service identifier for unified interface"""
+        return 'financial'
+    
+    async def enrich(
+        self,
+        home: Dict[str, Any],
+        **kwargs
+    ) -> EnrichmentResult:
+        """
+        Unified enrich method for BaseEnrichmentService interface.
+        
+        Args:
+            home: Care home object
+            **kwargs: Supports:
+                - company_number: Explicit company number
+                - years: Number of years for financial summary (default 3)
+        
+        Returns:
+            EnrichmentResult with financial data or error
+        """
+        start_time = time.time()
+        home_id = home.get('cqc_location_id') or home.get('id')
+        
+        try:
+            # Extract parameters
+            company_number = kwargs.get('company_number') or home.get('company_number')
+            years = kwargs.get('years', 3)
+            
+            if not company_number:
+                logger.warning(f"No company_number for home {home.get('name')} (ID: {home_id})")
+                return EnrichmentResult(
+                    source=self.service_name,
+                    status='partial',
+                    data={},
+                    error='No company_number provided',
+                    processing_time=time.time() - start_time
+                )
+            
+            # Call existing enrichment method
+            data = await self.enrich_financial_data(company_number, years)
+            
+            return EnrichmentResult(
+                source=self.service_name,
+                status='success',
+                data=data,
+                processing_time=time.time() - start_time
+            )
+        except Exception as e:
+            logger.error(f"Financial enrichment error for {home.get('name')}: {str(e)}", exc_info=True)
+            return EnrichmentResult(
+                source=self.service_name,
+                status='failed',
+                data={},
+                error=str(e),
+                processing_time=time.time() - start_time
+            )
     
     async def enrich_financial_data(
         self,

@@ -1,18 +1,22 @@
 """
 Staff Enrichment Service
 Integrates Glassdoor, LinkedIn, and Job Boards data for comprehensive staff analysis
+
+Now inherits from BaseEnrichmentService for unified interface.
 """
 import logging
+import time
 from typing import Dict, Any, Optional, List
 from services.glassdoor_research_service import GlassdoorResearchService
 from services.linkedin_research_service import LinkedInResearchService
 from services.job_boards_service import JobBoardsService
 from api_clients.perplexity_client import PerplexityAPIClient
+from services.enrichment_service_base import BaseEnrichmentService, EnrichmentResult
 
 logger = logging.getLogger(__name__)
 
 
-class StaffEnrichmentService:
+class StaffEnrichmentService(BaseEnrichmentService):
     """Service for enriching care homes with comprehensive staff data"""
     
     def __init__(
@@ -27,6 +31,8 @@ class StaffEnrichmentService:
             perplexity_client: Optional Perplexity API client instance
             perplexity_api_key: Optional Perplexity API key (if client not provided)
         """
+        super().__init__(timeout_seconds=30)
+        
         if perplexity_client:
             self.perplexity_client = perplexity_client
         elif perplexity_api_key:
@@ -37,6 +43,52 @@ class StaffEnrichmentService:
         self.glassdoor_service = None
         self.linkedin_service = None
         self.job_boards_service = JobBoardsService()
+    
+    @property
+    def service_name(self) -> str:
+        """Service identifier for unified interface"""
+        return 'staff'
+    
+    async def enrich(
+        self,
+        home: Dict[str, Any],
+        **kwargs
+    ) -> EnrichmentResult:
+        """
+        Unified enrich method for BaseEnrichmentService interface.
+        
+        Args:
+            home: Care home object
+            **kwargs: Supports:
+                - use_perplexity: Whether to use Perplexity AI (default True)
+        
+        Returns:
+            EnrichmentResult with staff data or error
+        """
+        start_time = time.time()
+        home_id = home.get('cqc_location_id') or home.get('id')
+        
+        try:
+            use_perplexity = kwargs.get('use_perplexity', True)
+            enriched_home = await self.enrich_staff_data(home, use_perplexity)
+            
+            staff_data = enriched_home.get('staff_data', {})
+            
+            return EnrichmentResult(
+                source=self.service_name,
+                status='success',
+                data=staff_data,
+                processing_time=time.time() - start_time
+            )
+        except Exception as e:
+            logger.error(f"Staff enrichment error for {home.get('name')}: {str(e)}", exc_info=True)
+            return EnrichmentResult(
+                source=self.service_name,
+                status='failed',
+                data={},
+                error=str(e),
+                processing_time=time.time() - start_time
+            )
     
     async def enrich_staff_data(
         self,

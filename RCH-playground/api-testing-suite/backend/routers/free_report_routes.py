@@ -10,11 +10,19 @@ from fastapi import APIRouter, HTTPException, Body
 from typing import Dict, Any, Optional, List
 import asyncio
 import uuid
+import logging
+import json
 from datetime import datetime
 
 from utils.price_extractor import extract_weekly_price, extract_price_range
 from utils.geo import calculate_distance_km, validate_coordinates
 from utils.distance_calculator import calculate_home_distance
+from models.free_report_models import FreeReportRequest, FreeReportResponse
+from services.fair_cost_gap_service import get_fair_cost_gap_service
+from utils.logging_utils import GenerationContext, GenerationStep
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 # Import MatchingService and MatchingInputs for improved matching algorithm
 try:
@@ -41,15 +49,20 @@ except ImportError as e:
 router = APIRouter(prefix="/api", tags=["Free Report"])
 
 
-@router.post("/free-report")
-async def generate_free_report(request: Dict[str, Any] = Body(...)):
+@router.post("/free-report", response_model=FreeReportResponse)
+async def generate_free_report(request: FreeReportRequest):
     """
     Generate free report from simple questionnaire
     
-    Accepts basic questionnaire with postcode, budget, care_type
+    Pydantic automatically validates the request.
     Returns report with 3 matched care homes using 50-point matching algorithm
     """
-    print("🚀 generate_free_report called - INITIALIZING llm_insights")
+    # Initialize generation context
+    report_id = str(uuid.uuid4())
+    context = GenerationContext(report_id, request.postcode, request.care_type)
+    
+    context.log_step_start(GenerationStep.INITIALIZATION)
+    
     # Initialize llm_insights early to ensure it's always in response
     llm_insights = {
         'generated_at': datetime.now().isoformat(),
@@ -63,27 +76,23 @@ async def generate_free_report(request: Dict[str, Any] = Body(...)):
             'home_insights': []
         }
     }
-    print(f"✅ llm_insights initialized: {type(llm_insights)}, keys: {list(llm_insights.keys())}")
     
     try:
-        # Extract questionnaire data
-        postcode = request.get('postcode') or request.get('location_postcode', '')
-        budget = request.get('budget', 0.0)
-        care_type_raw = request.get('care_type', 'residential')
-        # Normalize care_type: residential_care -> residential, nursing_care -> nursing, etc.
-        care_type = care_type_raw.replace('_care', '').replace('_', '') if care_type_raw else 'residential'
-        chc_probability = request.get('chc_probability', 0.0)
+        # Extract validated questionnaire data (already validated by Pydantic)
+        postcode = request.postcode
+        budget = request.budget
+        care_type = request.care_type  # Already validated enum
+        chc_probability = request.chc_probability
         
-        # Extract new fields from questionnaire (optional)
-        location_postcode = request.get('location_postcode') or postcode
-        timeline = request.get('timeline')
-        medical_conditions = request.get('medical_conditions', [])
-        max_distance_km = request.get('max_distance_km')
-        priority_order = request.get('priority_order', ['quality', 'cost', 'proximity'])
-        priority_weights = request.get('priority_weights', [40, 35, 25])
+        # Extract optional fields
+        location_postcode = request.location_postcode or postcode
+        timeline = request.timeline
+        medical_conditions = request.medical_conditions
+        max_distance_km = request.max_distance_km
+        priority_order = request.priority_order
+        priority_weights = request.priority_weights
         
-        if not postcode:
-            raise HTTPException(status_code=400, detail="postcode is required")
+        context.log_step_complete(GenerationStep.INITIALIZATION)
         
         # Import services
         from services.async_data_loader import get_async_loader
@@ -865,71 +874,71 @@ async def generate_free_report(request: Dict[str, Any] = Body(...)):
                     continue
                 
                 weekly_price_val = extract_weekly_price(home_data, care_type)
+                
+                # Skip homes with zero price
+                if weekly_price_val <= 0:
+                    continue
+                
+                if not scored.get('match_type'):
+                    # Get CQC score for quality check
+                    cqc_score = get_cqc_rating_score(
+                        home_data.get('cqc_rating_overall') or 
+                        home_data.get('overall_cqc_rating') or 
+                        home_data.get('rating') or 
+                        'Unknown'
+                    )
                     
-                    # Skip homes with zero price
-                    if weekly_price_val <= 0:
-                        continue
-                    
-                    if not scored.get('match_type'):
-                        # Get CQC score for quality check
-                        cqc_score = get_cqc_rating_score(
-                            home_data.get('cqc_rating_overall') or 
-                            home_data.get('overall_cqc_rating') or 
-                            home_data.get('rating') or 
-                            'Unknown'
-                        )
-                        
-                        # Assign based on position AND price/quality constraints
-                        if len(selected_homes) == 0:
-                            # Safe Bet: Good+ rating required
-                            if cqc_score >= 3:
-                                scored['match_type'] = 'Safe Bet'
-                            else:
-                                continue  # Skip if quality insufficient
-                        elif len(selected_homes) == 1:
-                            # Best Value should be <= Safe Bet (if Safe Bet exists) AND at least Requires Improvement
-                            if safe_bet_price_for_fallback and weekly_price_val > safe_bet_price_for_fallback:
-                                # Too expensive for Best Value, skip this one
-                                continue
-                            if cqc_score >= 2:  # At least Requires Improvement
-                                scored['match_type'] = 'Best Value'
-                            else:
-                                continue  # Skip if quality insufficient
+                    # Assign based on position AND price/quality constraints
+                    if len(selected_homes) == 0:
+                        # Safe Bet: Good+ rating required
+                        if cqc_score >= 3:
+                            scored['match_type'] = 'Safe Bet'
                         else:
-                            # Premium: Good/Outstanding rating required
-                            # Price requirements (in order of preference):
-                            # 1. >= budget AND > Safe Bet (ideal)
-                            # 2. >= budget (acceptable)
-                            # 3. > Safe Bet (acceptable if no budget match)
-                            # 4. >= Safe Bet (last resort - better than no Premium)
-                            
-                            if cqc_score < 3:  # Must be Good or Outstanding
-                                print(f"⚠️ Skipping {home_data.get('name', 'Unknown')} for Premium fallback: CQC score {cqc_score} < 3 (need Good/Outstanding)")
-                                continue
-                            
-                            # Check price requirements
-                            meets_budget = budget > 0 and weekly_price_val >= budget
-                            exceeds_safe_bet = safe_bet_price_for_fallback and weekly_price_val > safe_bet_price_for_fallback
-                            at_least_safe_bet = safe_bet_price_for_fallback and weekly_price_val >= safe_bet_price_for_fallback
-                            
-                            # Accept if meets any price requirement
-                            if meets_budget or exceeds_safe_bet or at_least_safe_bet:
-                                if not meets_budget and not exceeds_safe_bet:
-                                    # Only warn if it's the last resort (>= Safe Bet but < budget)
-                                    print(f"⚠️ Accepting {home_data.get('name', 'Unknown')} as Premium (price £{weekly_price_val} >= Safe Bet £{safe_bet_price_for_fallback or 0:.0f} but < Budget £{budget or 0:.0f})")
-                                scored['match_type'] = 'Premium'
+                            continue  # Skip if quality insufficient
+                    elif len(selected_homes) == 1:
+                        # Best Value should be <= Safe Bet (if Safe Bet exists) AND at least Requires Improvement
+                        if safe_bet_price_for_fallback and weekly_price_val > safe_bet_price_for_fallback:
+                            # Too expensive for Best Value, skip this one
+                            continue
+                        if cqc_score >= 2:  # At least Requires Improvement
+                            scored['match_type'] = 'Best Value'
+                        else:
+                            continue  # Skip if quality insufficient
+                    else:
+                        # Premium: Good/Outstanding rating required
+                        # Price requirements (in order of preference):
+                        # 1. >= budget AND > Safe Bet (ideal)
+                        # 2. >= budget (acceptable)
+                        # 3. > Safe Bet (acceptable if no budget match)
+                        # 4. >= Safe Bet (last resort - better than no Premium)
+                        
+                        if cqc_score < 3:  # Must be Good or Outstanding
+                            print(f"⚠️ Skipping {home_data.get('name', 'Unknown')} for Premium fallback: CQC score {cqc_score} < 3 (need Good/Outstanding)")
+                            continue
+                        
+                        # Check price requirements
+                        meets_budget = budget > 0 and weekly_price_val >= budget
+                        exceeds_safe_bet = safe_bet_price_for_fallback and weekly_price_val > safe_bet_price_for_fallback
+                        at_least_safe_bet = safe_bet_price_for_fallback and weekly_price_val >= safe_bet_price_for_fallback
+                        
+                        # Accept if meets any price requirement
+                        if meets_budget or exceeds_safe_bet or at_least_safe_bet:
+                            if not meets_budget and not exceeds_safe_bet:
+                                # Only warn if it's the last resort (>= Safe Bet but < budget)
+                                print(f"⚠️ Accepting {home_data.get('name', 'Unknown')} as Premium (price £{weekly_price_val} >= Safe Bet £{safe_bet_price_for_fallback or 0:.0f} but < Budget £{budget or 0:.0f})")
+                            scored['match_type'] = 'Premium'
+                        else:
+                            # Price too low - skip
+                            if safe_bet_price_for_fallback:
+                                print(f"⚠️ Skipping {home_data.get('name', 'Unknown')} for Premium fallback: price £{weekly_price_val} < Safe Bet £{safe_bet_price_for_fallback or 0:.0f}")
                             else:
-                                # Price too low - skip
-                                if safe_bet_price_for_fallback:
-                                    print(f"⚠️ Skipping {home_data.get('name', 'Unknown')} for Premium fallback: price £{weekly_price_val} < Safe Bet £{safe_bet_price_for_fallback or 0:.0f}")
-                                else:
-                                    print(f"⚠️ Skipping {home_data.get('name', 'Unknown')} for Premium fallback: price £{weekly_price_val} < Budget £{budget:.0f}")
-                                continue
-                    
-                    selected_homes.append(scored)
-                    remaining_slots -= 1
-                    if remaining_slots == 0:
-                        break
+                                print(f"⚠️ Skipping {home_data.get('name', 'Unknown')} for Premium fallback: price £{weekly_price_val} < Budget £{budget:.0f}")
+                            continue
+                
+                selected_homes.append(scored)
+                remaining_slots -= 1
+                if remaining_slots == 0:
+                    break
         
         # Ensure we have exactly 3 homes
         top_3_homes = selected_homes[:3]
@@ -1548,7 +1557,9 @@ async def generate_free_report(request: Dict[str, Any] = Body(...)):
             traceback.print_exc()
             # Continue without area profile
         
-        # Get MSIF fair cost
+        # Get MSIF fair cost and calculate fair cost gap
+        context.log_step_start(GenerationStep.GAP_CALCULATION)
+        
         msif_lower_bound = 700.0
         try:
             from pricing_calculator import PricingService, CareType
@@ -1568,7 +1579,7 @@ async def generate_free_report(request: Dict[str, Any] = Body(...)):
                     if result:
                         msif_lower_bound = float(result)
         except Exception as e:
-            print(f"⚠️ MSIF lookup failed: {e}")
+            context.log_warning(GenerationStep.GAP_CALCULATION, f"MSIF lookup failed: {e}")
             default_msif = {
                 'residential': 700,
                 'nursing': 1048,
@@ -1577,8 +1588,7 @@ async def generate_free_report(request: Dict[str, Any] = Body(...)):
             }
             msif_lower_bound = float(default_msif.get(care_type, 700))
         
-        # Calculate fair cost gap
-        # Use average weekly cost from homes if budget not provided, otherwise use budget
+        # Calculate market price (average from homes or use budget)
         if budget > 0:
             market_price = float(budget)
         elif care_homes_list:
@@ -1588,10 +1598,21 @@ async def generate_free_report(request: Dict[str, Any] = Body(...)):
         else:
             market_price = 1200.0
         
-        gap_week = max(0.0, market_price - msif_lower_bound)
-        gap_year = gap_week * 52
-        gap_5year = gap_year * 5
-        gap_percent = (gap_week / msif_lower_bound * 100) if msif_lower_bound > 0 else 0.0
+        # Use FairCostGapService to calculate gap
+        gap_service = get_fair_cost_gap_service()
+        fair_cost_gap = gap_service.calculate_gap(
+            market_price=market_price,
+            msif_lower_bound=msif_lower_bound,
+            care_type=care_type
+        )
+        
+        context.log_step_complete(
+            GenerationStep.GAP_CALCULATION,
+            {
+                'gap_week': fair_cost_gap['gap_week'],
+                'gap_percent': fair_cost_gap['gap_percent']
+            }
+        )
         
         # Initialize LLM Insights Service
         try:
@@ -1986,45 +2007,27 @@ async def generate_free_report(request: Dict[str, Any] = Body(...)):
                 }
             }
         
-        print(f"📊 Returning report with {len(llm_insights.get('insights', {}).get('home_insights', []))} home insights")
-        print(f"🔍 llm_insights type: {type(llm_insights)}, empty: {not llm_insights}")
+        context.log_step_start(GenerationStep.RESPONSE_ASSEMBLY)
+        
+        logger.info(f"Returning report with {len(llm_insights.get('insights', {}).get('home_insights', []))} home insights")
         
         response = {
-            'questionnaire': request,
+            'questionnaire': request.dict(),
             'care_homes': care_homes_list,
-            'fair_cost_gap': {
-                'gap_week': round(gap_week, 2),
-                'gap_year': round(gap_year, 2),
-                'gap_5year': round(gap_5year, 2),
-                'gap_percent': round(gap_percent, 2),
-                'market_price': round(market_price, 2),
-                'msif_lower_bound': round(msif_lower_bound, 2),
-                'local_authority': local_authority or 'Unknown',
-                'care_type': care_type,
-                'gap_text': f"Переплата £{round(gap_year, 0):,.0f} в год = £{round(gap_5year, 0):,.0f} за 5 лет",
-                'explanation': f"Market price of £{round(market_price, 0):,.0f}/week exceeds MSIF fair cost of £{round(msif_lower_bound, 0):,.0f}/week by {round(gap_percent, 1)}%",
-                'recommendations': [
-                    'Use MSIF data to negotiate lower fees',
-                    'Consider homes in adjacent local authorities',
-                    'Request detailed cost breakdown',
-                    'Explore long-term commitment discounts'
-                ]
-            },
+            'fair_cost_gap': fair_cost_gap,  # Use service output directly
             'area_profile': area_profile,
             'area_map': area_map,
-            'llm_insights': llm_insights,  # Always include llm_insights
+            'llm_insights': llm_insights,
             'generated_at': datetime.now().isoformat(),
             'report_id': report_id
         }
         
-        # Final check before returning
-        if 'llm_insights' not in response:
-            print("⚠️ WARNING: llm_insights missing from response dict, adding it...")
-            response['llm_insights'] = llm_insights
+        context.log_step_complete(GenerationStep.RESPONSE_ASSEMBLY)
+        context.log_step_start(GenerationStep.INITIALIZATION)  # Mark final step
         
-        print(f"✅ Response keys: {list(response.keys())}")
-        print(f"✅ llm_insights in response: {'llm_insights' in response}")
-        print(f"🔍 Final check: area_map.homes count in response: {len(response.get('area_map', {}).get('homes', []))}")
+        # Log generation summary
+        summary = context.get_summary()
+        logger.info(f"Report generation complete: {json.dumps(summary)}")
         
         return response
         
