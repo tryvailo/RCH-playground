@@ -236,3 +236,6 @@ review_count = google_data.get('review_count') or home.get('google_review_count'
 - ✅ Документация для разработчиков
 
 
+
+
+

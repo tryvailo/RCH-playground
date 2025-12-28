@@ -389,6 +389,198 @@ async def cqc_get_inspection_areas():
         raise HTTPException(status_code=500, detail=f"CQC API error: {str(e)}")
 
 
+@router.get("")
+@router.get("/")
+async def cqc_enrichment(
+    name: Optional[str] = Query(None),
+    postcode: Optional[str] = Query(None),
+    location_id: Optional[str] = Query(None),
+    cache: Optional[bool] = Query(True)
+):
+    """
+    Simple CQC enrichment endpoint for professional report
+    Accepts name, postcode, or location_id and returns enriched CQC data
+    """
+    try:
+        # ✅ FIX: Check if CQC client is available before attempting enrichment
+        try:
+            client = get_cqc_client()
+        except ValueError as e:
+            # API key not configured or is placeholder
+            error_msg = str(e)
+            if "not configured" in error_msg.lower() or "placeholder" in error_msg.lower():
+                return {
+                    "status": "not_available",
+                    "data": {},
+                    "message": "CQC API is not configured. Please configure CQC subscription keys in API Configuration."
+                }
+            raise
+        
+        # If location_id is provided, use it directly (most efficient)
+        if location_id:
+            try:
+                location = await client.get_location(location_id)
+                if location:
+                    return {
+                        "status": "success",
+                        "data": location
+                    }
+            except Exception as e:
+                # ✅ FIX: If location_id lookup fails with 404, return not_found immediately
+                # Don't fall through to search - it's too slow and may timeout
+                error_msg = str(e)
+                # Check for 404 in various formats: "404", "CQC API error: 404", "No Locations found"
+                if ("404" in error_msg or 
+                    "not found" in error_msg.lower() or 
+                    "No Locations found" in error_msg or
+                    "No Locations found on the given Location ID" in error_msg):
+                    return {
+                        "status": "not_found",
+                        "data": {},
+                        "message": f"CQC location not found for location_id: {location_id}"
+                    }
+                # For other errors (like 401, 403, 500), return not_available
+                if "401" in error_msg or "403" in error_msg or "Unauthorized" in error_msg or "Forbidden" in error_msg:
+                    return {
+                        "status": "not_available",
+                        "data": {},
+                        "message": "CQC API authentication failed. Please check your subscription keys."
+                    }
+                # For other errors, log and fall through to search by name (if available)
+                print(f"Warning: CQC location lookup failed for location_id {location_id}: {e}")
+        
+        # Otherwise, search by name and postcode
+        if name:
+            # ✅ FIX: Use more efficient search - limit results to avoid timeout
+            # Note: CQC API doesn't support postcode filtering, so we filter in memory
+            try:
+                # Search with limited results for better performance
+                locations = await client.search_locations(
+                    care_home=True,
+                    page_size=20,  # Reduced from 50 for better performance
+                    verbose=False,
+                    max_pages=1  # Only first page to avoid timeout
+                )
+            except Exception as e:
+                # ✅ FIX: Return graceful error instead of empty list
+                error_msg = str(e)
+                if "403" in error_msg or "Forbidden" in error_msg:
+                    return {
+                        "status": "not_available",
+                        "data": {},
+                        "message": "CQC API access denied. Please configure CQC subscription keys."
+                    }
+                elif "401" in error_msg or "Unauthorized" in error_msg:
+                    return {
+                        "status": "not_available",
+                        "data": {},
+                        "message": "CQC API authentication failed. Please check your subscription keys."
+                    }
+                # For other errors, return not_found (search failed, not necessarily no results)
+                print(f"Warning: CQC search failed: {e}")
+                return {
+                    "status": "not_found",
+                    "data": {},
+                    "message": f"CQC search failed. Please try with location_id if available."
+                }
+            
+            # Filter by name if we got results
+            matching_locations = []
+            if locations:
+                name_lower = name.lower()
+                postcode_normalized = postcode.replace(" ", "").upper() if postcode else None
+                
+                for loc in locations:
+                    loc_name = loc.get("name", "").lower()
+                    loc_postcode = loc.get("postalCode", "").replace(" ", "").upper() if loc.get("postalCode") else ""
+                    
+                    # Match by name (partial match)
+                    if name_lower in loc_name or loc_name in name_lower:
+                        # If postcode provided, also match by postcode
+                        if postcode_normalized:
+                            if postcode_normalized in loc_postcode or loc_postcode in postcode_normalized:
+                                matching_locations.append(loc)
+                        else:
+                            matching_locations.append(loc)
+            
+            if matching_locations:
+                # Get detailed data for first match
+                best_match = matching_locations[0]
+                location_id = best_match.get("locationId")
+                if location_id:
+                    try:
+                        location = await client.get_location(location_id)
+                        if location:
+                            return {
+                                "status": "success",
+                                "data": location
+                            }
+                    except Exception as e:
+                        print(f"Warning: Failed to get detailed CQC data for location_id {location_id}: {e}")
+            
+            return {
+                "status": "not_found",
+                "data": {},
+                "message": f"No CQC location found for name: {name}, postcode: {postcode}"
+            }
+        
+        raise HTTPException(
+            status_code=400,
+            detail="Either location_id or name must be provided"
+        )
+    except HTTPException:
+        raise
+    except ValueError as e:
+        # ✅ FIX: Handle ValueError from get_cqc_client gracefully
+        error_msg = str(e)
+        if "not configured" in error_msg.lower() or "placeholder" in error_msg.lower():
+            return {
+                "status": "not_available",
+                "data": {},
+                "message": "CQC API is not configured. Please configure CQC subscription keys in API Configuration."
+            }
+        raise HTTPException(status_code=500, detail=f"CQC API configuration error: {error_msg}")
+    except Exception as e:
+        # ✅ FIX: Handle all exceptions gracefully - return not_available or not_found instead of 500
+        import traceback
+        error_msg = str(e)
+        error_detail = f"{error_msg}\n{traceback.format_exc()}"
+        print(f"CQC enrichment error: {error_detail}")
+        
+        # Check for specific error types
+        if "403" in error_msg or "Forbidden" in error_msg:
+            return {
+                "status": "not_available",
+                "data": {},
+                "message": "CQC API access denied. Please configure CQC subscription keys."
+            }
+        elif "401" in error_msg or "Unauthorized" in error_msg:
+            return {
+                "status": "not_available",
+                "data": {},
+                "message": "CQC API authentication failed. Please check your subscription keys."
+            }
+        elif "404" in error_msg or "not found" in error_msg.lower():
+            return {
+                "status": "not_found",
+                "data": {},
+                "message": f"CQC location not found. {error_msg}"
+            }
+        elif "429" in error_msg or "rate limit" in error_msg.lower():
+            return {
+                "status": "not_available",
+                "data": {},
+                "message": "CQC API rate limit exceeded. Please wait before retrying."
+            }
+        else:
+            # For other errors, return not_found (graceful degradation)
+            return {
+                "status": "not_found",
+                "data": {},
+                "message": f"CQC enrichment failed: {error_msg}"
+            }
+
+
 @router.get("/changes")
 async def cqc_get_changes(
     organisation_type: str = Query("location"),

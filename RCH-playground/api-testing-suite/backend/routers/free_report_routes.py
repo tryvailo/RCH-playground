@@ -7,11 +7,13 @@ Uses shared utilities:
 - utils.geo for distance calculations
 """
 from fastapi import APIRouter, HTTPException, Body
-from typing import Dict, Any, Optional, List
+from fastapi.responses import StreamingResponse
+from typing import Dict, Any, Optional, List, AsyncGenerator
 import asyncio
 import uuid
 import logging
 import json
+import time as time_module
 from datetime import datetime
 
 from utils.price_extractor import extract_weekly_price, extract_price_range
@@ -49,6 +51,482 @@ except ImportError as e:
 router = APIRouter(prefix="/api", tags=["Free Report"])
 
 
+async def _send_progress(progress_callback: Optional[callable], step: str, progress: int, data: Optional[Dict] = None):
+    """Helper function to send progress updates"""
+    if progress_callback:
+        try:
+            await progress_callback({
+                'step': step,
+                'progress': progress,
+                'data': data or {},
+                'timestamp': datetime.now().isoformat()
+            })
+        except Exception as e:
+            logger.warning(f"Failed to send progress update: {e}")
+
+
+@router.post("/free-report-stream")
+async def generate_free_report_stream(request: FreeReportRequest):
+    """
+    Generate free report with Server-Sent Events (SSE) for real-time progress
+    Streams progress updates as report is being generated
+    """
+    async def event_generator() -> AsyncGenerator[str, None]:
+        """Generate SSE events for report generation progress"""
+        try:
+            # Send initial connection event
+            yield f"data: {json.dumps({'step': 'connected', 'progress': 0, 'message': 'Starting report generation...'})}\n\n"
+            
+            # Step 1: Initialization (5%)
+            yield f"data: {json.dumps({'step': 'initialization', 'progress': 5, 'message': 'Initializing...'})}\n\n"
+            
+            report_id = str(uuid.uuid4())
+            context = GenerationContext(report_id, request.postcode, request.care_type)
+            context.log_step_start(GenerationStep.INITIALIZATION)
+            
+            postcode = request.postcode
+            budget = request.budget
+            care_type = request.care_type
+            chc_probability = request.chc_probability
+            location_postcode = request.location_postcode or postcode
+            timeline = request.timeline
+            medical_conditions = request.medical_conditions
+            max_distance_km = request.max_distance_km
+            priority_order = request.priority_order
+            priority_weights = request.priority_weights
+            
+            context.log_step_complete(GenerationStep.INITIALIZATION)
+            
+            # Step 2: Loading homes (10-20%)
+            yield f"data: {json.dumps({'step': 'loading_homes', 'progress': 10, 'message': 'Loading care homes from database...'})}\n\n"
+            
+            from services.async_data_loader import get_async_loader
+            loader = get_async_loader()
+            user_lat, user_lon = None, None
+            local_authority = None
+            
+            try:
+                postcode_info = await loader.resolve_postcode(postcode)
+                if postcode_info:
+                    local_authority = postcode_info.get('local_authority') or postcode_info.get('localAuthority')
+                    user_lat = postcode_info.get('latitude')
+                    user_lon = postcode_info.get('longitude')
+            except Exception as e:
+                logger.warning(f"Postcode resolution failed: {e}")
+            
+            from services.sqlite_care_homes_service import get_care_homes as get_sqlite_care_homes
+            loop = asyncio.get_event_loop()
+            care_homes = await loop.run_in_executor(
+                None,
+                lambda: get_sqlite_care_homes(
+                    local_authority=local_authority,
+                    care_type=care_type,
+                    max_distance_km=30.0,
+                    user_lat=user_lat,
+                    user_lon=user_lon,
+                    limit=50
+                )
+            )
+            
+            yield f"data: {json.dumps({'step': 'homes_loaded', 'progress': 20, 'message': f'Loaded {len(care_homes)} care homes', 'count': len(care_homes)})}\n\n"
+            
+            if not care_homes:
+                yield f"data: {json.dumps({'step': 'error', 'progress': 0, 'message': f'No care homes found for {local_authority or postcode}'})}\n\n"
+                return
+            
+            # Step 3: Filtering (25-35%)
+            yield f"data: {json.dumps({'step': 'filtering', 'progress': 25, 'message': 'Filtering homes by quality...'})}\n\n"
+            
+            # Apply filters (simplified - reuse existing logic)
+            filtered_homes = [
+                h for h in care_homes
+                if (h.get('rating') or h.get('overall_rating') or h.get('cqc_rating_overall') or '').lower() in ['good', 'outstanding']
+            ]
+            
+            yield f"data: {json.dumps({'step': 'filtering_price', 'progress': 30, 'message': 'Filtering by budget...'})}\n\n"
+            
+            if budget > 0:
+                budget_max = budget * 1.3
+                filtered_homes = [
+                    h for h in filtered_homes
+                    if extract_weekly_price(h, care_type) <= budget_max
+                ]
+            
+            yield f"data: {json.dumps({'step': 'filtering_location', 'progress': 35, 'message': 'Filtering by location...'})}\n\n"
+            
+            # Step 4: Matching (40-50%)
+            yield f"data: {json.dumps({'step': 'matching', 'progress': 40, 'message': 'Matching homes to your needs...'})}\n\n"
+            
+            # Use existing matching logic (simplified for streaming)
+            # In production, you'd call the actual matching service
+            from services.free_report_matching_service import get_free_report_matching_service
+            matching_service = get_free_report_matching_service()
+            
+            matched = matching_service.select_top_3_homes(
+                homes=filtered_homes,
+                budget=budget,
+                care_type=care_type,
+                user_lat=user_lat,
+                user_lon=user_lon,
+                max_distance_km=max_distance_km or 30.0
+            )
+            
+            # Format matched homes (same as main endpoint)
+            care_homes_list = []
+            match_types = ['safe_bet', 'best_value', 'premium']
+            match_type_labels = {'safe_bet': 'Safe Bet', 'best_value': 'Best Value', 'premium': 'Premium'}
+            
+            for match_key in match_types:
+                if matched.get(match_key):
+                    home = matched[match_key]
+                    match_type = match_type_labels.get(match_key, 'Safe Bet')
+                    
+                    # Extract weekly cost - ensure it's always a number
+                    # Import extract_weekly_price at the top level (already imported)
+                    extracted_price = extract_weekly_price(home, care_type)
+                    weekly_cost_value = extracted_price if extracted_price and extracted_price > 0 else 0.0
+                    
+                    # Format home data (same as main endpoint)
+                    formatted_home = {
+                        'name': home.get('name', 'Unknown'),
+                        'address': home.get('address', ''),
+                        'postcode': home.get('postcode', ''),
+                        'city': home.get('city', ''),
+                        'weekly_cost': weekly_cost_value,  # Ensure it's always a number, never None
+                        'care_types': home.get('care_types', []),
+                        'rating': home.get('rating') or home.get('cqc_rating_overall') or home.get('overall_rating'),
+                        'cqc_rating_overall': home.get('cqc_rating_overall') or home.get('rating') or home.get('overall_rating'),
+                        'distance_km': home.get('distance_km', 0),
+                        'features': home.get('features', []),
+                        'contact_phone': home.get('contact_phone'),
+                        'website': home.get('website'),
+                        'band': 1,  # Default band
+                        'photo_url': home.get('photo_url') or home.get('photo'),
+                        'fsa_color': home.get('fsa_color'),
+                        'fsa_rating': home.get('fsa_rating'),
+                        'fsa_rating_key': home.get('fsa_rating_key'),
+                        'fsa_rating_date': home.get('fsa_rating_date'),
+                        'fsa_health_score': home.get('fsa_health_score'),
+                        'google_rating': home.get('google_rating'),
+                        'review_count': home.get('review_count'),
+                        'match_type': match_type,
+                        'enriched_data': home.get('enriched_data', {}),
+                        '_original_home': home  # Store original for LLM insights
+                    }
+                    care_homes_list.append(formatted_home)
+            
+            yield f"data: {json.dumps({'step': 'matched', 'progress': 50, 'message': f'Selected {len(care_homes_list)} homes', 'homes': [{'name': h.get('name'), 'match_type': h.get('match_type'), 'weekly_cost': h.get('weekly_cost')} for h in care_homes_list]})}\n\n"
+            
+            # Step 5: Enrichment (55-75%)
+            yield f"data: {json.dumps({'step': 'enriching', 'progress': 55, 'message': 'Enriching home data...'})}\n\n"
+            
+            # Enrich homes with additional data (same as main endpoint)
+            if care_homes_list:
+                try:
+                    from services.enrichment_orchestrator import EnrichmentOrchestrator, EnrichmentConfig
+                    
+                    orchestrator = EnrichmentOrchestrator()
+                    config = EnrichmentConfig(
+                        enabled_sources=['fsa', 'google'],
+                        parallel_limit=3,
+                        timeout_per_source=15,
+                        cache_results=True
+                    )
+                    
+                    # Extract homes for enrichment
+                    homes_to_enrich = [h.get('_original_home', h) for h in care_homes_list]
+                    
+                    enriched_results = await orchestrator.enrich_homes_batch(
+                        homes_to_enrich,
+                        config,
+                        context={'questionnaire': {'postcode': postcode, 'care_type': care_type}},
+                        progress_callback=None
+                    )
+                    
+                    # Update care_homes_list with enriched data
+                    enriched_homes_dict = {}
+                    for result in enriched_results:
+                        home = result.get('home', {})
+                        home_name = home.get('name')
+                        if home_name:
+                            enriched_homes_dict[home_name] = {
+                                'home': home,
+                                'enrichments': result.get('enrichments', {})
+                            }
+                    
+                    # Merge enriched data into formatted homes
+                    for formatted_home in care_homes_list:
+                        home_name = formatted_home.get('name')
+                        if home_name and home_name in enriched_homes_dict:
+                            enriched_result = enriched_homes_dict[home_name]
+                            enriched_home = enriched_result['home']
+                            enrichments = enriched_result['enrichments']
+                            
+                            # Update formatted home with enriched data
+                            formatted_home.update({
+                                'fsa_rating': enriched_home.get('fsa_rating') or formatted_home.get('fsa_rating'),
+                                'fsa_color': enriched_home.get('fsa_color') or formatted_home.get('fsa_color'),
+                                'google_rating': enriched_home.get('google_rating') or formatted_home.get('google_rating'),
+                                'review_count': enriched_home.get('review_count') or formatted_home.get('review_count'),
+                            })
+                            
+                            # Add enriched_data
+                            if 'enriched_data' not in formatted_home:
+                                formatted_home['enriched_data'] = {}
+                            
+                            # Add CQC data
+                            cqc_overall = formatted_home.get('rating') or formatted_home.get('cqc_rating_overall')
+                            if cqc_overall:
+                                formatted_home['enriched_data']['cqc_detailed'] = {
+                                    'overall_rating': cqc_overall,
+                                    'safe_rating': formatted_home.get('cqc_rating_safe') or cqc_overall,
+                                    'caring_rating': formatted_home.get('cqc_rating_caring') or cqc_overall,
+                                }
+                            
+                            # Add FSA data
+                            if formatted_home.get('fsa_rating') is not None or formatted_home.get('fsa_color'):
+                                formatted_home['enriched_data']['fsa_detailed'] = {
+                                    'rating': formatted_home.get('fsa_rating'),
+                                    'color': formatted_home.get('fsa_color'),
+                                }
+                            
+                            # Add Google Places data
+                            if formatted_home.get('google_rating') is not None:
+                                formatted_home['enriched_data']['google_places'] = {
+                                    'rating': formatted_home.get('google_rating'),
+                                    'review_count': formatted_home.get('review_count'),
+                                }
+                    
+                except Exception as e:
+                    logger.warning(f"Enrichment failed in streaming: {e}")
+                    # Continue without enrichment
+            
+            yield f"data: {json.dumps({'step': 'enriching', 'progress': 75, 'message': 'Data enrichment complete'})}\n\n"
+            
+            # Step 6: LLM Insights (80-90%)
+            yield f"data: {json.dumps({'step': 'generating_insights', 'progress': 80, 'message': 'Generating AI insights (parallel)...'})}\n\n"
+            
+            # LLM insights generation (parallel, with timeout)
+            llm_insights = {
+                'generated_at': datetime.now().isoformat(),
+                'method': 'data_driven_analysis',
+                'insights': {
+                    'overall_explanation': {
+                        'summary': f"Based on analysis of {len(care_homes)} care homes, we've selected 3 homes that best match your needs.",
+                        'key_findings': [],
+                        'confidence_level': 'high'
+                    },
+                    'home_insights': []
+                }
+            }
+            
+            # Generate insights using parallel LLM calls (same logic as main endpoint)
+            # Check if LLM Insights are enabled (same flag as main endpoint)
+            ENABLE_DATA_ENRICHMENT = True  # LLM Insights enabled
+            
+            if ENABLE_DATA_ENRICHMENT:
+                try:
+                    from services.free_report_llm_insights_service import FreeReportLLMInsightsService
+                    # Get OpenAI API key from credentials (same as main endpoint)
+                    try:
+                        from config_manager import get_credentials
+                        creds = get_credentials()
+                        openai_api_key = None
+                        if creds and hasattr(creds, 'openai') and creds.openai:
+                            openai_api_key = getattr(creds.openai, 'api_key', None)
+                    except Exception:
+                        # Fallback to environment variable
+                        import os
+                        openai_api_key = os.getenv('OPENAI_API_KEY')
+                    
+                    llm_insights_service = FreeReportLLMInsightsService(openai_api_key=openai_api_key) if openai_api_key else None
+                    logger.info(f"✅ LLM Insights Service initialized (OpenAI key: {'present' if openai_api_key else 'not configured'})")
+                except Exception as e:
+                    logger.warning(f"Failed to initialize LLM Insights service: {e}")
+                    import traceback
+                    logger.debug(traceback.format_exc())
+                    llm_insights_service = None
+            else:
+                llm_insights_service = None
+            
+            if ENABLE_DATA_ENRICHMENT and llm_insights_service and llm_insights_service.client:
+                # Prepare user context
+                user_context = {
+                    'budget': budget,
+                    'care_type': care_type,
+                    'postcode': postcode,
+                    'local_authority': local_authority
+                }
+                
+                # Generate insights in parallel (same comprehensive data as main endpoint)
+                async def generate_single_insight(home, match_type):
+                    try:
+                        original_home = home.get('_original_home', {})
+                        # Use same comprehensive data structure as main endpoint
+                        comprehensive_home_data = {
+                            **home,
+                            **original_home,
+                            'name': home.get('name'),
+                            'rating': home.get('rating'),
+                            'weekly_cost': home.get('weekly_cost'),
+                            'distance_km': home.get('distance_km'),
+                            'care_types': home.get('care_types', []),
+                            'fsa_rating': home.get('fsa_rating'),
+                            'beds_available': home.get('beds_available'),
+                            'cqc_rating_safe': original_home.get('cqc_rating_safe') or home.get('cqc_rating_safe'),
+                            'cqc_rating_caring': original_home.get('cqc_rating_caring') or home.get('cqc_rating_caring'),
+                            'cqc_rating_effective': original_home.get('cqc_rating_effective') or home.get('cqc_rating_effective'),
+                            'cqc_rating_responsive': original_home.get('cqc_rating_responsive') or home.get('cqc_rating_responsive'),
+                            'cqc_rating_well_led': original_home.get('cqc_rating_well_led') or home.get('cqc_rating_well_led'),
+                            'google_rating': home.get('google_rating') or original_home.get('google_rating'),
+                            'review_count': home.get('review_count') or original_home.get('review_count'),
+                            'fsa_color': home.get('fsa_color'),
+                            'fsa_health_score': home.get('fsa_health_score'),
+                            'enriched_data': home.get('enriched_data', {})
+                        }
+                        insight = await asyncio.wait_for(
+                            llm_insights_service.generate_home_insight(
+                                home_data=comprehensive_home_data,
+                                match_type=match_type,
+                                user_context=user_context
+                            ),
+                            timeout=30.0
+                        )
+                        return insight
+                    except Exception as e:
+                        logger.warning(f"Failed to generate LLM insight for {home.get('name')}: {e}")
+                        # Fallback will be generated below
+                        return None
+                
+                # Create tasks for parallel execution
+                insight_tasks = [
+                    generate_single_insight(home, home.get('match_type', 'Safe Bet'))
+                    for home in care_homes_list
+                ]
+                
+                # Execute in parallel with progress updates
+                try:
+                    yield f"data: {json.dumps({'step': 'generating_insights', 'progress': 82, 'message': 'Generating insights for 3 homes in parallel...'})}\n\n"
+                    insights_results = await asyncio.wait_for(
+                        asyncio.gather(*insight_tasks, return_exceptions=True),
+                        timeout=35.0
+                    )
+                    
+                    # Process results
+                    for i, result in enumerate(insights_results):
+                        if isinstance(result, Exception) or result is None:
+                            # Use fallback
+                            home = care_homes_list[i] if i < len(care_homes_list) else {}
+                            match_type = home.get('match_type', 'Safe Bet')
+                            insight = {
+                                'home_name': home.get('name', 'Unknown'),
+                                'match_type': match_type,
+                                'why_selected': f"{home.get('name', 'Unknown')} was selected as {match_type} based on quality, location, and pricing analysis.",
+                                'key_strengths': ['Selected based on comprehensive data analysis'],
+                                'considerations': []
+                            }
+                            llm_insights['insights']['home_insights'].append(insight)
+                        else:
+                            llm_insights['insights']['home_insights'].append(result)
+                    
+                    insights_count = len(llm_insights["insights"]["home_insights"])
+                    yield f"data: {json.dumps({'step': 'generating_insights', 'progress': 90, 'message': f'Generated {insights_count} insights'})}\n\n"
+                except asyncio.TimeoutError:
+                    # Fallback for all homes
+                    yield f"data: {json.dumps({'step': 'generating_insights', 'progress': 88, 'message': 'LLM timeout - using fallback insights'})}\n\n"
+                    for home in care_homes_list:
+                        match_type = home.get('match_type', 'Safe Bet')
+                        insight = {
+                            'home_name': home.get('name', 'Unknown'),
+                            'match_type': match_type,
+                            'why_selected': f"{home.get('name', 'Unknown')} was selected as {match_type} based on quality, location, and pricing analysis.",
+                            'key_strengths': ['Selected based on comprehensive data analysis'],
+                            'considerations': []
+                        }
+                        llm_insights['insights']['home_insights'].append(insight)
+                    yield f"data: {json.dumps({'step': 'generating_insights', 'progress': 90, 'message': 'Fallback insights generated'})}\n\n"
+            else:
+                # Use fallback insights
+                yield f"data: {json.dumps({'step': 'generating_insights', 'progress': 85, 'message': 'Using data-driven insights (LLM not configured)'})}\n\n"
+                for home in care_homes_list:
+                    match_type = home.get('match_type', 'Safe Bet')
+                    insight = {
+                        'home_name': home.get('name', 'Unknown'),
+                        'match_type': match_type,
+                        'why_selected': f"{home.get('name', 'Unknown')} was selected as {match_type} based on quality, location, and pricing analysis.",
+                        'key_strengths': ['Selected based on comprehensive data analysis'],
+                        'considerations': []
+                    }
+                    llm_insights['insights']['home_insights'].append(insight)
+                yield f"data: {json.dumps({'step': 'generating_insights', 'progress': 90, 'message': 'Data-driven insights generated'})}\n\n"
+            
+            # Step 7: Final assembly (95-100%)
+            yield f"data: {json.dumps({'step': 'assembling', 'progress': 95, 'message': 'Assembling final report...'})}\n\n"
+            
+            # Calculate fair cost gap
+            fair_cost_gap_service = get_fair_cost_gap_service()
+            # Get market price
+            market_price = sum(extract_weekly_price(h, care_type) for h in care_homes_list[:3]) / min(3, len(care_homes_list)) if care_homes_list else 1000
+            # Get MSIF lower bound
+            try:
+                import sys
+                from pathlib import Path
+                # Add src directory to path
+                project_root = Path(__file__).parent.parent.parent.parent
+                src_path = project_root / "src"  # Fixed: removed extra "RCH-playground"
+                if str(src_path) not in sys.path:
+                    sys.path.insert(0, str(src_path))
+                from msif_loader import get_fair_cost_lower_bound
+                msif_lower_bound = get_fair_cost_lower_bound(
+                    local_authority or 'Birmingham',
+                    care_type
+                ) or 700  # Fallback to 700 if not found
+            except ImportError as e:
+                # Handle import errors (missing module, wrong path, etc.)
+                logger.warning(f"⚠️ Failed to import msif_loader: {e}. Using fallback MSIF value.")
+                msif_lower_bound = 700  # Default fallback
+            except Exception as e:
+                # Handle other errors (function call failures, etc.)
+                logger.warning(f"⚠️ Failed to get MSIF lower bound: {e}. Using fallback MSIF value.")
+                import traceback
+                logger.debug(traceback.format_exc())
+                msif_lower_bound = 700  # Default fallback
+            # Calculate gap using correct method
+            fair_cost_gap = fair_cost_gap_service.calculate_gap(
+                market_price=market_price,
+                msif_lower_bound=msif_lower_bound,
+                care_type=care_type
+            )
+            
+            # Final response
+            response = {
+                'questionnaire': request.dict(),
+                'care_homes': care_homes_list,
+                'fair_cost_gap': fair_cost_gap,
+                'area_profile': None,
+                'area_map': None,
+                'llm_insights': llm_insights,
+                'generated_at': datetime.now().isoformat(),
+                'report_id': report_id
+            }
+            
+            yield f"data: {json.dumps({'step': 'complete', 'progress': 100, 'message': 'Report generated successfully', 'report': response})}\n\n"
+            
+        except Exception as e:
+            logger.error(f"Error in report generation stream: {e}", exc_info=True)
+            yield f"data: {json.dumps({'step': 'error', 'progress': 0, 'message': f'Error generating report: {str(e)}'})}\n\n"
+    
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
+    )
+
+
 @router.post("/free-report", response_model=FreeReportResponse)
 async def generate_free_report(request: FreeReportRequest):
     """
@@ -57,6 +535,8 @@ async def generate_free_report(request: FreeReportRequest):
     Pydantic automatically validates the request.
     Returns report with 3 matched care homes using 50-point matching algorithm
     """
+    # Use time_module from global scope
+    
     # Initialize generation context
     report_id = str(uuid.uuid4())
     context = GenerationContext(report_id, request.postcode, request.care_type)
@@ -99,72 +579,91 @@ async def generate_free_report(request: FreeReportRequest):
         from services.database_service import DatabaseService
         
         # Resolve postcode to local authority
+        # CRITICAL FIX: Add timeout to prevent hanging on slow API
+        postcode_resolution_start = time_module.time()
         loader = get_async_loader()
         user_lat, user_lon = None, None
         local_authority = None
         
         try:
-            # Try to resolve postcode
-            postcode_info = await loader.resolve_postcode(postcode)
-            if postcode_info:
-                local_authority = postcode_info.get('local_authority') or postcode_info.get('localAuthority')
-                user_lat = postcode_info.get('latitude')
-                user_lon = postcode_info.get('longitude')
-                print(f"✅ Postcode resolved: {postcode} -> LA: {local_authority}, coords: ({user_lat}, {user_lon})")
-            else:
-                print(f"⚠️ Postcode resolution returned no data for: {postcode}")
+            # Try to resolve postcode with timeout (3 seconds max)
+            print(f"📥 Resolving postcode: {postcode}")
+            try:
+                postcode_info = await asyncio.wait_for(
+                    loader.resolve_postcode(postcode),
+                    timeout=3.0  # 3 second timeout to prevent hanging
+                )
+                postcode_resolution_time = time_module.time() - postcode_resolution_start
+                print(f"   ⏱️  Postcode resolution took {postcode_resolution_time:.3f}s")
+                
+                if postcode_info:
+                    local_authority = postcode_info.get('local_authority') or postcode_info.get('localAuthority')
+                    user_lat = postcode_info.get('latitude')
+                    user_lon = postcode_info.get('longitude')
+                    print(f"✅ Postcode resolved: {postcode} -> LA: {local_authority}, coords: ({user_lat}, {user_lon})")
+                else:
+                    print(f"⚠️ Postcode resolution returned no data for: {postcode}")
+            except asyncio.TimeoutError:
+                postcode_resolution_time = time_module.time() - postcode_resolution_start
+                print(f"❌ Postcode resolution TIMEOUT after {postcode_resolution_time:.3f}s for {postcode}")
+                print(f"   ⚠️  Continuing without postcode resolution (will use fallback)")
+                postcode_info = None
         except Exception as e:
-            print(f"⚠️ Postcode resolution failed: {e}")
+            postcode_resolution_time = time_module.time() - postcode_resolution_start
+            print(f"⚠️ Postcode resolution failed after {postcode_resolution_time:.3f}s: {e}")
             # Continue without postcode resolution
+            postcode_info = None
         
-        # Get care homes using hybrid approach (CQC + Staging)
-        # Uses: cqc_carehomes_master_full_data_rows.csv (primary) + carehome_staging_export.csv (auxiliary)
+        # Get care homes from SQLite database (only source of truth)
+        start_time = time_module.time()
         care_homes = []
         try:
-            from services.csv_care_homes_service import get_care_homes as get_csv_care_homes
+            from services.sqlite_care_homes_service import get_care_homes as get_sqlite_care_homes
+            
+            # OPTIMIZATION: SQLite queries are fast (<100ms), use executor with timeout
+            # to avoid blocking event loop and prevent hanging
+            print(f"📥 Loading care homes from SQLite database...")
+            print(f"   Parameters: LA={local_authority}, care_type={care_type}, limit=50")
+            
+            # Use executor with explicit timeout to prevent hanging
             loop = asyncio.get_event_loop()
-            # use_hybrid=True by default - uses CQC + Staging merged data
-            care_homes = await loop.run_in_executor(
-                None,
-                lambda: get_csv_care_homes(
-                    local_authority=local_authority,
-                    care_type=care_type,
-                    max_distance_km=30.0,
-                    user_lat=user_lat,
-                    user_lon=user_lon,
-                    limit=50,
-                    use_hybrid=True  # ✅ Explicitly enable hybrid approach (CQC + Staging)
+            try:
+                care_homes = await asyncio.wait_for(
+                    loop.run_in_executor(
+                        None,  # Use default executor
+                        lambda: get_sqlite_care_homes(
+                            local_authority=local_authority,
+                            care_type=care_type,
+                            max_distance_km=30.0,  # SQLite will filter by distance and calculate it
+                            user_lat=user_lat,
+                            user_lon=user_lon,
+                            limit=50
+                        )
+                    ),
+                    timeout=5.0  # 5 second timeout for SQLite query
                 )
-            )
-            print(f"✅ Loaded {len(care_homes)} care homes from hybrid database (CQC + Staging)")
+            except asyncio.TimeoutError:
+                print(f"❌ SQLite query timed out after 5 seconds!")
+                logger.error("SQLite query timeout - database may be locked or slow")
+                raise HTTPException(
+                    status_code=500,
+                    detail="Database query timeout. The database may be busy. Please try again in a moment."
+                )
+            
+            db_load_time = time_module.time() - start_time
+            print(f"✅ Loaded {len(care_homes)} care homes from SQLite database in {db_load_time:.3f}s")
             print(f"📊 STEP 1 - Initial load: {len(care_homes)} homes")
             # Log sample of homes for debugging
             if care_homes:
                 sample = care_homes[0]
-                print(f"   Sample home: {sample.get('name', 'Unknown')} | Rating: {sample.get('rating') or sample.get('cqc_rating_overall', 'N/A')} | Price: {extract_weekly_price(sample, care_type)}")
+                print(f"   Sample home: {sample.get('name', 'Unknown')} | Rating: {sample.get('rating') or sample.get('cqc_rating_overall', 'N/A')} | Price: {extract_weekly_price(sample, care_type)} | Distance: {sample.get('distance_km', 'N/A')}km")
+        except HTTPException:
+            raise
         except Exception as e:
-            print(f"⚠️ CSV data load failed: {e}")
-            # Fallback to database only (no mock data)
-            try:
-                loop = asyncio.get_event_loop()
-                db_service = DatabaseService()
-                care_homes = await loop.run_in_executor(
-                    None,
-                    lambda: db_service.get_care_homes(
-                        local_authority=local_authority,
-                        care_type=care_type,
-                        max_distance_km=30.0,
-                        user_lat=user_lat,
-                        user_lon=user_lon,
-                        limit=50
-                    )
-                )
-                if care_homes:
-                    print(f"✅ Loaded {len(care_homes)} care homes from database")
-                    print(f"📊 STEP 1 - Initial load (DB fallback): {len(care_homes)} homes")
-            except Exception as db_error:
-                print(f"⚠️ Database query also failed: {db_error}")
-                care_homes = []
+            print(f"⚠️ SQLite data load failed: {e}")
+            import traceback
+            traceback.print_exc()
+            care_homes = []
         
         if not care_homes:
             raise HTTPException(
@@ -228,8 +727,10 @@ async def generate_free_report(request: FreeReportRequest):
         if budget > 0:
             # Budget is already in weekly format for free report
             budget_weekly = budget
-            budget_max = budget_weekly + 200
-            print(f"   Max price: £{budget_max}/week")
+            # FIX #3: Add tolerance parameter (default 30%)
+            tolerance_pct = 30  # Can be configured: 30-50%
+            budget_max = budget_weekly * (1 + tolerance_pct / 100)
+            print(f"   Max price: £{budget_max:.0f}/week (budget + {tolerance_pct}%)")
             
             # Count homes by price before filter
             price_stats = {'with_price': 0, 'no_price': 0, 'within_budget': 0, 'over_budget': 0}
@@ -255,6 +756,8 @@ async def generate_free_report(request: FreeReportRequest):
             print(f"   No budget filter (budget = 0)")
         
         # Filter 3: Location (max_distance_km or default 30km)
+        # OPTIMIZATION: SQLite already calculated distances, so reuse them instead of recalculating
+        location_filter_start = time_module.time()
         print(f"\n📊 STEP 4 - Location Filter (max {max_distance_km or 30.0}km)")
         print(f"   Input: {len(filtered_homes)} homes")
         print(f"   User location: ({user_lat}, {user_lon})")
@@ -265,28 +768,43 @@ async def generate_free_report(request: FreeReportRequest):
             homes_with_coords = 0
             homes_without_coords = 0
             homes_too_far = 0
+            homes_distance_already_calculated = 0
             for h in filtered_homes:
-                h_lat = h.get('latitude')
-                h_lon = h.get('longitude')
-                if h_lat and h_lon:
-                    homes_with_coords += 1
-                    try:
-                        distance = calculate_distance_km(float(user_lat), float(user_lon), float(h_lat), float(h_lon))
-                        if distance <= max_distance:
-                            h['distance_km'] = distance
-                            location_filtered.append(h)
-                        else:
-                            homes_too_far += 1
-                    except (ValueError, TypeError):
-                        # Include homes with invalid coordinates (will be filtered later)
+                # OPTIMIZATION: Use already calculated distance from SQLite if available
+                distance = h.get('distance_km')
+                if distance is not None and isinstance(distance, (int, float)) and distance >= 0:
+                    # Distance already calculated by SQLite - reuse it!
+                    homes_distance_already_calculated += 1
+                    if distance <= max_distance:
                         location_filtered.append(h)
+                    else:
+                        homes_too_far += 1
                 else:
-                    homes_without_coords += 1
-                    # Include homes without coordinates (will be filtered later)
-                    location_filtered.append(h)
+                    # Distance not calculated - need to calculate it
+                    h_lat = h.get('latitude')
+                    h_lon = h.get('longitude')
+                    if h_lat and h_lon:
+                        homes_with_coords += 1
+                        try:
+                            distance = calculate_distance_km(float(user_lat), float(user_lon), float(h_lat), float(h_lon))
+                            h['distance_km'] = distance
+                            if distance <= max_distance:
+                                location_filtered.append(h)
+                            else:
+                                homes_too_far += 1
+                        except (ValueError, TypeError):
+                            # Include homes with invalid coordinates (will be filtered later)
+                            location_filtered.append(h)
+                    else:
+                        homes_without_coords += 1
+                        # Include homes without coordinates (will be filtered later)
+                        location_filtered.append(h)
+            location_filter_time = time_module.time() - location_filter_start
             print(f"   Homes with coordinates: {homes_with_coords}")
             print(f"   Homes without coordinates: {homes_without_coords}")
             print(f"   Homes too far (> {max_distance}km): {homes_too_far}")
+            print(f"   ✅ Reused {homes_distance_already_calculated} pre-calculated distances (saved time)")
+            print(f"   ⏱️  Location filter took {location_filter_time:.3f}s")
             filtered_homes = location_filtered
             print(f"   Output: {len(filtered_homes)} homes")
         else:
@@ -297,7 +815,22 @@ async def generate_free_report(request: FreeReportRequest):
         print(f"   Homes with prices > 0: {sum(1 for h in filtered_homes if extract_weekly_price(h, care_type) > 0)}")
         print(f"{'='*80}\n")
         
+        # OPTIMIZATION: Limit candidates for matching to prevent timeout
+        # If we have too many candidates, take top ones by rating/price/distance
+        MAX_MATCHING_CANDIDATES = 30  # Limit to 30 homes for matching to prevent timeout
+        if len(filtered_homes) > MAX_MATCHING_CANDIDATES:
+            print(f"⚠️  Too many candidates ({len(filtered_homes)}) for matching, limiting to top {MAX_MATCHING_CANDIDATES}")
+            # Sort by: has price > 0, then by rating, then by distance
+            filtered_homes.sort(key=lambda h: (
+                extract_weekly_price(h, care_type) <= 0,  # Homes with price first
+                h.get('cqc_rating_overall') != 'Outstanding',  # Outstanding first
+                h.get('distance_km') or 999999  # Closest first
+            ))
+            filtered_homes = filtered_homes[:MAX_MATCHING_CANDIDATES]
+            print(f"   ✅ Selected top {len(filtered_homes)} candidates for matching")
+        
         # Use improved matching algorithm if available
+        matching_start = time_module.time()
         if MATCHING_SERVICE_AVAILABLE and MatchingService and MatchingInputs:
             try:
                 # Create MatchingInputs
@@ -318,7 +851,10 @@ async def generate_free_report(request: FreeReportRequest):
                 # Use MatchingService with spec_v3 preset
                 matching_service = MatchingService.with_preset('spec_v3')
                 print(f"🔍 Calling select_3_strategic_homes_simple with {len(filtered_homes)} filtered homes")
+                print(f"   ⏱️  Starting matching at {datetime.now().strftime('%H:%M:%S')}")
                 selected_homes_dict = matching_service.select_3_strategic_homes_simple(filtered_homes, matching_inputs)
+                matching_time = time_module.time() - matching_start
+                print(f"   ✅ Matching completed in {matching_time:.2f}s")
                 
                 print(f"🔍 select_3_strategic_homes_simple returned: {list(selected_homes_dict.keys())}")
                 for key, home in selected_homes_dict.items():
@@ -525,47 +1061,54 @@ async def generate_free_report(request: FreeReportRequest):
             # Safe Bet: Good+ rating, reasonable price, close distance
             # MUST have valid price (> 0)
             if cqc_score >= 3 and weekly_price_val > 0:  # Good or Outstanding AND valid price
-                # Balance score: quality + price fit + distance
-                balance_score = cqc_score * 10
+                # FIX #4: Reweight to 40-40-20 (quality-price-distance)
+                balance_score = 0
+                
+                # Quality score (40 points max)
+                quality_score = 40 if cqc_score == 4 else 30 if cqc_score >= 3 else 0
+                balance_score += quality_score
+                
+                # Price score (40 points max)
+                price_score = 0
                 if budget > 0:
                     price_diff = abs(weekly_price_val - budget)
-                    if price_diff < 100:
-                        balance_score += 5
+                    if price_diff < 50:
+                        price_score = 40
+                    elif price_diff < 100:
+                        price_score = 30
                     elif price_diff < 200:
-                        balance_score += 3
-                if distance_val and distance_val < 15:
-                    balance_score += 2
+                        price_score = 20
+                    else:
+                        price_score = 0
+                else:
+                    price_score = 20  # Default if no budget
+                
+                # Distance score (20 points max)
+                distance_score = 0
+                if isinstance(distance_val, (int, float)) and distance_val < 999:
+                    if distance_val < 5:
+                        distance_score = 20
+                    elif distance_val < 10:
+                        distance_score = 15
+                    elif distance_val < 15:
+                        distance_score = 10
+                    else:
+                        distance_score = 0
+                
+                balance_score = quality_score + price_score + distance_score
                 
                 if balance_score > safe_bet_score:
                     safe_bet_score = balance_score
-                    safe_bet = scored
-                    print(f"✅ Found Safe Bet candidate: {home_data.get('name', 'Unknown')} - Score: {balance_score}, Price: £{weekly_price_val}, CQC: {cqc_score}")
-            elif cqc_score >= 3 and weekly_price_val == 0:
-                # Log homes with missing prices
-                home_name = home_data.get('name', 'Unknown')
-                print(f"⚠️ Skipping {home_name} for Safe Bet: price is £0")
-            elif cqc_score < 3:
-                home_name = home_data.get('name', 'Unknown')
-                print(f"⚠️ Skipping {home_name} for Safe Bet: CQC score {cqc_score} < 3 (need Good/Outstanding)")
-        
-        if safe_bet:
-            print(f"✅ Safe Bet selected: {safe_bet.get('home', {}).get('name', 'Unknown')}")
-        else:
-            print(f"⚠️ No Safe Bet found among {len(top_homes)} homes")
+                    safe_bet = home_data
+                    print(f"   ✅ New Safe Bet candidate: {home_data.get('name', 'Unknown')} | Balance: {balance_score} (Q:{quality_score} P:{price_score} D:{distance_score})")
         
         # Find Best Value (best price/quality ratio)
         best_value = None
         best_value_score = -1
-        print(f"🔍 Legacy method: Searching for Best Value among {len(top_homes)} homes (excluding Safe Bet)")
+        print(f"🔍 Legacy method: Searching for Best Value among {len(top_homes)} homes")
         for scored in top_homes:
             home_data = scored['home']
-            if scored == safe_bet:
-                continue  # Skip if already selected as Safe Bet
-            
             weekly_price_val = extract_weekly_price(home_data, care_type)
-            value_score = calculate_value_score(home_data, weekly_price_val)
-            
-            # Best Value: Good quality but lower price
             cqc_score = get_cqc_rating_score(
                 home_data.get('cqc_rating_overall') or 
                 home_data.get('overall_cqc_rating') or 
@@ -573,1183 +1116,486 @@ async def generate_free_report(request: FreeReportRequest):
                 'Unknown'
             )
             
-            if cqc_score >= 2 and weekly_price_val > 0:  # At least Requires Improvement or better
+            # FIX #1: Best Value requires CQC >= 3 (Good or Outstanding)
+            if cqc_score >= 3 and weekly_price_val > 0:  # Good/Outstanding AND valid price
+                # FIX #1: Add bounds check (50-130% of budget)
+                if budget > 0:
+                    if weekly_price_val < (budget * 0.5) or weekly_price_val > (budget * 1.3):
+                        continue  # Skip homes outside reasonable price range
+                
+                value_score = calculate_value_score(home_data, weekly_price_val)
                 if value_score > best_value_score:
                     best_value_score = value_score
-                    best_value = scored
-                    print(f"✅ Found Best Value candidate: {home_data.get('name', 'Unknown')} - Score: {value_score}, Price: £{weekly_price_val}, CQC: {cqc_score}")
-            elif weekly_price_val == 0:
-                print(f"⚠️ Skipping {home_data.get('name', 'Unknown')} for Best Value: price is £0")
-            elif cqc_score < 2:
-                print(f"⚠️ Skipping {home_data.get('name', 'Unknown')} for Best Value: CQC score {cqc_score} < 2 (need Requires Improvement+)")
+                    best_value = home_data
+                    print(f"   ✅ New Best Value candidate: {home_data.get('name', 'Unknown')} | Value: {value_score:.2f} (CQC:{cqc_score} Price:£{weekly_price_val})")
         
-        if best_value:
-            print(f"✅ Best Value selected: {best_value.get('home', {}).get('name', 'Unknown')}")
-        else:
-            print(f"⚠️ No Best Value found among {len(top_homes)} homes (excluding Safe Bet)")
-        
-        # Find Premium (highest quality within reasonable price uplift range)
-        # Premium MUST be more expensive than user's budget in ANY case
-        # Strategy: Try 5-30% range first, if not found, expand distance and try 5-35%
+        # Find Premium (highest quality, max price for same quality)
         premium = None
-        premium_score = -1
-        safe_bet_price = None
-        if safe_bet:
-            safe_bet_home = safe_bet.get('home', {})
-            safe_bet_price = extract_weekly_price(safe_bet_home, care_type)
+        print(f"🔍 Legacy method: Searching for Premium among {len(top_homes)} homes")
+        # FIX #2: Collect candidates first, then select max price
+        outstanding_candidates = []
+        good_candidates = []
         
-        # Premium MUST be >= user's budget (critical requirement)
-        min_premium_price_from_budget = budget if budget > 0 else None
-        
-        # Define reasonable price uplift range for Premium
-        # Start with 5-30% above Safe Bet
-        min_premium_price = None
-        max_premium_price = None
-        premium_uplift_percent = 0.30  # Start with 30%
-        
-        if safe_bet_price and safe_bet_price > 0:
-            # Minimum: 5% above Safe Bet OR user's budget (whichever is higher)
-            min_premium_price = max(safe_bet_price * 1.05, min_premium_price_from_budget or 0)
-            
-            # Maximum: 30% above Safe Bet OR £300/week more, whichever is lower
-            max_premium_percentage = safe_bet_price * (1 + premium_uplift_percent)
-            max_premium_absolute = safe_bet_price + 300
-            max_premium_price = min(max_premium_percentage, max_premium_absolute)
-            
-            print(f"💰 Premium price range (initial): £{min_premium_price or 0:.0f} - £{max_premium_price or 0:.0f} (Safe Bet: £{safe_bet_price or 0:.0f}, Budget: £{budget or 0:.0f})")
-        else:
-            # If no Safe Bet, use budget as reference
-            if budget > 0:
-                min_premium_price = budget * 1.05
-                max_premium_price = min(budget * 1.30, budget + 300)
-                print(f"💰 Premium price range (based on budget): £{min_premium_price or 0:.0f} - £{max_premium_price or 0:.0f} (Budget: £{budget or 0:.0f})")
-        
-        # Helper function to find Premium from a list of homes
-        def find_premium_from_homes(homes_to_search, min_price, max_price, search_context=""):
-            """Find Premium home from given list with price constraints"""
-            nonlocal premium, premium_score
-            candidates_checked = 0
-            candidates_rejected = []
-            
-            for scored in homes_to_search:
-                home_data = scored['home']
-                if scored == safe_bet or scored == best_value:
-                    continue  # Skip if already selected
-                
-                cqc_score = get_cqc_rating_score(
-                    home_data.get('cqc_rating_overall') or 
-                    home_data.get('overall_cqc_rating') or 
-                    home_data.get('rating') or 
-                    'Unknown'
-                )
-                weekly_price_val = extract_weekly_price(home_data, care_type)
-                home_name = home_data.get('name', 'Unknown')
-                
-                # Premium: Outstanding rating preferred, or highest quality available
-                # AND must be within reasonable price uplift range
-                # MUST have valid price (> 0) AND >= user's budget
-                if cqc_score >= 3 and weekly_price_val > 0:  # Good or Outstanding AND valid price
-                    # CRITICAL: Premium MUST be >= user's budget
-                    if min_premium_price_from_budget and weekly_price_val < min_premium_price_from_budget:
-                        continue  # Skip if cheaper than user's budget
-                    
-                    candidates_checked += 1
-                    is_premium_candidate = True
-                    rejection_reason = None
-                    
-                    # Check price range
-                    if min_price and max_price:
-                        if weekly_price_val < min_price:
-                            is_premium_candidate = False
-                            rejection_reason = f"Too cheap: £{weekly_price_val} < £{min_price:.0f} (min)"
-                        elif weekly_price_val > max_price:
-                            is_premium_candidate = False
-                            rejection_reason = f"Too expensive: £{weekly_price_val} > £{max_price:.0f} (max)"
-                    elif safe_bet_price:
-                        # Fallback: at least more expensive than Safe Bet
-                        if weekly_price_val <= safe_bet_price:
-                            is_premium_candidate = False
-                            rejection_reason = f"Not more expensive than Safe Bet: £{weekly_price_val} <= £{safe_bet_price or 0:.0f}"
-                    
-                    if is_premium_candidate:
-                        premium_candidate_score = cqc_score * 10
-                        if cqc_score == 4:  # Outstanding
-                            premium_candidate_score += 10
-                        
-                        # Prefer homes closer to max_premium_price (better value in premium range)
-                        if max_price and weekly_price_val > 0:
-                            # Score based on how close to optimal premium price (80% of max range)
-                            optimal_premium_price = min_price + (max_price - min_price) * 0.8
-                            price_diff = abs(weekly_price_val - optimal_premium_price)
-                            price_score = max(0, 5 - (price_diff / 50))  # Max 5 points for price positioning
-                            premium_candidate_score += price_score
-                        
-                        if premium_candidate_score > premium_score:
-                            premium_score = premium_candidate_score
-                            premium = scored
-                            print(f"✅ Premium candidate {search_context}: {home_name} - £{weekly_price_val}/week (score: {premium_candidate_score or 0:.1f})")
-                    else:
-                        candidates_rejected.append({
-                            'name': home_name,
-                            'price': weekly_price_val,
-                            'reason': rejection_reason
-                        })
-            
-            if candidates_checked > 0 and not premium:
-                print(f"⚠️ Checked {candidates_checked} Premium candidates {search_context}, none selected:")
-                for rejected in candidates_rejected[:5]:  # Show first 5
-                    print(f"   - {rejected['name']}: £{rejected['price']}/week - {rejected['reason']}")
-            
-            return premium is not None
-        
-        # First pass: find Premium within reasonable price range (5-30%)
-        find_premium_from_homes(top_homes, min_premium_price, max_premium_price, "(initial search)")
-        
-        # Second pass: if no Premium found, expand distance and increase price range to 5-35%
-        if not premium:
-            print(f"⚠️ No Premium found in initial range (£{min_premium_price or 'N/A'} - £{max_premium_price or 'N/A'})")
-            print(f"   Expanding search: increasing distance to 50km and price range to 5-35%")
-            
-            # Expand distance and reload homes
-            expanded_max_distance = 100.0  # Increase from 30km to 100km for Premium search
-            expanded_care_homes = []
-            try:
-                from services.csv_care_homes_service import get_care_homes as get_csv_care_homes
-                loop = asyncio.get_event_loop()
-                # Use hybrid approach (CQC + Staging)
-                expanded_care_homes = await loop.run_in_executor(
-                    None,
-                    lambda: get_csv_care_homes(
-                        use_hybrid=True,  # Explicitly enable hybrid approach
-                        local_authority=local_authority,
-                        care_type=care_type,
-                        max_distance_km=expanded_max_distance,
-                        user_lat=user_lat,
-                        user_lon=user_lon,
-                        limit=200  # Increase limit to get more homes
-                    )
-                )
-                print(f"✅ Loaded {len(expanded_care_homes)} care homes with expanded distance ({expanded_max_distance}km)")
-            except Exception as e:
-                print(f"⚠️ Failed to load expanded care homes: {e}")
-                expanded_care_homes = []
-            
-            # Score expanded homes
-            expanded_scored_homes = []
-            for home in expanded_care_homes:
-                # Skip homes with zero or missing price
-                weekly_price = extract_weekly_price(home, care_type)
-                if weekly_price <= 0:
-                    continue
-                
-                score = 50.0  # Base score
-                
-                # Add points for CQC rating
-                cqc_rating = (
-                    home.get('cqc_rating_overall') or 
-                    home.get('overall_cqc_rating') or 
-                    home.get('rating') or
-                    (home.get('cqc_ratings', {}) or {}).get('overall') or 
-                    'Unknown'
-                )
-                if isinstance(cqc_rating, str):
-                    if 'outstanding' in cqc_rating.lower():
-                        score += 25
-                    elif 'good' in cqc_rating.lower():
-                        score += 20
-                    elif 'requires improvement' in cqc_rating.lower():
-                        score += 10
-                
-                # Add points for budget match
-                if budget > 0:
-                    price_diff = abs(weekly_price - budget)
-                    if price_diff < 50:
-                        score += 20
-                    elif price_diff < 100:
-                        score += 15
-                    elif price_diff < 200:
-                        score += 10
-                
-                # Calculate distance if needed
-                distance_km = calculate_distance_if_needed(home, user_lat, user_lon)
-                if distance_km is not None:
-                    home['distance_km'] = distance_km
-                
-                expanded_scored_homes.append({
-                    'home': home,
-                    'score': score
-                })
-            
-            # Sort and take top homes
-            expanded_scored_homes.sort(key=lambda x: x['score'], reverse=True)
-            expanded_top_homes = expanded_scored_homes[:20]  # Take more homes for expanded search
-            
-            # Update price range to 5-35%
-            if safe_bet_price and safe_bet_price > 0:
-                premium_uplift_percent = 0.35  # Increase to 35%
-                min_premium_price_expanded = max(safe_bet_price * 1.05, min_premium_price_from_budget or 0)
-                max_premium_percentage_expanded = safe_bet_price * (1 + premium_uplift_percent)
-                max_premium_absolute_expanded = safe_bet_price + 300
-                max_premium_price_expanded = min(max_premium_percentage_expanded, max_premium_absolute_expanded)
-                
-                print(f"💰 Premium price range (expanded): £{min_premium_price_expanded or 0:.0f} - £{max_premium_price_expanded or 0:.0f} (Safe Bet: £{safe_bet_price or 0:.0f}, Budget: £{budget or 0:.0f})")
-                
-                # Search in expanded homes
-                find_premium_from_homes(expanded_top_homes, min_premium_price_expanded, max_premium_price_expanded, "(expanded search)")
-            
-            # If still not found, try fallback: highest quality among homes >= budget
-            if not premium:
-                print(f"⚠️ No Premium found in expanded range, selecting highest quality among homes >= budget (£{budget:.0f})")
-                
-                fallback_candidates_checked = 0
-                fallback_candidates_rejected = []
-                
-                # Search in expanded homes
-                # Track already selected home names to avoid duplicates
-                selected_home_names_for_fallback = set()
-                if safe_bet:
-                    safe_bet_home = safe_bet.get('home', {})
-                    selected_home_names_for_fallback.add(safe_bet_home.get('name'))
-                if best_value:
-                    best_value_home = best_value.get('home', {})
-                    selected_home_names_for_fallback.add(best_value_home.get('name'))
-                
-                for scored in expanded_top_homes:
-                    home_data = scored['home']
-                    home_name = home_data.get('name', 'Unknown')
-                    
-                    # Skip if already selected (check by object reference and name)
-                    if scored == safe_bet or scored == best_value:
-                        continue
-                    if home_name in selected_home_names_for_fallback:
-                        continue
-                    
-                    cqc_score = get_cqc_rating_score(
-                        home_data.get('cqc_rating_overall') or 
-                        home_data.get('overall_cqc_rating') or 
-                        home_data.get('rating') or 
-                        'Unknown'
-                    )
-                    weekly_price_val = extract_weekly_price(home_data, care_type)
-                    home_name = home_data.get('name', 'Unknown')
-                    
-                    # Must be Good/Outstanding
-                    if cqc_score >= 3 and weekly_price_val > 0:
-                        fallback_candidates_checked += 1
-                        
-                        # Check price requirements (same as final fallback)
-                        meets_budget = budget > 0 and weekly_price_val >= budget
-                        exceeds_safe_bet = safe_bet_price and weekly_price_val > safe_bet_price
-                        at_least_safe_bet = safe_bet_price and weekly_price_val >= safe_bet_price
-                        
-                        # Accept if meets any price requirement
-                        if not (meets_budget or exceeds_safe_bet or at_least_safe_bet):
-                            fallback_candidates_rejected.append({
-                                'name': home_name,
-                                'price': weekly_price_val,
-                                'reason': f"Price £{weekly_price_val} < Safe Bet £{safe_bet_price or 0:.0f} and < Budget £{budget or 0:.0f}"
-                            })
-                            continue
-                        
-                        premium_candidate_score = cqc_score * 10
-                        if cqc_score == 4:  # Outstanding
-                            premium_candidate_score += 10
-                        
-                        # Prefer higher price in fallback
-                        if weekly_price_val > 0 and safe_bet_price:
-                            price_bonus = min((weekly_price_val - safe_bet_price) / 10, 5)
-                            premium_candidate_score += price_bonus
-                        
-                        if premium_candidate_score > premium_score:
-                            premium_score = premium_candidate_score
-                            premium = scored
-                            print(f"✅ Premium (final fallback): {home_name} - £{weekly_price_val}/week, CQC score: {cqc_score} (total score: {premium_candidate_score or 0:.1f})")
-                
-                if fallback_candidates_checked > 0 and not premium:
-                    print(f"⚠️ Checked {fallback_candidates_checked} final fallback Premium candidates, none selected:")
-                    for rejected in fallback_candidates_rejected[:5]:
-                        print(f"   - {rejected['name']}: £{rejected['price']}/week - {rejected['reason']}")
-                    
-                    # Last resort: search in ALL expanded_care_homes (not just top 20)
-                    if expanded_care_homes:
-                        print(f"🔍 Last resort: searching in ALL {len(expanded_care_homes)} expanded homes for Premium...")
-                        last_resort_candidates = []
-                        for home in expanded_care_homes:
-                            # Skip homes with zero price
-                            weekly_price = extract_weekly_price(home, care_type)
-                            if weekly_price <= 0:
-                                continue
-                            
-                            home_name = home.get('name', 'Unknown')
-                            if home_name in selected_home_names_for_fallback:
-                                continue
-                            
-                            cqc_score = get_cqc_rating_score(
-                                home.get('cqc_rating_overall') or 
-                                home.get('overall_cqc_rating') or 
-                                home.get('rating') or 
-                                'Unknown'
-                            )
-                            
-                            if cqc_score >= 3:  # Good/Outstanding
-                                # Check price requirements
-                                meets_budget = budget > 0 and weekly_price >= budget
-                                exceeds_safe_bet = safe_bet_price and weekly_price > safe_bet_price
-                                at_least_safe_bet = safe_bet_price and weekly_price >= safe_bet_price
-                                
-                                if meets_budget or exceeds_safe_bet or at_least_safe_bet:
-                                    # Create scored entry for this home
-                                    premium_candidate_score = cqc_score * 10
-                                    if cqc_score == 4:  # Outstanding
-                                        premium_candidate_score += 10
-                                    if weekly_price > 0 and safe_bet_price:
-                                        price_bonus = min((weekly_price - safe_bet_price) / 10, 5)
-                                        premium_candidate_score += price_bonus
-                                    
-                                    last_resort_candidates.append({
-                                        'home': home,
-                                        'score': premium_candidate_score,
-                                        'price': weekly_price,
-                                        'name': home_name
-                                    })
-                        
-                        # Select best candidate (highest score, or highest price if scores equal)
-                        if last_resort_candidates:
-                            last_resort_candidates.sort(key=lambda x: (x['score'], x['price']), reverse=True)
-                            best_candidate = last_resort_candidates[0]
-                            premium = {
-                                'home': best_candidate['home'],
-                                'score': best_candidate['score'],
-                                'match_type': 'Premium'
-                            }
-                            print(f"✅ Premium (last resort from all expanded homes): {best_candidate['name']} - £{best_candidate['price']}/week (score: {best_candidate['score']:.1f})")
-                        else:
-                            print(f"⚠️ No Premium candidates found in {len(expanded_care_homes)} expanded homes")
-        
-        # Fallback: if we don't have 3 different homes, use top scored ones
-        # BUT ensure price ordering is maintained
-        selected_homes = []
-        if safe_bet:
-            safe_bet['match_type'] = 'Safe Bet'
-            selected_homes.append(safe_bet)
-            print(f"✅ Legacy: Safe Bet selected: {safe_bet.get('home', {}).get('name', 'Unknown')}")
-        if best_value:
-            best_value['match_type'] = 'Best Value'
-            selected_homes.append(best_value)
-            print(f"✅ Legacy: Best Value selected: {best_value.get('home', {}).get('name', 'Unknown')}")
-        if premium:
-            premium['match_type'] = 'Premium'
-            selected_homes.append(premium)
-            print(f"✅ Legacy: Premium selected: {premium.get('home', {}).get('name', 'Unknown')}")
-        
-        print(f"🔍 Legacy method: Found {len(selected_homes)} homes before fallback")
-        
-        # If we have less than 3, fill with top scored homes
-        # IMPORTANT: Maintain price ordering - Premium must be >= Safe Bet
-        remaining_slots = 3 - len(selected_homes)
-        if remaining_slots > 0:
-            # Get Safe Bet price for comparison
-            safe_bet_price_for_fallback = None
-            if safe_bet:
-                safe_bet_home = safe_bet.get('home', {})
-                safe_bet_price_for_fallback = extract_weekly_price(safe_bet_home, care_type)
-            
-            # Use expanded_top_homes if available (from expanded search), otherwise use top_homes
-            homes_to_search = expanded_top_homes if 'expanded_top_homes' in locals() and expanded_top_homes else top_homes
-            print(f"🔍 Fallback: searching in {len(homes_to_search)} homes for remaining {remaining_slots} slots")
-            
-            # Track already selected home names to avoid duplicates
-            selected_home_names = {scored.get('home', {}).get('name') for scored in selected_homes if scored.get('home', {}).get('name')}
-            
-            for scored in homes_to_search:
-                # Skip if already selected (check by object reference and name)
-                if scored in selected_homes:
-                    continue
-                
-                home_data = scored.get('home', {})
-                home_name = home_data.get('name')
-                if home_name in selected_home_names:
-                    continue
-                
-                weekly_price_val = extract_weekly_price(home_data, care_type)
-                
-                # Skip homes with zero price
-                if weekly_price_val <= 0:
-                    continue
-                
-                if not scored.get('match_type'):
-                    # Get CQC score for quality check
-                    cqc_score = get_cqc_rating_score(
-                        home_data.get('cqc_rating_overall') or 
-                        home_data.get('overall_cqc_rating') or 
-                        home_data.get('rating') or 
-                        'Unknown'
-                    )
-                    
-                    # Assign based on position AND price/quality constraints
-                    if len(selected_homes) == 0:
-                        # Safe Bet: Good+ rating required
-                        if cqc_score >= 3:
-                            scored['match_type'] = 'Safe Bet'
-                        else:
-                            continue  # Skip if quality insufficient
-                    elif len(selected_homes) == 1:
-                        # Best Value should be <= Safe Bet (if Safe Bet exists) AND at least Requires Improvement
-                        if safe_bet_price_for_fallback and weekly_price_val > safe_bet_price_for_fallback:
-                            # Too expensive for Best Value, skip this one
-                            continue
-                        if cqc_score >= 2:  # At least Requires Improvement
-                            scored['match_type'] = 'Best Value'
-                        else:
-                            continue  # Skip if quality insufficient
-                    else:
-                        # Premium: Good/Outstanding rating required
-                        # Price requirements (in order of preference):
-                        # 1. >= budget AND > Safe Bet (ideal)
-                        # 2. >= budget (acceptable)
-                        # 3. > Safe Bet (acceptable if no budget match)
-                        # 4. >= Safe Bet (last resort - better than no Premium)
-                        
-                        if cqc_score < 3:  # Must be Good or Outstanding
-                            print(f"⚠️ Skipping {home_data.get('name', 'Unknown')} for Premium fallback: CQC score {cqc_score} < 3 (need Good/Outstanding)")
-                            continue
-                        
-                        # Check price requirements
-                        meets_budget = budget > 0 and weekly_price_val >= budget
-                        exceeds_safe_bet = safe_bet_price_for_fallback and weekly_price_val > safe_bet_price_for_fallback
-                        at_least_safe_bet = safe_bet_price_for_fallback and weekly_price_val >= safe_bet_price_for_fallback
-                        
-                        # Accept if meets any price requirement
-                        if meets_budget or exceeds_safe_bet or at_least_safe_bet:
-                            if not meets_budget and not exceeds_safe_bet:
-                                # Only warn if it's the last resort (>= Safe Bet but < budget)
-                                print(f"⚠️ Accepting {home_data.get('name', 'Unknown')} as Premium (price £{weekly_price_val} >= Safe Bet £{safe_bet_price_for_fallback or 0:.0f} but < Budget £{budget or 0:.0f})")
-                            scored['match_type'] = 'Premium'
-                        else:
-                            # Price too low - skip
-                            if safe_bet_price_for_fallback:
-                                print(f"⚠️ Skipping {home_data.get('name', 'Unknown')} for Premium fallback: price £{weekly_price_val} < Safe Bet £{safe_bet_price_for_fallback or 0:.0f}")
-                            else:
-                                print(f"⚠️ Skipping {home_data.get('name', 'Unknown')} for Premium fallback: price £{weekly_price_val} < Budget £{budget:.0f}")
-                            continue
-                
-                selected_homes.append(scored)
-                remaining_slots -= 1
-                if remaining_slots == 0:
-                    break
-        
-            print(f"   Homes skipped (no price): {homes_skipped_no_price}")
-            print(f"   Homes scored: {len(scored_homes)}")
-            print(f"{'='*80}\n")
-        
-        # Ensure we have exactly 3 homes
-        top_3_homes = selected_homes[:3]
-        
-        # Log selected homes with prices for verification
-        print("\n" + "="*80)
-        print("📊 STEP 6 - Selected Homes Summary (Legacy Method)")
-        print("="*80)
-        print(f"   Total selected: {len(selected_homes)}")
-        print(f"   Top 3 homes: {len(top_3_homes)}")
-        for idx, scored in enumerate(top_3_homes, 1):
-            home = scored.get('home', {})
-            match_type = scored.get('match_type', 'Unknown')
-            name = home.get('name', 'Unknown')
-            weekly_price = extract_weekly_price(home, care_type)
-            cqc_rating = (
-                home.get('cqc_rating_overall') or 
-                home.get('overall_cqc_rating') or 
-                home.get('rating') or 
+        for scored in top_homes:
+            home_data = scored['home']
+            weekly_price_val = extract_weekly_price(home_data, care_type)
+            cqc_score = get_cqc_rating_score(
+                home_data.get('cqc_rating_overall') or 
+                home_data.get('overall_cqc_rating') or 
+                home_data.get('rating') or 
                 'Unknown'
             )
-            print(f"{idx}. {match_type}: {name}")
-            print(f"   Price: £{weekly_price}/week | CQC: {cqc_rating}")
-        print("="*80 + "\n")
+            
+            if weekly_price_val > 0:  # Must have valid price
+                if cqc_score == 4:  # Outstanding
+                    outstanding_candidates.append((home_data, weekly_price_val))
+                elif cqc_score == 3:  # Good
+                    good_candidates.append((home_data, weekly_price_val))
         
-        # Verify price ordering: Premium should be >= Safe Bet, Safe Bet should be >= Best Value
-        if len(top_3_homes) >= 2:
-            safe_bet_home = None
-            premium_home = None
-            best_value_home = None
-            
-            for scored in top_3_homes:
-                match_type = scored.get('match_type', '')
-                if match_type == 'Safe Bet':
-                    safe_bet_home = scored.get('home', {})
-                elif match_type == 'Premium':
-                    premium_home = scored.get('home', {})
-                elif match_type == 'Best Value':
-                    best_value_home = scored.get('home', {})
-            
-            if safe_bet_home and premium_home:
-                safe_bet_price = extract_weekly_price(safe_bet_home, care_type)
-                premium_price = extract_weekly_price(premium_home, care_type)
-                if premium_price < safe_bet_price:
-                    print(f"⚠️ WARNING: Premium price (£{premium_price}) < Safe Bet price (£{safe_bet_price})")
-                else:
-                    print(f"✅ Price ordering correct: Premium (£{premium_price}) >= Safe Bet (£{safe_bet_price})")
-                
-                # CRITICAL: Premium MUST be >= user's budget
-                if budget > 0:
-                    if premium_price < budget:
-                        print(f"❌ CRITICAL ERROR: Premium price (£{premium_price}) < User budget (£{budget})")
-                    else:
-                        print(f"✅ Premium price (£{premium_price}) >= User budget (£{budget})")
-            
-            if safe_bet_home and best_value_home:
-                safe_bet_price = extract_weekly_price(safe_bet_home, care_type)
-                best_value_price = extract_weekly_price(best_value_home, care_type)
-                if best_value_price > safe_bet_price:
-                    print(f"⚠️ WARNING: Best Value price (£{best_value_price}) > Safe Bet price (£{safe_bet_price})")
-                else:
-                    print(f"✅ Price ordering correct: Safe Bet (£{safe_bet_price}) >= Best Value (£{best_value_price})")
+        # FIX #2: Select max price from candidates
+        if outstanding_candidates:
+            premium = max(outstanding_candidates, key=lambda x: x[1])[0]  # Max price
+            print(f"   ✅ Premium selected (Outstanding): {premium.get('name', 'Unknown')} | Price: £{extract_weekly_price(premium, care_type)}")
+        elif good_candidates:
+            premium = max(good_candidates, key=lambda x: x[1])[0]  # Max price
+            print(f"   ✅ Premium selected (Good): {premium.get('name', 'Unknown')} | Price: £{extract_weekly_price(premium, care_type)}")
         
-        # Format homes for response
-        print(f"\n{'='*80}")
-        print(f"📊 STEP 7 - Formatting Homes for Response")
-        print(f"{'='*80}")
-        print(f"   Input: {len(top_3_homes)} selected homes")
-        print(f"   Match types: {[h.get('match_type', 'Unknown') for h in top_3_homes]}")
-        
-        care_homes_list = []
-        homes_skipped_price = 0
-        for scored in top_3_homes:
-            home = scored['home']
-            print(f"🔍 Processing home: {home.get('name', 'Unknown')}, lat={home.get('latitude')}, lon={home.get('longitude')}")
-            
-            # Extract weekly price
-            weekly_price = extract_weekly_price(home, care_type)
-            
-            # Final validation: skip homes with zero or missing price
-            if weekly_price <= 0:
-                home_name = home.get('name', 'Unknown')
-                match_type = scored.get('match_type', 'Unknown')
-                print(f"   ⚠️ Skipping {home_name} ({match_type}): price is £{weekly_price}")
-                homes_skipped_price += 1
-                continue
-            
-            print(f"   ✅ Processing {home.get('name', 'Unknown')} ({scored.get('match_type', 'Unknown')}) - Price: £{weekly_price}")
-            
-            # Calculate distance using reusable method
-            distance_km = await calculate_home_distance(
-                home=home,
-                user_lat=user_lat,
-                user_lon=user_lon,
-                postcode_loader=loader
-            )
-            
-            if distance_km is not None:
-                print(f"✅ Calculated distance for {home.get('name', 'Unknown')}: {distance_km} km")
-            else:
-                print(f"⚠️ WARNING: Could not calculate distance for {home.get('name', 'Unknown')} - coordinates may be missing")
-            
-            # Format address
-            address = home.get('address', '')
-            if not address:
-                parts = [home.get('name', ''), home.get('postcode', '')]
-                address = ', '.join([p for p in parts if p])
-            
-            # Extract FSA rating data from database first
-            fsa_rating = home.get('fsa_rating') or home.get('food_hygiene_rating')
-            fsa_color = home.get('fsa_color')
-            fsa_rating_date = home.get('fsa_rating_date') or home.get('food_hygiene_rating_date')
-            
-            # If no FSA data in DB, try to get from facilities
-            if not fsa_rating:
-                facilities = home.get('facilities', {})
-                if isinstance(facilities, dict):
-                    fsa_rating = facilities.get('fsa_rating') or facilities.get('food_hygiene_rating')
-            
-            # If still no FSA rating, try FSA API (improved lookup with multiple strategies)
-            if not fsa_rating:
-                home_name = home.get('name', '')
-                home_postcode = home.get('postcode', '')
-                home_lat = home.get('latitude')
-                home_lon = home.get('longitude')
-                
-                if home_name:
-                    try:
-                        from api_clients.fsa_client import FSAAPIClient
-                        fsa_client = FSAAPIClient()
-                        
-                        # Strategy 1: Search by business type + name (more accurate for care homes)
-                        # Business type 7835 = "Hospitals/Childcare/Caring Premises"
-                        establishments = []
-                        try:
-                            establishments = await fsa_client.search_by_business_type(
-                                business_type_id=7835,
-                                name=home_name,
-                                page_size=10
-                            )
-                        except Exception as e:
-                            print(f"⚠️ FSA business type search failed: {e}")
-                        
-                        # Strategy 2: If no results, try search by name only
-                        if not establishments:
-                            try:
-                                establishments = await fsa_client.search_by_business_name(home_name)
-                            except Exception as e:
-                                print(f"⚠️ FSA name search failed: {e}")
-                        
-                        # Strategy 3: If we have coordinates, try location-based search
-                        if not establishments and home_lat and home_lon:
-                            try:
-                                establishments = await fsa_client.search_by_location(
-                                    latitude=float(home_lat),
-                                    longitude=float(home_lon),
-                                    max_distance=0.5  # 500m radius
-                                )
-                                # Filter by name similarity
-                                if establishments:
-                                    name_words = set(home_name.lower().split())
-                                    best_match = None
-                                    best_score = 0
-                                    for est in establishments:
-                                        est_name = est.get('BusinessName', '').lower()
-                                        est_words = set(est_name.split())
-                                        # Calculate word overlap
-                                        overlap = len(name_words & est_words)
-                                        if overlap > best_score:
-                                            best_score = overlap
-                                            best_match = est
-                                    if best_match and best_score >= 2:  # At least 2 words match
-                                        establishments = [best_match]
-                                    else:
-                                        establishments = []
-                            except Exception as e:
-                                print(f"⚠️ FSA location search failed: {e}")
-                        
-                        # Process results
-                        if establishments and len(establishments) > 0:
-                            # Try to find best match by name similarity and postcode
-                            best_match = None
-                            best_score = 0
-                            
-                            for est in establishments:
-                                est_name = est.get('BusinessName', '').lower()
-                                est_postcode = est.get('PostCode', '').upper().replace(' ', '')
-                                home_name_lower = home_name.lower()
-                                home_postcode_clean = home_postcode.upper().replace(' ', '') if home_postcode else ''
-                                
-                                score = 0
-                                # Name similarity
-                                if home_name_lower in est_name or est_name in home_name_lower:
-                                    score += 10
-                                # Check for common words
-                                home_words = set(home_name_lower.split())
-                                est_words = set(est_name.split())
-                                common_words = home_words & est_words
-                                score += len(common_words) * 2
-                                
-                                # Postcode match (bonus)
-                                if home_postcode_clean and est_postcode:
-                                    if home_postcode_clean == est_postcode:
-                                        score += 20
-                                    elif home_postcode_clean[:4] == est_postcode[:4]:  # First 4 chars match
-                                        score += 10
-                                
-                                if score > best_score:
-                                    best_score = score
-                                    best_match = est
-                            
-                            # Use best match or first result if no clear best match
-                            fsa_establishment = best_match if best_match and best_score >= 5 else establishments[0]
-                            rating_value = fsa_establishment.get('RatingValue')
-                            
-                            if rating_value is not None:
-                                # Convert string rating to int (handle "5", "4", etc.)
-                                try:
-                                    if isinstance(rating_value, str):
-                                        if rating_value.isdigit():
-                                            fsa_rating = int(rating_value)
-                                        elif rating_value.lower() == 'pass':
-                                            fsa_rating = 5  # Scotland uses Pass/Fail
-                                        elif rating_value.lower() == 'awaiting inspection':
-                                            fsa_rating = None
-                                    else:
-                                        fsa_rating = int(rating_value)
-                                    
-                                    if fsa_rating:
-                                        fsa_rating_date = fsa_establishment.get('RatingDate')
-                                        fsa_rating_key = fsa_establishment.get('RatingKey')
-                                        print(f"✅ FSA API: {home_name} -> Rating {fsa_rating} (match score: {best_score})")
-                                except (ValueError, TypeError):
-                                    pass
-                        
-                        await fsa_client.close()
-                    except Exception as fsa_error:
-                        print(f"⚠️ FSA API lookup failed for {home_name}: {fsa_error}")
-                        import traceback
-                        traceback.print_exc()
-            
-            # Final fallback: if still no FSA rating, use None (don't derive from CQC)
-            # This is more honest than deriving a fake rating
-            if fsa_rating is None:
-                fsa_rating = None
-                fsa_color = None
-            else:
-                # Determine color from rating
-                try:
-                    rating_num = float(fsa_rating) if isinstance(fsa_rating, (int, float)) else None
-                    if rating_num is not None:
-                        if rating_num >= 5:
-                            fsa_color = 'green'
-                        elif rating_num >= 4:
-                            fsa_color = 'green'
-                        elif rating_num >= 3:
-                            fsa_color = 'yellow'
-                        else:
-                            fsa_color = 'red'
-                except (ValueError, TypeError):
-                    fsa_color = None
-            
-            # Get match_type from scored data
-            match_type = scored.get('match_type', 'Safe Bet')
-            
-            care_homes_list.append({
-                'id': home.get('cqc_location_id') or home.get('location_id') or home.get('id') or str(uuid.uuid4()),
-                'name': home.get('name', 'Unknown'),
-                'address': address,
-                'postcode': home.get('postcode', ''),
-                'city': home.get('city', ''),
-                'weekly_cost': round(weekly_price, 2) if weekly_price > 0 else 0.0,
-                'rating': (
-                    home.get('cqc_rating_overall') or 
-                    home.get('overall_cqc_rating') or 
-                    home.get('rating') or
-                    (home.get('cqc_ratings', {}) or {}).get('overall') or 
-                    'Unknown'
-                ),
-                'distance_km': round(distance_km, 2) if distance_km is not None else None,
-                'care_types': home.get('care_types', []),
-                'photo_url': (
-                    home.get('photo') or 
-                    home.get('photo_url') or 
-                    home.get('image_url') or
-                    # Use Unsplash placeholder if no photo available (no photos in CSV database)
-                    f"https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?w=800&h=600&fit=crop&q=80"
-                ),
-                # Contact information from CSV database
-                'contact_phone': (home.get('telephone') or home.get('provider_telephone_number') or '').strip() or None,
-                'email': (home.get('email') or '').strip() or None,
-                'website': (home.get('website') or '').strip() or None,
-                'location_id': home.get('cqc_location_id') or home.get('location_id'),
-                # Match type (strategy)
-                'match_type': match_type,
-                # FSA Rating fields
-                'fsa_rating': float(fsa_rating) if fsa_rating else None,
-                'fsa_color': fsa_color,
-                'fsa_rating_date': fsa_rating_date,
-                'fsa_rating_key': home.get('fsa_rating_key') or (f'fhrs_{int(fsa_rating)}_en-gb' if fsa_rating else None),
-                # Additional fields for LLM insights
-                'beds_available': home.get('beds_available'),
-                'google_rating': home.get('google_rating'),
-                'review_count': home.get('review_count'),
-                # Coordinates for map (extract from home)
-                'latitude': home.get('latitude'),
-                'longitude': home.get('longitude'),
-                '_original_home': home  # Store original for detailed analysis
+        # Build top_3_homes list from selected homes
+        top_3_homes = []
+        if safe_bet:
+            top_3_homes.append({
+                'home': safe_bet,
+                'match_type': 'Safe Bet',
+                'score': safe_bet_score
             })
-            print(f"✅ Added {home.get('name', 'Unknown')} to care_homes_list: lat={home.get('latitude')}, lon={home.get('longitude')}")
+        if best_value:
+            top_3_homes.append({
+                'home': best_value,
+                'match_type': 'Best Value',
+                'score': best_value_score
+            })
+        if premium:
+            top_3_homes.append({
+                'home': premium,
+                'match_type': 'Premium',
+                'score': get_cqc_rating_score(premium.get('rating') or premium.get('cqc_rating_overall') or 'Unknown')
+            })
         
-        if homes_skipped_price > 0:
-            print(f"⚠️ WARNING: {homes_skipped_price} homes were skipped due to zero/missing price")
-            print(f"⚠️ Final care_homes_list count: {len(care_homes_list)} (expected 3)")
-        
-        # CRITICAL: If we have less than 3 homes, try to fill from filtered_homes
-        if len(care_homes_list) < 3:
-            print(f"⚠️ CRITICAL: Only {len(care_homes_list)} homes in final list, trying to fill from filtered_homes")
-            # Get homes that weren't selected yet
-            selected_names = {h.get('name') for h in care_homes_list}
-            # Use filtered_homes if available, otherwise try to get from top_homes
-            homes_to_fill = filtered_homes if 'filtered_homes' in locals() else (top_homes if 'top_homes' in locals() else [])
-            for home in homes_to_fill[:20]:  # Check top 20
-                if len(care_homes_list) >= 3:
-                    break
-                home_name = home.get('name') if isinstance(home, dict) else home.get('home', {}).get('name')
-                if not home_name or home_name in selected_names:
-                    continue
-                # Extract home dict if needed
-                home_dict = home if isinstance(home, dict) else home.get('home', {})
-                weekly_price = extract_weekly_price(home_dict, care_type)
-                if weekly_price > 0:
-                    # Add as additional home (simplified format)
-                    care_homes_list.append({
-                        'id': home_dict.get('cqc_location_id') or home_dict.get('location_id') or home_dict.get('id') or str(uuid.uuid4()),
-                        'name': home_name,
-                        'match_type': 'Additional' if isinstance(home, dict) else home.get('match_type', 'Additional')
+        # Ensure we have exactly 3 homes (fill with top scored if needed)
+        while len(top_3_homes) < 3 and len(scored_homes) > len(top_3_homes):
+            # Find next best home that's not already selected
+            for scored in scored_homes:
+                home_data = scored['home']
+                home_name = home_data.get('name')
+                # Check if this home is already in top_3_homes
+                already_selected = any(
+                    h['home'].get('name') == home_name 
+                    for h in top_3_homes
+                )
+                if not already_selected:
+                    match_type = 'Recommended' if len(top_3_homes) == 0 else ('Alternative' if len(top_3_homes) == 1 else 'Additional')
+                    top_3_homes.append({
+                        'home': home_data,
+                        'match_type': match_type,
+                        'score': scored['score']
                     })
-                    selected_names.add(home_name)
-                    print(f"✅ Added additional home: {home_name} (price: £{weekly_price}/week)")
+                    break
         
-        print(f"   Output: {len(care_homes_list)} homes in final list")
-        print(f"   Homes skipped (no price): {homes_skipped_price}")
+        print(f"\n{'='*80}")
+        print(f"📊 FINAL SELECTION - Top 3 Homes")
+        print(f"{'='*80}")
+        for idx, home_dict in enumerate(top_3_homes, 1):
+            home = home_dict.get('home', {})
+            match_type = home_dict.get('match_type', 'Unknown')
+            name = home.get('name', 'Unknown')
+            price = extract_weekly_price(home, care_type)
+            rating = home.get('rating') or home.get('cqc_rating_overall', 'N/A')
+            distance = home.get('distance_km', 'N/A')
+            print(f"   {idx}. {match_type}: {name} | Price: £{price}/week | Rating: {rating} | Distance: {distance}km")
         print(f"{'='*80}\n")
         
-        # Build area map data (MUST be after care_homes_list is populated)
-        # Separate from area_profile to ensure it's always generated
-        try:
-            # Build area map data
-            # Use the SAME distance_km values from care_homes_list to ensure consistency
-            map_homes = []
-            valid_home_coords = []
-            
-            # Use top_3_homes directly to get coordinates (more reliable than care_homes_list which may have serialization issues)
-            print(f"🔍 Building area_map: processing {len(top_3_homes)} homes from top_3_homes")
-            for idx, scored in enumerate(top_3_homes):
-                home = scored['home']
-                home_name = home.get('name', 'Unknown')
-                # Get coordinates directly from home (from CSV service)
-                home_lat = home.get('latitude')
-                home_lon = home.get('longitude')
-                match_type = scored.get('match_type', 'Safe Bet')
-                
-                # Get distance_km from care_homes_list using index (they should be in the same order)
-                # Fallback to searching by name if index doesn't work
-                distance_km = None
-                if idx < len(care_homes_list):
-                    distance_km = care_homes_list[idx].get('distance_km')
-                if distance_km is None:
-                    # Fallback: search by name
-                    for home_data in care_homes_list:
-                        if home_data.get('name') == home_name:
-                            distance_km = home_data.get('distance_km')
-                            break
-                
-                print(f"🔍 Processing {home_name} for map: lat={home_lat} (type: {type(home_lat)}), lon={home_lon} (type: {type(home_lon)})")
-                
-                # Convert to float if they are strings or other types
-                if home_lat is not None and home_lon is not None:
-                    try:
-                        home_lat_float = float(home_lat)
-                        home_lon_float = float(home_lon)
-                        
-                        # Validate coordinates are reasonable (UK is roughly 49-61°N, 2°W-2°E)
-                        if 49.0 <= home_lat_float <= 61.0 and -10.0 <= home_lon_float <= 5.0:
-                            # Get id from home or care_homes_list
-                            home_id = home.get('cqc_location_id') or home.get('location_id') or home.get('id')
-                            if not home_id:
-                                # Try to get from care_homes_list
-                                for home_data in care_homes_list:
-                                    if home_data.get('name') == home_name:
-                                        home_id = home_data.get('id')
-                                        break
-                            map_homes.append({
-                                'id': home_id or str(uuid.uuid4()),
-                                'name': home_name,
-                                'lat': home_lat_float,
-                                'lng': home_lon_float,
-                                'distance_km': round(distance_km, 2) if distance_km is not None else None,
-                                'match_type': match_type
-                            })
-                            valid_home_coords.append((home_lat_float, home_lon_float))
-                            print(f"✅ Added {home_name} to map: lat={home_lat_float}, lng={home_lon_float}, distance={distance_km}km")
-                        else:
-                            print(f"⚠️ Skipping {home_name}: coordinates out of UK range (lat={home_lat_float}, lon={home_lon_float})")
-                    except (ValueError, TypeError) as coord_error:
-                        print(f"⚠️ Error converting coordinates for {home_name}: {coord_error}")
-                else:
-                    print(f"⚠️ Skipping {home_name} from map: missing coordinates (lat={home_lat}, lon={home_lon})")
-            
-            # Determine user location for map:
-            # 1. Use resolved postcode coordinates if available
-            # 2. Otherwise, calculate center point from homes
-            # 3. Fallback to first home's location
-            if user_lat and user_lon:
-                try:
-                    map_user_lat = float(user_lat)
-                    map_user_lon = float(user_lon)
-                    print(f"✅ Using resolved postcode coordinates: ({map_user_lat}, {map_user_lon})")
-                except (ValueError, TypeError):
-                    # Fallback to center of homes
-                    if valid_home_coords:
-                        avg_lat = sum(coord[0] for coord in valid_home_coords) / len(valid_home_coords)
-                        avg_lon = sum(coord[1] for coord in valid_home_coords) / len(valid_home_coords)
-                        map_user_lat = avg_lat
-                        map_user_lon = avg_lon
-                        print(f"⚠️ Postcode coordinates invalid, using center of homes: ({map_user_lat}, {map_user_lon})")
-                    elif map_homes:
-                        map_user_lat = map_homes[0]['lat']
-                        map_user_lon = map_homes[0]['lng']
-                        print(f"⚠️ Using first home location as user location: ({map_user_lat}, {map_user_lon})")
-                    else:
-                        map_user_lat = 52.4862
-                        map_user_lon = -1.8904
-                        print(f"⚠️ Using default Birmingham coordinates: ({map_user_lat}, {map_user_lon})")
-            elif valid_home_coords:
-                # Calculate center point from all homes
-                avg_lat = sum(coord[0] for coord in valid_home_coords) / len(valid_home_coords)
-                avg_lon = sum(coord[1] for coord in valid_home_coords) / len(valid_home_coords)
-                map_user_lat = avg_lat
-                map_user_lon = avg_lon
-                print(f"⚠️ Postcode resolution failed, using center of homes: ({map_user_lat}, {map_user_lon})")
-            else:
-                # Last resort: use first home or default
-                if map_homes:
-                    map_user_lat = map_homes[0]['lat']
-                    map_user_lon = map_homes[0]['lng']
-                    print(f"⚠️ Using first home location as user location: ({map_user_lat}, {map_user_lon})")
-                else:
-                    # Absolute fallback (shouldn't happen)
-                    map_user_lat = 52.4862
-                    map_user_lon = -1.8904
-                    print(f"⚠️ Using default Birmingham coordinates: ({map_user_lat}, {map_user_lon})")
-            
-            # Calculate optimal zoom level based on distances
-            # If all homes are within 10km, use zoom 12-13
-            # If homes are spread out, use zoom 11-12
-            max_distance = 0
-            if map_homes:
-                distances = [h.get('distance_km') or 0 for h in map_homes if h.get('distance_km') is not None]
-                if distances:
-                    max_distance = max(distances)
-            if max_distance < 5:
-                suggested_zoom = 13
-            elif max_distance < 10:
-                suggested_zoom = 12
-            elif max_distance < 20:
-                suggested_zoom = 11
-            else:
-                suggested_zoom = 10
-            
-            area_map = {
-                'user_location': {
-                    'lat': map_user_lat,
-                    'lng': map_user_lon,
-                    'postcode': postcode
-                },
-                'homes': map_homes,
-                'suggested_zoom': suggested_zoom,  # Add suggested zoom for frontend
-                'amenities': []  # TODO: Add nearby amenities from OpenStreetMap
-            }
-            print(f"✅ Area map generated with {len(map_homes)} homes")
-            print(f"🔍 Final area_map.homes count: {len(area_map.get('homes', []))}")
-        except Exception as map_error:
-            print(f"⚠️ Area map generation failed: {map_error}")
-            import traceback
-            traceback.print_exc()
-            # Create minimal area_map with default values
-            area_map = {
-                'user_location': {
-                    'lat': 52.4862,
-                    'lng': -1.8904,
-                    'postcode': postcode
-                },
-                'homes': [],
-                'suggested_zoom': 12,
-                'amenities': []
-            }
+        context.log_step_complete(GenerationStep.MATCHING)
         
-        # Ensure area_map is initialized
-        if 'area_map' not in locals() or area_map is None:
-            print("⚠️ WARNING: area_map not initialized, creating default")
-            area_map = {
-                'user_location': {
-                    'lat': 52.4862,
-                    'lng': -1.8904,
-                    'postcode': postcode
-                },
-                'homes': [],
-                'suggested_zoom': 12,
-                'amenities': []
-            }
+        # ============================================================================
+        # STEP 6: Enrich selected homes with additional data (CQC, FSA, Google Places)
+        # ============================================================================
+        print(f"\n{'='*80}")
+        print(f"📊 STEP 6 - Data Enrichment")
+        print(f"{'='*80}")
+        print(f"   Enriching {len(top_3_homes)} selected homes with additional data...")
         
-        # Final verification before adding to response
-        print(f"🔍 Final check: area_map.homes count before response: {len(area_map.get('homes', []))}")
+        # Extract homes from top_3_homes for enrichment
+        homes_to_enrich = [home_dict.get('home', {}) for home_dict in top_3_homes if home_dict.get('home')]
         
-        # Calculate area profile statistics
-        try:
-            # Count total homes in area (ALL homes in local_authority, not filtered)
-            # This should represent the total market, not just filtered results
-            total_homes_in_area = len(care_homes)  # Will be updated below with actual count
-            
-            # Get ALL homes in local_authority for accurate area statistics (without filters)
-            # Uses hybrid approach (CQC + Staging)
+        if homes_to_enrich:
             try:
-                from services.csv_care_homes_service import get_care_homes as get_csv_care_homes
-                loop = asyncio.get_event_loop()
-                all_homes_in_area = await loop.run_in_executor(
-                    None,
-                    lambda: get_csv_care_homes(
-                        local_authority=local_authority,
-                        use_hybrid=True,  # Explicitly enable hybrid approach
-                        care_type=None,  # No care_type filter for total count
-                        max_distance_km=None,  # No distance filter for total count
-                        user_lat=None,
-                        user_lon=None,
-                        limit=None  # No limit - get all homes in area
-                    )
+                from services.enrichment_orchestrator import EnrichmentOrchestrator, EnrichmentConfig
+                
+                print(f"   Starting enrichment for {len(homes_to_enrich)} homes...")
+                enrichment_start = time_module.time()
+                
+                # Initialize enrichment orchestrator
+                orchestrator = EnrichmentOrchestrator()
+                
+                # Configure enrichment - enable CQC, FSA, Google Places
+                # Disable Financial and Staff for free report (performance)
+                config = EnrichmentConfig(
+                    enabled_sources=['fsa', 'google'],  # CQC data already in SQLite, so focus on FSA and Google
+                    parallel_limit=3,  # Enrich 3 homes in parallel
+                    timeout_per_source=15,  # 15 seconds per source
+                    cache_results=True  # Use cache for performance
                 )
-                total_homes_in_area = len(all_homes_in_area)
-                print(f"✅ Total homes in {local_authority or 'area'}: {total_homes_in_area} (all types, all distances)")
-            except Exception as count_error:
-                print(f"⚠️ Could not get total homes count: {count_error}")
-                # Fallback: use filtered count but note it's approximate
-                total_homes_in_area = len(care_homes)
-                print(f"⚠️ Using filtered count as approximation: {total_homes_in_area}")
-            
-            # Calculate average weekly cost
-            weekly_costs = [extract_weekly_price(h, care_type) for h in care_homes]
-            valid_costs = [c for c in weekly_costs if c > 0]
-            avg_weekly_cost = sum(valid_costs) / len(valid_costs) if valid_costs else 1200
-            
-            # Calculate CQC distribution
-            cqc_counts = {'outstanding': 0, 'good': 0, 'requires_improvement': 0, 'inadequate': 0}
-            for home in care_homes:
-                rating = (home.get('cqc_rating_overall') or home.get('overall_cqc_rating') or 
-                         home.get('rating') or 'Unknown')
-                if isinstance(rating, str):
-                    rating_lower = rating.lower()
-                    if 'outstanding' in rating_lower:
-                        cqc_counts['outstanding'] += 1
-                    elif 'good' in rating_lower:
-                        cqc_counts['good'] += 1
-                    elif 'requires improvement' in rating_lower:
-                        cqc_counts['requires_improvement'] += 1
-                    elif 'inadequate' in rating_lower:
-                        cqc_counts['inadequate'] += 1
-            
-            # National average comparison (approximate)
-            national_avg = 1100  # Approximate UK national average for care homes
-            cost_vs_national = round(((avg_weekly_cost - national_avg) / national_avg) * 100, 1)
-            
-            # Get area name from postcode_info
-            area_name = local_authority or 'Your Area'
-            
-            # Get ONS data using shared ons_loader (reuses neighbourhood module)
-            wellbeing_index = 72  # Default
-            population_65_plus = 18  # Default
-            average_income = 28000  # Default
-            green_spaces = 'medium'  # Default
-            
-            try:
-                from data_integrations.ons_loader import ONSLoader
-                ons_loader = ONSLoader()
-                ons_profile = await ons_loader.get_full_area_profile(postcode)
                 
-                if not ons_profile.get('error'):
-                    # Extract wellbeing index from ONS data
-                    wellbeing_data = ons_profile.get('wellbeing', {})
-                    if wellbeing_data.get('social_wellbeing_index', {}).get('score'):
-                        wellbeing_index = wellbeing_data['social_wellbeing_index']['score']
-                    
-                    # Extract demographics from ONS data
-                    demographics_data = ons_profile.get('demographics', {})
-                    elderly_context = demographics_data.get('elderly_care_context', {})
-                    if elderly_context.get('over_65_percent'):
-                        population_65_plus = elderly_context['over_65_percent']
-                    
-                    # Extract economic data
-                    economic_data = ons_profile.get('economic', {})
-                    indicators = economic_data.get('indicators', {})
-                    if indicators.get('median_income', {}).get('value'):
-                        average_income = indicators['median_income']['value']
-                    
-                    print(f"✅ ONS data loaded: wellbeing={wellbeing_index}, 65+={population_65_plus}%")
+                # Enrich homes using orchestrator (makes real API calls)
+                enriched_results = await orchestrator.enrich_homes_batch(
+                    homes_to_enrich,
+                    config,
+                    context={'questionnaire': {'postcode': postcode, 'care_type': care_type}},
+                    progress_callback=None
+                )
                 
-                await ons_loader.close()
-            except Exception as ons_error:
-                print(f"⚠️ ONS loader not available, using defaults: {ons_error}")
-            
-            area_profile = {
-                'area_name': area_name,
-                'total_homes': total_homes_in_area,
-                'average_weekly_cost': round(avg_weekly_cost, 0),
-                'cost_vs_national': cost_vs_national,
-                'cqc_distribution': cqc_counts,
-                'wellbeing_index': wellbeing_index,
-                'demographics': {
-                    'population_65_plus': population_65_plus,
-                    'average_income': average_income,
-                    'green_spaces': green_spaces
-                }
-            }
-        except Exception as area_error:
-            print(f"⚠️ Area profile generation failed: {area_error}")
-            import traceback
-            traceback.print_exc()
-            # Continue without area profile
+                enrichment_time = time_module.time() - enrichment_start
+                print(f"   ✅ Enrichment completed in {enrichment_time:.2f}s")
+                
+                # Update homes in top_3_homes with enriched data
+                # enriched_results is a list of dicts with 'home' and 'enrichments' keys
+                enriched_homes_dict = {}
+                for result in enriched_results:
+                    home = result.get('home', {})
+                    home_name = home.get('name')
+                    enrichments = result.get('enrichments', {})
+                    
+                    if home_name:
+                        enriched_homes_dict[home_name] = {
+                            'home': home,
+                            'enrichments': enrichments
+                        }
+                
+                # Merge enriched data into original homes
+                for home_dict in top_3_homes:
+                    home = home_dict.get('home', {})
+                    home_name = home.get('name')
+                    if home_name and home_name in enriched_homes_dict:
+                        enriched_result = enriched_homes_dict[home_name]
+                        enriched_home = enriched_result['home']
+                        enrichments = enriched_result['enrichments']
+                        
+                        # Merge enriched home data
+                        home.update(enriched_home)
+                        
+                        # Add enrichments to enriched_data
+                        # Note: FSA and Google services add data directly to home, but we also create enriched_data structure
+                        if 'enriched_data' not in home:
+                            home['enriched_data'] = {}
+                        
+                        # Add CQC data to enriched_data (CQC data comes from SQLite, extract from home)
+                        cqc_overall = home.get('rating') or home.get('cqc_rating_overall') or home.get('overall_rating')
+                        cqc_safe = home.get('cqc_rating_safe')
+                        cqc_effective = home.get('cqc_rating_effective')
+                        cqc_caring = home.get('cqc_rating_caring')
+                        cqc_responsive = home.get('cqc_rating_responsive')
+                        cqc_well_led = home.get('cqc_rating_well_led')
+                        cqc_trend = home.get('cqc_trend')
+                        safeguarding = home.get('safeguarding_incidents')
+                        
+                        # Add CQC detailed data if we have at least one rating
+                        if cqc_overall or cqc_safe or cqc_effective or cqc_caring or cqc_responsive or cqc_well_led:
+                            home['enriched_data']['cqc_detailed'] = {
+                                'overall_rating': cqc_overall,
+                                'safe_rating': cqc_safe or cqc_overall,
+                                'effective_rating': cqc_effective or cqc_overall,
+                                'caring_rating': cqc_caring or cqc_overall,
+                                'responsive_rating': cqc_responsive or cqc_overall,
+                                'well_led_rating': cqc_well_led or cqc_overall,
+                                'trend': cqc_trend,
+                                'safeguarding_incidents': safeguarding
+                            }
+                            # Also ensure cqc_rating_overall is set for backward compatibility
+                            if not home.get('cqc_rating_overall') and cqc_overall:
+                                home['cqc_rating_overall'] = cqc_overall
+                        
+                        # Add FSA data to enriched_data (FSA service adds it directly to home, so we extract from there)
+                        if home.get('fsa_rating') is not None or home.get('fsa_color'):
+                            home['enriched_data']['fsa_detailed'] = {
+                                'rating': home.get('fsa_rating'),
+                                'rating_key': home.get('fsa_rating_key'),
+                                'rating_date': home.get('fsa_rating_date'),
+                                'color': home.get('fsa_color'),
+                                'health_score': home.get('fsa_health_score'),
+                                'breakdown_scores': home.get('fsa_breakdown'),
+                                'fhrs_id': home.get('fsa_fhrs_id')
+                            }
+                            # Also check if enrichments has FSA data (might be in different format)
+                            if enrichments.get('fsa') and isinstance(enrichments['fsa'], dict) and enrichments['fsa']:
+                                fsa_data = enrichments['fsa']
+                                # Merge enrichments data if available
+                                if fsa_data.get('rating_value'):
+                                    home['enriched_data']['fsa_detailed']['rating'] = fsa_data.get('rating_value')
+                                if fsa_data.get('color'):
+                                    home['enriched_data']['fsa_detailed']['color'] = fsa_data.get('color')
+                        
+                        # Add Google Places data to enriched_data
+                        if home.get('google_rating') is not None or home.get('review_count'):
+                            home['enriched_data']['google_places'] = {
+                                'rating': home.get('google_rating'),
+                                'review_count': home.get('review_count'),
+                                'place_id': home.get('google_place_id'),
+                                'address': home.get('google_formatted_address')
+                            }
+                            # Also check if enrichments has Google data
+                            if enrichments.get('google') and isinstance(enrichments['google'], dict) and enrichments['google']:
+                                google_data = enrichments['google']
+                                if google_data.get('rating'):
+                                    home['enriched_data']['google_places']['rating'] = google_data.get('rating')
+                                if google_data.get('review_count'):
+                                    home['enriched_data']['google_places']['review_count'] = google_data.get('review_count')
+                
+                # Log enrichment results
+                for home_dict in top_3_homes:
+                    home = home_dict.get('home', {})
+                    home_name = home.get('name', 'Unknown')
+                    enriched_data = home.get('enriched_data', {})
+                    sources = list(enriched_data.keys()) if enriched_data else []
+                    fsa_rating = home.get('fsa_rating')
+                    google_rating = home.get('google_rating')
+                    print(f"   {home_name}: enriched with {len(sources)} sources - {sources}")
+                    if fsa_rating:
+                        print(f"      FSA Rating: {fsa_rating}")
+                    if google_rating:
+                        print(f"      Google Rating: {google_rating}")
+                
+            except Exception as e:
+                print(f"⚠️ Enrichment failed: {e}")
+                import traceback
+                traceback.print_exc()
+                # Continue without enrichment - homes will still be returned
+                print(f"   ⚠️ Continuing without enrichment data")
+        else:
+            print(f"   ⚠️ No homes to enrich")
         
-        # Get MSIF fair cost and calculate fair cost gap
+        print(f"{'='*80}\n")
+        
+        # Format matched homes for response
+        care_homes_list = []
+        for home_dict in top_3_homes:
+            home = home_dict.get('home', {})
+            match_type = home_dict.get('match_type', 'Safe Bet')
+            
+            # Calculate distance if not present
+            distance_km = calculate_distance_if_needed(home, user_lat, user_lon)
+            if distance_km is not None:
+                home['distance_km'] = distance_km
+            
+            # Format home data
+            # Extract weekly cost - ensure it's never None (use 0 as fallback)
+            extracted_price = extract_weekly_price(home, care_type)
+            weekly_cost_value = extracted_price if extracted_price and extracted_price > 0 else 0.0
+            
+            # Extract CQC rating (ensure it's set correctly)
+            cqc_overall_rating = (
+                home.get('cqc_rating_overall') or 
+                home.get('rating') or 
+                home.get('overall_rating') or
+                (home.get('enriched_data', {}).get('cqc_detailed', {}).get('overall_rating'))
+            )
+            
+            formatted_home = {
+                'name': home.get('name', 'Unknown'),
+                'address': home.get('address', ''),
+                'postcode': home.get('postcode', ''),
+                'city': home.get('city', ''),
+                'weekly_cost': weekly_cost_value,  # Ensure it's always a number, never None
+                'care_types': home.get('care_types', []),
+                'rating': cqc_overall_rating,  # CQC Overall rating
+                'cqc_rating_overall': cqc_overall_rating,  # Explicitly set for consistency
+                'cqc_rating_safe': home.get('cqc_rating_safe') or (home.get('enriched_data', {}).get('cqc_detailed', {}).get('safe_rating')),
+                'cqc_rating_effective': home.get('cqc_rating_effective') or (home.get('enriched_data', {}).get('cqc_detailed', {}).get('effective_rating')),
+                'cqc_rating_caring': home.get('cqc_rating_caring') or (home.get('enriched_data', {}).get('cqc_detailed', {}).get('caring_rating')),
+                'cqc_rating_responsive': home.get('cqc_rating_responsive') or (home.get('enriched_data', {}).get('cqc_detailed', {}).get('responsive_rating')),
+                'cqc_rating_well_led': home.get('cqc_rating_well_led') or (home.get('enriched_data', {}).get('cqc_detailed', {}).get('well_led_rating')),
+                'distance_km': home.get('distance_km') or distance_km or 0,
+                'features': home.get('features', []),
+                'contact_phone': home.get('contact_phone'),
+                'website': home.get('website'),
+                'band': home_dict.get('band', 1),
+                'photo_url': home.get('photo_url') or home.get('photo'),
+                'fsa_color': home.get('fsa_color'),
+                'fsa_rating': home.get('fsa_rating'),
+                'fsa_rating_key': home.get('fsa_rating_key'),
+                'fsa_rating_date': home.get('fsa_rating_date'),
+                'fsa_health_score': home.get('fsa_health_score'),
+                'google_rating': home.get('google_rating'),
+                'review_count': home.get('review_count'),
+                'match_type': match_type,
+                'enriched_data': home.get('enriched_data', {}),  # Include enriched data in response
+                '_original_home': home  # Store original for LLM insights
+            }
+            
+            # Debug logging if price is 0 but we expected it
+            if weekly_cost_value == 0:
+                print(f"⚠️ Warning: Home '{home.get('name')}' has weekly_cost = 0. Original data keys: {list(home.keys())[:10]}")
+            care_homes_list.append(formatted_home)
+        
+        # Calculate Fair Cost Gap
         context.log_step_start(GenerationStep.GAP_CALCULATION)
         
-        msif_lower_bound = 700.0
+        fair_cost_gap_service = get_fair_cost_gap_service()
         try:
-            from pricing_calculator import PricingService, CareType
-            pricing_service = PricingService()
-            care_type_enum = CareType.RESIDENTIAL
-            if care_type == 'nursing':
-                care_type_enum = CareType.NURSING
-            elif care_type == 'residential_dementia':
-                care_type_enum = CareType.RESIDENTIAL_DEMENTIA
+            # Calculate average market price from selected homes
+            market_price = 0
+            if care_homes_list:
+                prices = [h['weekly_cost'] for h in care_homes_list if h['weekly_cost'] > 0]
+                if prices:
+                    market_price = sum(prices) / len(prices)
+                else:
+                    market_price = budget or 1000  # Fallback
             
-            if local_authority:
-                # Access fair_cost_data directly
-                care_type_key = care_type_enum.value
-                if local_authority in pricing_service.fair_cost_data:
-                    la_data = pricing_service.fair_cost_data[local_authority]
-                    result = la_data.get(care_type_key)
-                    if result:
-                        msif_lower_bound = float(result)
+            # Get MSIF lower bound
+            try:
+                import sys
+                from pathlib import Path
+                # Add src directory to path
+                project_root = Path(__file__).parent.parent.parent.parent
+                src_path = project_root / "src"  # Fixed: removed extra "RCH-playground"
+                if str(src_path) not in sys.path:
+                    sys.path.insert(0, str(src_path))
+                from msif_loader import get_fair_cost_lower_bound
+                msif_lower_bound = get_fair_cost_lower_bound(
+                    local_authority or 'Birmingham',
+                    care_type
+                ) or 700  # Fallback to 700 if not found
+            except ImportError as e:
+                # Handle import errors (missing module, wrong path, etc.)
+                logger.warning(f"⚠️ Failed to import msif_loader: {e}. Using fallback MSIF value.")
+                msif_lower_bound = 700  # Default fallback
+            except Exception as e:
+                # Handle other errors (function call failures, etc.)
+                logger.warning(f"⚠️ Failed to get MSIF lower bound: {e}. Using fallback MSIF value.")
+                import traceback
+                logger.debug(traceback.format_exc())
+                msif_lower_bound = 700  # Default fallback
+            # Calculate gap using correct method
+            fair_cost_gap = fair_cost_gap_service.calculate_gap(
+                market_price=market_price,
+                msif_lower_bound=msif_lower_bound,
+                care_type=care_type
+            )
+            context.log_step_complete(
+                GenerationStep.GAP_CALCULATION,
+                {"gap_week": fair_cost_gap.get("gap_week")}
+            )
         except Exception as e:
-            context.log_warning(GenerationStep.GAP_CALCULATION, f"MSIF lookup failed: {e}")
-            default_msif = {
-                'residential': 700,
-                'nursing': 1048,
-                'residential_dementia': 800,
-                'nursing_dementia': 1048
-            }
-            msif_lower_bound = float(default_msif.get(care_type, 700))
-        
-        # Calculate market price (average from homes or use budget)
-        if budget > 0:
-            market_price = float(budget)
-        elif care_homes_list:
-            # Calculate average from top 3 homes
-            avg_price = sum(h.get('weekly_cost', 0) for h in care_homes_list) / len(care_homes_list)
-            market_price = avg_price if avg_price > 0 else 1200.0
-        else:
-            market_price = 1200.0
-        
-        # Use FairCostGapService to calculate gap
-        gap_service = get_fair_cost_gap_service()
-        fair_cost_gap = gap_service.calculate_gap(
-            market_price=market_price,
-            msif_lower_bound=msif_lower_bound,
-            care_type=care_type
-        )
-        
-        context.log_step_complete(
-            GenerationStep.GAP_CALCULATION,
-            {
-                'gap_week': fair_cost_gap['gap_week'],
-                'gap_percent': fair_cost_gap['gap_percent']
-            }
-        )
-        
-        # Initialize LLM Insights Service
-        try:
-            from services.free_report_llm_insights_service import FreeReportLLMInsightsService
-            from config_manager import get_credentials
-            
-            # Get OpenAI API key from credentials
-            creds = get_credentials()
-            openai_api_key = None
-            if creds and hasattr(creds, 'openai') and creds.openai:
-                openai_api_key = getattr(creds.openai, 'api_key', None)
-            
-            # Initialize LLM Insights Service
-            llm_insights_service = FreeReportLLMInsightsService(openai_api_key=openai_api_key)
-            print(f"✅ LLM Insights Service initialized (OpenAI key: {'present' if openai_api_key else 'not configured'})")
-        except Exception as import_error:
-            print(f"⚠️ Error importing LLM Insights Service: {import_error}")
+            print(f"⚠️ Fair cost gap calculation failed: {e}")
             import traceback
             traceback.print_exc()
-            # Create a dummy service that will use fallback
-            class DummyLLMService:
-                async def generate_home_insight(self, *args, **kwargs):
-                    return {'home_name': 'Unknown', 'match_type': 'Unknown', 'why_selected': '', 'key_strengths': [], 'considerations': []}
-            llm_insights_service = DummyLLMService()
+            # Fallback fair cost gap
+            fair_cost_gap = {
+                'gap_week': 0,
+                'gap_year': 0,
+                'gap_5year': 0,
+                'market_price': market_price if 'market_price' in locals() else (budget or 1000),
+                'msif_lower_bound': 700,
+                'local_authority': local_authority or 'Birmingham',
+                'care_type': care_type,
+                'explanation': 'Fair cost gap calculation unavailable',
+                'gap_text': 'Unable to calculate',
+                'recommendations': [],
+                'gap_percent': 0
+            }
+        
+        # Generate Area Profile (optional)
+        area_profile = None
+        try:
+            # Calculate basic area profile from loaded homes
+            if care_homes:
+                total_homes = len(care_homes)
+                prices_with_data = [extract_weekly_price(h, care_type) for h in care_homes if extract_weekly_price(h, care_type) > 0]
+                avg_weekly_cost = sum(prices_with_data) / len(prices_with_data) if prices_with_data else 0
+                
+                # Count CQC ratings
+                cqc_distribution = {
+                    'outstanding': sum(1 for h in care_homes if (h.get('rating') or h.get('cqc_rating_overall') or '').lower() == 'outstanding'),
+                    'good': sum(1 for h in care_homes if (h.get('rating') or h.get('cqc_rating_overall') or '').lower() == 'good'),
+                    'requires_improvement': sum(1 for h in care_homes if (h.get('rating') or h.get('cqc_rating_overall') or '').lower() == 'requires improvement'),
+                    'inadequate': sum(1 for h in care_homes if (h.get('rating') or h.get('cqc_rating_overall') or '').lower() == 'inadequate')
+                }
+                
+                area_profile = {
+                    'area_name': local_authority or postcode,
+                    'total_homes': total_homes,
+                    'average_weekly_cost': avg_weekly_cost,
+                    'cost_vs_national': 0,  # Would need national average data
+                    'cqc_distribution': cqc_distribution,
+                    'wellbeing_index': None,
+                    'demographics': None
+                }
+        except Exception as e:
+            print(f"⚠️ Area profile generation failed: {e}")
+            area_profile = None
+        
+        # Generate Area Map (optional)
+        area_map = None
+        try:
+            if user_lat and user_lon:
+                area_map = {
+                    'user_location': {
+                        'lat': float(user_lat),
+                        'lng': float(user_lon),
+                        'postcode': postcode
+                    },
+                    'homes': [
+                        {
+                            'id': str(i),
+                            'name': h.get('name', 'Unknown'),
+                            'lat': float(h.get('latitude', 0)),
+                            'lng': float(h.get('longitude', 0)),
+                            'distance_km': h.get('distance_km', 0),
+                            'match_type': h.get('match_type', 'Recommended')
+                        }
+                        for i, h in enumerate(care_homes_list)
+                        if h.get('latitude') and h.get('longitude')
+                    ],
+                    'amenities': []
+                }
+        except Exception as e:
+            print(f"⚠️ Area map generation failed: {e}")
+            area_map = None
+        
+        # ============================================================================
+        # Data Enrichment (LLM Insights) - ENABLED
+        # ============================================================================
+        # LLM Insights generation for selected homes
+        # Note: This can take 30-35 seconds, but provides valuable insights
+        ENABLE_DATA_ENRICHMENT = True  # LLM Insights enabled
+        
+        if ENABLE_DATA_ENRICHMENT:
+            # Initialize LLM Insights Service
+            try:
+                from services.free_report_llm_insights_service import FreeReportLLMInsightsService
+                from config_manager import get_credentials
+                
+                # Get OpenAI API key from credentials
+                creds = get_credentials()
+                openai_api_key = None
+                if creds and hasattr(creds, 'openai') and creds.openai:
+                    openai_api_key = getattr(creds.openai, 'api_key', None)
+                
+                # Initialize LLM Insights Service
+                llm_insights_service = FreeReportLLMInsightsService(openai_api_key=openai_api_key)
+                print(f"✅ LLM Insights Service initialized (OpenAI key: {'present' if openai_api_key else 'not configured'})")
+            except Exception as import_error:
+                print(f"⚠️ Error importing LLM Insights Service: {import_error}")
+                import traceback
+                traceback.print_exc()
+                # Create a dummy service that will use fallback
+                class DummyLLMService:
+                    async def generate_home_insight(self, *args, **kwargs):
+                        return {'home_name': 'Unknown', 'match_type': 'Unknown', 'why_selected': '', 'key_strengths': [], 'considerations': []}
+                llm_insights_service = DummyLLMService()
+                openai_api_key = None
+        else:
+            print("⏭️  Data enrichment (LLM Insights) is TEMPORARILY DISABLED - skipping enrichment step")
+            llm_insights_service = None
             openai_api_key = None
         
         # Initialize LLM Insights structure
@@ -1889,6 +1735,14 @@ async def generate_free_report(request: FreeReportRequest):
                     insight['considerations'].append(f"Location is {distance_km:.1f}km away - factor in travel time for visits")
                 if not fsa_rating:
                     insight['considerations'].append("Food hygiene rating not available - request this information during visit")
+                # Add FSA warning for poor food hygiene rating (FSA <= 3)
+                if fsa_rating is not None:
+                    try:
+                        fsa_int = int(fsa_rating) if isinstance(fsa_rating, (int, float, str)) else None
+                        if fsa_int is not None and fsa_int <= 3:
+                            insight['considerations'].append("⚠️ This home has a food hygiene rating that requires improvement. See detailed safety analysis in Professional Report.")
+                    except (ValueError, TypeError):
+                        pass
             
             elif match_type == 'Best Value':
                 # Best Value: Best price/quality ratio
@@ -1933,6 +1787,14 @@ async def generate_free_report(request: FreeReportRequest):
                     insight['considerations'].append("CQC rating is 'Requires Improvement' - review latest inspection report")
                 if not beds_available or beds_available == 0:
                     insight['considerations'].append("Check current availability - may have waiting list")
+                # Add FSA warning for poor food hygiene rating (FSA <= 3)
+                if fsa_rating is not None:
+                    try:
+                        fsa_int = int(fsa_rating) if isinstance(fsa_rating, (int, float, str)) else None
+                        if fsa_int is not None and fsa_int <= 3:
+                            insight['considerations'].append("⚠️ This home has a food hygiene rating that requires improvement. See detailed safety analysis in Professional Report.")
+                    except (ValueError, TypeError):
+                        pass
             
             elif match_type == 'Premium':
                 # Premium: Highest quality available
@@ -1971,81 +1833,149 @@ async def generate_free_report(request: FreeReportRequest):
                 
                 # Google reviews
                 if google_rating and google_rating >= 4.5 and review_count and review_count >= 20:
-                    why_parts.append(f"has excellent community reviews ({google_rating:.1f}/5 from {int(review_count)} reviews)")
                     strength_parts.append(f"Excellent community reputation ({google_rating:.1f}/5 from {int(review_count)} reviews)")
-                elif google_rating and google_rating >= 4.0:
-                    strength_parts.append(f"Positive community feedback ({google_rating:.1f}/5)")
                 
                 # FSA
-                if fsa_rating and fsa_rating == 5:
-                    strength_parts.append(f"Perfect food hygiene rating (5/5)")
-                elif fsa_rating and fsa_rating >= 4:
+                if fsa_rating and fsa_rating >= 4:
                     strength_parts.append(f"Excellent food hygiene standards ({fsa_rating}/5)")
-                
-                # Distance
-                if distance_km and distance_km < 10:
-                    strength_parts.append(f"Convenient location - {distance_km:.1f}km away")
                 
                 insight['why_selected'] = f"{name} was selected as Premium because it " + ", ".join(why_parts) + ", representing the highest quality option available."
                 insight['key_strengths'] = strength_parts
                 
                 # Considerations
-                if weekly_cost > budget + 200:
-                    insight['considerations'].append(f"Premium pricing at £{weekly_cost}/week - £{abs(budget_diff)} above your budget")
+                if budget > 0 and weekly_cost > budget:
+                    insight['considerations'].append(f"Premium pricing - £{abs(budget_diff)} above your budget, but offers exceptional quality")
                 if not beds_available or beds_available == 0:
                     insight['considerations'].append("Check availability - premium homes often have waiting lists")
+                # Add FSA warning for poor food hygiene rating (FSA <= 3)
+                if fsa_rating is not None:
+                    try:
+                        fsa_int = int(fsa_rating) if isinstance(fsa_rating, (int, float, str)) else None
+                        if fsa_int is not None and fsa_int <= 3:
+                            insight['considerations'].append("⚠️ This home has a food hygiene rating that requires improvement. See detailed safety analysis in Professional Report.")
+                    except (ValueError, TypeError):
+                        pass
             
             return insight
         
-        # Generate insight for each home using OpenAI LLM
-        try:
-            print(f"🔍 Generating LLM insights for {len(care_homes_list)} homes using OpenAI...")
-            for home in care_homes_list:
-                match_type = home.get('match_type', 'Safe Bet')
+        # Generate insight for each home using OpenAI LLM (PARALLEL execution)
+        # Generate LLM Insights for selected homes (if enabled and service available)
+        if ENABLE_DATA_ENRICHMENT and llm_insights_service and llm_insights_service.client:
+            try:
+                print(f"🔍 Generating LLM insights for {len(care_homes_list)} homes using OpenAI (parallel)...")
+                
+                # Prepare all home data for parallel LLM calls
+                async def generate_single_insight(home, match_type):
+                    """Generate insight for a single home with fallback and timeout"""
+                    try:
+                        original_home = home.get('_original_home', {})
+                        comprehensive_home_data = {
+                            **home,
+                            **original_home,
+                            'name': home.get('name'),
+                            'rating': home.get('rating'),
+                            'weekly_cost': home.get('weekly_cost'),
+                            'distance_km': home.get('distance_km'),
+                            'care_types': home.get('care_types', []),
+                            'fsa_rating': home.get('fsa_rating'),
+                            'beds_available': home.get('beds_available'),
+                            'cqc_rating_safe': original_home.get('cqc_rating_safe'),
+                            'cqc_rating_caring': original_home.get('cqc_rating_caring'),
+                            'cqc_rating_effective': original_home.get('cqc_rating_effective'),
+                            'cqc_rating_responsive': original_home.get('cqc_rating_responsive'),
+                            'cqc_rating_well_led': original_home.get('cqc_rating_well_led'),
+                            'google_rating': home.get('google_rating') or original_home.get('google_rating'),
+                            'review_count': home.get('review_count') or original_home.get('review_count')
+                        }
+                        
+                        # Add timeout to each LLM call (30 seconds max per home)
+                        insight = await asyncio.wait_for(
+                            llm_insights_service.generate_home_insight(
+                                home_data=comprehensive_home_data,
+                                match_type=match_type,
+                                user_context=user_context
+                            ),
+                            timeout=30.0  # 30 seconds max per home
+                        )
+                        print(f"✅ Generated LLM insight for {home.get('name', 'Unknown')} ({match_type})")
+                        return insight
+                    except (asyncio.TimeoutError, Exception) as insight_error:
+                        error_type = 'timeout' if isinstance(insight_error, asyncio.TimeoutError) else 'error'
+                        print(f"⚠️ LLM insight {error_type} for {home.get('name', 'Unknown')}: {insight_error}")
+                        try:
+                            insight = generate_home_insight_fallback(home, match_type, budget, care_type, top_3_homes)
+                            print(f"✅ Used fallback insight for {home.get('name', 'Unknown')}")
+                            return insight
+                        except Exception:
+                            return {
+                                'home_name': home.get('name', 'Unknown'),
+                                'match_type': match_type,
+                                'why_selected': f"{home.get('name', 'Unknown')} was selected as {match_type} based on quality, location, and pricing analysis.",
+                                'key_strengths': ['Selected based on comprehensive data analysis'],
+                                'considerations': []
+                            }
+                
+                # Create tasks for parallel execution
+                insight_tasks = [
+                    generate_single_insight(home, home.get('match_type', 'Safe Bet'))
+                    for home in care_homes_list
+                ]
+                
+                # Execute all LLM calls in parallel with overall timeout (35 seconds for all 3)
+                # This ensures we don't wait forever if one call hangs
                 try:
-                    # Prepare comprehensive home data for LLM
-                    # Merge home data with original home data for full context
-                    original_home = home.get('_original_home', {})
-                    comprehensive_home_data = {
-                        **home,  # Start with formatted home data
-                        **original_home,  # Merge original home data (has more fields)
-                        # Ensure key fields are present
-                        'name': home.get('name'),
-                        'rating': home.get('rating'),
-                        'weekly_cost': home.get('weekly_cost'),
-                        'distance_km': home.get('distance_km'),
-                        'care_types': home.get('care_types', []),
-                        'fsa_rating': home.get('fsa_rating'),
-                        'beds_available': home.get('beds_available'),
-                        'cqc_rating_safe': original_home.get('cqc_rating_safe'),
-                        'cqc_rating_caring': original_home.get('cqc_rating_caring'),
-                        'cqc_rating_effective': original_home.get('cqc_rating_effective'),
-                        'cqc_rating_responsive': original_home.get('cqc_rating_responsive'),
-                        'cqc_rating_well_led': original_home.get('cqc_rating_well_led'),
-                        'google_rating': home.get('google_rating') or original_home.get('google_rating'),
-                        'review_count': home.get('review_count') or original_home.get('review_count')
-                    }
-                    
-                    # Call LLM service to generate insight
-                    insight = await llm_insights_service.generate_home_insight(
-                        home_data=comprehensive_home_data,
-                        match_type=match_type,
-                        user_context=user_context
+                    insights_results = await asyncio.wait_for(
+                        asyncio.gather(*insight_tasks, return_exceptions=True),
+                        timeout=35.0  # 35 seconds total for all 3 parallel calls
                     )
-                    
-                    llm_insights['insights']['home_insights'].append(insight)
-                    print(f"✅ Generated LLM insight for {home.get('name', 'Unknown')} ({match_type})")
-                except Exception as insight_error:
-                    print(f"⚠️ Error generating LLM insight for {home.get('name', 'Unknown')}: {insight_error}")
-                    import traceback
-                    traceback.print_exc()
-                    # Use fallback function if LLM fails
+                except asyncio.TimeoutError:
+                    print(f"⏱️ Overall LLM insights timeout - generating fallback insights")
+                    # If timeout, generate fallback for all homes
+                    insights_results = []
+                    for home in care_homes_list:
+                        match_type = home.get('match_type', 'Safe Bet')
+                        try:
+                            insight = generate_home_insight_fallback(home, match_type, budget, care_type, top_3_homes)
+                            insights_results.append(insight)
+                        except Exception:
+                            insights_results.append({
+                                'home_name': home.get('name', 'Unknown'),
+                                'match_type': match_type,
+                                'why_selected': f"{home.get('name', 'Unknown')} was selected as {match_type} based on quality, location, and pricing analysis.",
+                                'key_strengths': ['Selected based on comprehensive data analysis'],
+                                'considerations': []
+                            })
+                
+                # Process results
+                for i, result in enumerate(insights_results):
+                    if isinstance(result, Exception):
+                        home = care_homes_list[i] if i < len(care_homes_list) else {}
+                        llm_insights['insights']['home_insights'].append({
+                            'home_name': home.get('name', 'Unknown'),
+                            'match_type': home.get('match_type', 'Unknown'),
+                            'why_selected': f"{home.get('name', 'Unknown')} was selected based on quality, location, and pricing analysis.",
+                            'key_strengths': ['Selected based on comprehensive data analysis'],
+                            'considerations': []
+                        })
+                    else:
+                        llm_insights['insights']['home_insights'].append(result)
+                
+                print(f"✅ Generated {len(llm_insights['insights']['home_insights'])} insights (parallel execution)")
+            except Exception as e:
+                print(f"⚠️ Error generating LLM insights: {e}")
+                import traceback
+                traceback.print_exc()
+                # If error occurred, generate fallback insights for all homes
+                print(f"🔄 Generating fallback insights for all {len(care_homes_list)} homes...")
+                llm_insights['insights']['home_insights'] = []  # Clear any partial insights
+                for home in care_homes_list:
+                    match_type = home.get('match_type', 'Safe Bet')
                     try:
                         insight = generate_home_insight_fallback(home, match_type, budget, care_type, top_3_homes)
                         llm_insights['insights']['home_insights'].append(insight)
-                        print(f"✅ Used fallback insight for {home.get('name', 'Unknown')}")
+                        print(f"✅ Generated fallback insight for {home.get('name', 'Unknown')}")
                     except Exception as fallback_error:
-                        print(f"⚠️ Fallback insight generation also failed: {fallback_error}")
+                        print(f"⚠️ Fallback insight generation failed for {home.get('name', 'Unknown')}: {fallback_error}")
                         # Add minimal fallback insight
                         llm_insights['insights']['home_insights'].append({
                             'home_name': home.get('name', 'Unknown'),
@@ -2054,32 +1984,23 @@ async def generate_free_report(request: FreeReportRequest):
                             'key_strengths': ['Selected based on comprehensive data analysis'],
                             'considerations': []
                         })
-            print(f"✅ Generated {len(llm_insights['insights']['home_insights'])} insights")
-        except Exception as e:
-            print(f"⚠️ Error generating LLM insights: {e}")
-            import traceback
-            traceback.print_exc()
-            # If error occurred, generate fallback insights for all homes
-            print(f"🔄 Generating fallback insights for all {len(care_homes_list)} homes...")
-            llm_insights['insights']['home_insights'] = []  # Clear any partial insights
+                llm_insights['method'] = 'data_driven_analysis'  # Update method to reflect fallback
+                print(f"✅ Generated {len(llm_insights['insights']['home_insights'])} fallback insights")
+        else:
+            # Enrichment disabled - use minimal fallback insights
+            print(f"⏭️  Skipping LLM enrichment - using minimal fallback insights")
+            llm_insights['insights']['home_insights'] = []
             for home in care_homes_list:
                 match_type = home.get('match_type', 'Safe Bet')
-                try:
-                    insight = generate_home_insight_fallback(home, match_type, budget, care_type, top_3_homes)
-                    llm_insights['insights']['home_insights'].append(insight)
-                    print(f"✅ Generated fallback insight for {home.get('name', 'Unknown')}")
-                except Exception as fallback_error:
-                    print(f"⚠️ Fallback insight generation failed for {home.get('name', 'Unknown')}: {fallback_error}")
-                    # Add minimal fallback insight
-                    llm_insights['insights']['home_insights'].append({
-                        'home_name': home.get('name', 'Unknown'),
-                        'match_type': match_type,
-                        'why_selected': f"{home.get('name', 'Unknown')} was selected as {match_type} based on quality, location, and pricing analysis.",
-                        'key_strengths': ['Selected based on comprehensive data analysis'],
-                        'considerations': []
-                    })
-            llm_insights['method'] = 'data_driven_analysis'  # Update method to reflect fallback
-            print(f"✅ Generated {len(llm_insights['insights']['home_insights'])} fallback insights")
+                llm_insights['insights']['home_insights'].append({
+                    'home_name': home.get('name', 'Unknown'),
+                    'match_type': match_type,
+                    'why_selected': f"{home.get('name', 'Unknown')} was selected as {match_type} based on quality, location, and pricing analysis.",
+                    'key_strengths': ['Selected based on comprehensive data analysis'],
+                    'considerations': []
+                })
+            llm_insights['method'] = 'data_driven_analysis'
+            print(f"✅ Generated {len(llm_insights['insights']['home_insights'])} minimal fallback insights (enrichment disabled)")
         
         # Ensure llm_insights is always present (fallback if generation failed)
         if 'llm_insights' not in locals() or not llm_insights:
@@ -2136,148 +2057,92 @@ async def generate_free_report(request: FreeReportRequest):
         }
         
         context.log_step_complete(GenerationStep.RESPONSE_ASSEMBLY)
-        context.log_step_start(GenerationStep.INITIALIZATION)  # Mark final step
-        
-        # Log generation summary
-        summary = context.get_summary()
-        logger.info(f"Report generation complete: {json.dumps(summary)}")
         
         return response
         
     except HTTPException:
+        # Re-raise HTTP exceptions as-is
         raise
     except Exception as e:
+        error_type = type(e).__name__
+        error_detail = str(e)
         import traceback
-        error_detail = f"{str(e)}\n{traceback.format_exc()}"
-        print(f"❌ Free report generation error: {error_detail}")
+        full_traceback = traceback.format_exc()
+        
+        # Log detailed error information
+        logger.error(f"❌ Free report generation error: {error_type}: {error_detail}")
+        logger.error(f"Full traceback:\n{full_traceback}")
+        
+        # Print to console for immediate visibility
+        print(f"❌ ERROR TYPE: {error_type}")
+        print(f"❌ ERROR MESSAGE: {error_detail}")
+        print(f"❌ FULL TRACEBACK:\n{full_traceback}")
+        
         # Ensure llm_insights is in error response too
         if 'llm_insights' not in locals():
             llm_insights = {
                 'generated_at': datetime.now().isoformat(),
-                'method': 'error_fallback',
+                'method': 'data_driven_analysis',
                 'insights': {
                     'overall_explanation': {
-                        'summary': 'Error occurred during report generation',
+                        'summary': 'Report generation encountered an error',
                         'key_findings': [],
                         'confidence_level': 'low'
                     },
                     'home_insights': []
                 }
             }
-        raise HTTPException(status_code=500, detail=f"Failed to generate free report: {str(e)}")
+        
+        # Provide more helpful error message
+        error_message = f"Failed to generate free report: {error_detail}"
+        if error_type == "ModuleNotFoundError":
+            error_message += " (Missing required module. Check backend dependencies.)"
+        elif error_type == "ImportError":
+            error_message += " (Import error. Check module paths and dependencies.)"
+        elif error_type == "FileNotFoundError":
+            error_message += " (File not found. Check database and data files.)"
+        
+        raise HTTPException(status_code=500, detail=error_message)
 
 
-@router.post("/funding-eligibility")
-async def calculate_funding_eligibility(request: Dict[str, Any] = Body(...)):
+@router.post("/free-report/funding-eligibility")
+async def calculate_funding_eligibility_simplified(request: FreeReportRequest):
     """
     Calculate simplified funding eligibility for Free Report
-    
-    Uses shared FundingOptimizationService (same as Professional Report)
+    This is a simplified version of the professional report funding eligibility
     but returns a simplified response suitable for Free Report display.
-    
-    Request body:
-    {
-        "chc_probability": 35.0,  # Optional CHC probability from questionnaire
-        "care_type": "residential",  # Optional care type
-        "budget": 1200  # Optional weekly budget
-    }
-    
-    Returns:
-        Simplified funding eligibility data with CHC, LA, and DPA info
     """
-    try:
-        chc_probability = request.get('chc_probability', 35.0)
-        care_type = request.get('care_type', 'residential')
-        budget = request.get('budget', 1200)
-        
-        # Build minimal questionnaire for FundingOptimizationService
-        minimal_questionnaire = {
-            'section_2_location_budget': {
-                'q7_budget_max': budget
-            },
-            'section_3_medical_needs': {
-                'q8_care_types': [care_type] if care_type else ['residential'],
-                'q9_medical_conditions': [],
-                'q10_mobility_level': 'needs_assistance',
-                'q11_medication_management': 'needs_help',
-                'q12_age_range': '75_84'
-            },
-            'section_4_safety_special_needs': {
-                'q13_fall_history': 'no_falls'
-            },
-            'section_5_preferences': {
-                'q16_room_preferences': ['single_room']
-            }
+    # Simplified funding eligibility calculation
+    chc_prob = request.chc_probability or 35
+    
+    # CHC probability range
+    if chc_prob >= 75:
+        chc_range = '75-90%'
+        chc_savings = '£78,000-£130,000/year'
+    elif chc_prob >= 50:
+        chc_range = '50-75%'
+        chc_savings = '£52,000-£78,000/year'
+    elif chc_prob >= 25:
+        chc_range = '25-50%'
+        chc_savings = '£26,000-£52,000/year'
+    else:
+        chc_range = '10-25%'
+        chc_savings = '£10,000-£26,000/year'
+    
+    # LA probability
+    la_prob = min(95, 50 + (chc_prob * 0.4))
+    
+    return {
+        'chc': {
+            'probability_range': chc_range,
+            'savings_range': chc_savings,
+        },
+        'la': {
+            'probability': f'{int(la_prob)}%',
+            'savings_range': '£20,000-£50,000/year',
+        },
+        'dpa': {
+            'probability': '85%',
+            'cash_flow_relief': '£2,000+/week deferred',
         }
-        
-        # Import and use shared FundingOptimizationService
-        from services.funding_optimization_service import FundingOptimizationService
-        funding_service = FundingOptimizationService()
-        
-        # Calculate CHC eligibility using shared service
-        chc_eligibility = funding_service.calculate_chc_eligibility(minimal_questionnaire)
-        
-        # Override with provided CHC probability if available
-        if chc_probability and chc_probability > 0:
-            base_prob = chc_probability / 100.0  # Convert to decimal
-        else:
-            base_prob = chc_eligibility.get('probability', 0.35)
-        
-        # Calculate probability ranges
-        if base_prob >= 0.75:
-            chc_range = '75-90%'
-            chc_savings = '£78,000-£130,000/year'
-        elif base_prob >= 0.50:
-            chc_range = '50-75%'
-            chc_savings = '£52,000-£78,000/year'
-        elif base_prob >= 0.25:
-            chc_range = '25-50%'
-            chc_savings = '£26,000-£52,000/year'
-        else:
-            chc_range = '10-25%'
-            chc_savings = '£10,000-£26,000/year'
-        
-        # LA funding probability (typically 60-80% for most applicants)
-        la_prob = min(95, 50 + (base_prob * 100 * 0.4))
-        
-        # DPA probability (usually high if property owner)
-        dpa_prob = 85
-        
-        return {
-            'chc': {
-                'probability_range': chc_range,
-                'savings_range': chc_savings,
-                'explanation': 'NHS Continuing Healthcare covers full care costs if you have a "primary health need"',
-                'next_steps': [
-                    'Request CHC assessment from local Clinical Commissioning Group',
-                    'Gather medical documentation',
-                    'Consider professional advocacy support'
-                ]
-            },
-            'la': {
-                'probability': f'{int(la_prob)}%',
-                'savings_range': '£20,000-£50,000/year',
-                'explanation': 'Local Authority funding available if assets below £23,250 threshold',
-                'next_steps': [
-                    'Complete financial assessment',
-                    'Check asset thresholds',
-                    'Apply to local council adult social care'
-                ]
-            },
-            'dpa': {
-                'probability': f'{dpa_prob}%',
-                'cash_flow_relief': '£2,000+/week deferred',
-                'explanation': 'Deferred Payment Agreement allows deferring fees against property equity',
-                'next_steps': [
-                    'Property valuation',
-                    'Apply to local authority',
-                    'Understand interest rates and terms'
-                ]
-            },
-            'generated_at': datetime.now().isoformat()
-        }
-        
-    except Exception as e:
-        import traceback
-        print(f"❌ Funding eligibility calculation error: {str(e)}\n{traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=f"Failed to calculate funding eligibility: {str(e)}")
+    }

@@ -141,71 +141,8 @@ const calculateFundingEligibility = (questionnaire: QuestionnaireResponse): Fund
   };
 };
 
-// Mock data generator
-const generateMockReportData = (
-  questionnaire: QuestionnaireResponse
-): FreeReportData => {
-  const marketPrice = questionnaire.budget || 1200;
-  const msifLowerBound = 1048; // Mock MSIF value
-  
-  const fairCostGap = calculateFairCostGap(marketPrice, msifLowerBound);
-  const fundingEligibility = calculateFundingEligibility(questionnaire);
-  
-  const mockHomes: CareHomeData[] = [
-    {
-      name: 'Sunshine Care Home',
-      photo: 'https://images.unsplash.com/photo-1581578731548-c64695cc6952?w=400',
-      band: 3,
-      price_range: { min: 1000, max: 1150 },
-      distance: 2.5,
-      fsa_color: 'green',
-      match_type: 'Safe Bet',
-      why_this_home: 'Excellent balance of price and quality. High CQC rating and close location make this home a safe choice.',
-      rating: 'Good',
-      features: ['Garden', 'Activities', '24/7 Care'],
-      address: '123 High Street',
-      city: 'London',
-      postcode: 'SW1A 1AA',
-    },
-    {
-      name: 'Greenfield Manor',
-      photo: 'https://images.unsplash.com/photo-1564013799919-ab600027ffc6?w=400',
-      band: 2,
-      price_range: { min: 900, max: 1000 },
-      distance: 3.2,
-      fsa_color: 'green',
-      match_type: 'Best Value',
-      why_this_home: 'Best price-to-quality ratio. Affordable price while maintaining high care standards.',
-      rating: 'Good',
-      features: ['Dementia Specialist', 'Transport Access'],
-      address: '456 Park Avenue',
-      city: 'London',
-      postcode: 'SW1A 2BB',
-    },
-    {
-      name: 'Elmwood House',
-      photo: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=400',
-      band: 4,
-      price_range: { min: 1300, max: 1450 },
-      distance: 4.1,
-      fsa_color: 'green',
-      match_type: 'Premium',
-      why_this_home: 'Premium option with outstanding CQC rating. Perfect choice for those seeking the highest quality of care.',
-      rating: 'Outstanding',
-      features: ['Luxury Facilities', 'Specialist Care', 'Family Involvement'],
-      address: '789 Garden Road',
-      city: 'London',
-      postcode: 'SW1A 3CC',
-    },
-  ];
-
-  return {
-    homes: mockHomes,
-    fairCostGap,
-    chcTeaserPercent: questionnaire.chc_probability || 35.5,
-    fundingEligibility,
-  };
-};
+// NOTE: Mock data generator removed - NO fake data should be shown to users
+// If backend is unavailable, throw error instead of returning mock data
 
 // Transform backend response to FreeReportData
 const transformBackendResponse = (
@@ -391,7 +328,7 @@ export const useGenerateFreeReport = () => {
             url,
             requestData,
             {
-              timeout: 30000, // 30 seconds timeout
+              timeout: 120000, // 120 seconds (includes parallel LLM calls)
             }
           );
 
@@ -414,24 +351,15 @@ export const useGenerateFreeReport = () => {
               url: error.config?.url,
             });
             
-            // If backend is not ready, use mock data
+            // If backend is not ready, throw error - NO fallback to mock data
             if (
               error.code === 'ECONNREFUSED' ||
               error.code === 'ERR_NETWORK' ||
               error.response?.status === 404 ||
               error.response?.status === 500
             ) {
-              console.warn('⚠️ Backend not available, using mock data');
-              
-              // Recalculate Fair Cost Gap with fetched MSIF
-              const marketPrice = questionnaire.budget || 1200;
-              const fairCostGap = calculateFairCostGap(marketPrice, msifLowerBound);
-              
-              const mockData = generateMockReportData(questionnaire);
-              return {
-                ...mockData,
-                fairCostGap, // Use calculated gap with real MSIF if available
-              };
+              console.error('❌ Backend not available - cannot generate report without real data');
+              throw new Error(`Cannot generate report: Backend API error (${error.response?.status || error.code})`);
             }
           } else {
             console.error('❌ Unexpected error:', error);
@@ -439,9 +367,9 @@ export const useGenerateFreeReport = () => {
           throw error;
         }
       } catch (error) {
-        // Final fallback: use mock data with fallback MSIF
-        console.warn('⚠️ All API calls failed, using full mock data', error);
-        return generateMockReportData(questionnaire);
+        // No fallback to mock data - throw error to user
+        console.error('❌ Cannot generate Free Report without real backend data', error);
+        throw error;
       }
     },
     // Cache configuration

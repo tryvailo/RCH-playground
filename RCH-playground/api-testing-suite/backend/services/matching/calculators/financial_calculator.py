@@ -132,16 +132,22 @@ class FinancialCalculator(CategoryCalculator):
                 score -= 2.0  # High risk
         
         # Check for red flags (deduct points)
-        red_flags = self._extract_field(enriched_data, 'financial_data', 'red_flags', default=[])
+        # IMPORTANT: Only check if we have REAL financial data, not empty defaults
+        red_flags = self._extract_field(enriched_data, 'financial_data', 'red_flags')
         red_flags_count = len(red_flags) if red_flags else 0
         
         if red_flags_count > 0:
             score -= min(red_flags_count * 0.5, 4.0)  # Deduct up to 2 points
+        # If red_flags is None: no deduction (don't invent financial concerns)
         
         # Company status check
-        company_status = self._extract_field(enriched_data, 'financial_data', 'company_status', default='').lower()
-        if company_status and company_status != 'active':
-            score -= 3.0  # Major concern
+        # IMPORTANT: Only check if we have REAL financial data, not empty defaults
+        company_status = self._extract_field(enriched_data, 'financial_data', 'company_status')
+        if company_status:  # Only if we have real data
+            company_status_lower = company_status.lower()
+            if company_status_lower and company_status_lower != 'active':
+                score -= 3.0  # Major concern
+        # If company_status is None: no deduction (don't invent concerns)
         
         return min(max(score, 0.0), 8.0)
     

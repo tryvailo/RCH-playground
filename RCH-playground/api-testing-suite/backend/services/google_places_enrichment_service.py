@@ -32,6 +32,48 @@ class GooglePlacesEnrichmentService(BaseEnrichmentService):
         self.cache_ttl = cache_ttl
         self.cache = get_cache_manager() if use_cache else None
     
+    @property
+    def service_name(self) -> str:
+        """Service identifier for unified interface"""
+        return 'google_places'
+    
+    async def enrich(
+        self,
+        home: Dict[str, Any],
+        **kwargs
+    ) -> EnrichmentResult:
+        """
+        Unified enrich method for BaseEnrichmentService interface.
+        
+        Args:
+            home: Care home object
+            **kwargs: Optional parameters (not used)
+        
+        Returns:
+            EnrichmentResult with Google Places data or error
+        """
+        start_time = time.time()
+        
+        try:
+            enriched_home = await self.enrich_care_home(home)
+            google_places_data = enriched_home.get('google_places', {})
+            
+            return EnrichmentResult(
+                source=self.service_name,
+                status='success' if google_places_data else 'partial',
+                data=google_places_data,
+                processing_time=time.time() - start_time
+            )
+        except Exception as e:
+            logger.error(f"Google Places enrichment error for {home.get('name')}: {str(e)}", exc_info=True)
+            return EnrichmentResult(
+                source=self.service_name,
+                status='failed',
+                data={},
+                error=str(e),
+                processing_time=time.time() - start_time
+            )
+    
     def _get_cache_key(self, home_name: str, postcode: str) -> str:
         """Generate cache key for Google Places data"""
         if self.cache:

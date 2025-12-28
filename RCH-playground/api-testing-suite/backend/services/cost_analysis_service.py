@@ -452,39 +452,8 @@ class CostAnalysisService:
             }
         
         except Exception as e:
-            logger.error(f"Error detecting hidden fees for {care_home.get('name', 'unknown')}: {str(e)}")
-            # Return safe fallback response
-            return {
-                'home_id': care_home.get('id', '') if care_home else '',
-                'home_name': care_home.get('name', 'Unknown') if care_home else 'Unknown',
-                'advertised_weekly_price': 0,
-                'care_type': care_type,
-                'region': region,
-                'detected_fees': [],
-                'fees_by_category': {},
-                'summary': {
-                    'total_one_time_fees': 0,
-                    'total_weekly_hidden': 0,
-                    'total_annual_hidden': 0,
-                    'hidden_fee_percent': 0,
-                    'true_weekly_cost': 0,
-                    'true_annual_cost': 0,
-                    'first_year_total': 0,
-                    'fee_count': 0,
-                    'negotiable_fees_count': 0,
-                    'potential_negotiation_savings': 0
-                },
-                'risk_assessment': {
-                    'overall_risk': 'low',
-                    'transparency_score': 100,
-                    'predictability_score': 100
-                },
-                'warnings': [],
-                'negotiation_tips': [],
-                'questions_to_ask': [],
-                'analyzed_at': datetime.now().isoformat(),
-                'error': str(e)
-            }
+            logger.error(f"Error detecting hidden fees for {care_home.get('name', 'unknown')}: {str(e)}", exc_info=True)
+            raise  # Re-raise error instead of returning fake default data
     
     def _estimate_fee(
         self,
@@ -941,26 +910,8 @@ class CostAnalysisService:
             }
         
         except Exception as e:
-            logger.error(f"Error calculating cost vs funding scenarios: {str(e)}")
-            return {
-                'homes': [],
-                'summary': {
-                    'average_self_funding_5yr': 0,
-                    'average_best_case_5yr': 0,
-                    'potential_5yr_savings': 0,
-                    'average_hidden_fees_weekly': 0,
-                    'homes_analyzed': 0
-                },
-                'funding_context': {
-                    'chc_probability': 0,
-                    'la_available': False,
-                    'la_contribution_percent': 0,
-                    'dpa_available': False
-                },
-                'recommendations': [],
-                'generated_at': datetime.now().isoformat(),
-                'error': str(e)
-            }
+            logger.error(f"Error calculating cost vs funding scenarios: {str(e)}", exc_info=True)
+            raise  # Re-raise error instead of returning fake default data
     
     def _calculate_5_year_cost(
         self,

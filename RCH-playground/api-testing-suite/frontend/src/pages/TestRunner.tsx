@@ -70,16 +70,16 @@ export default function TestRunner() {
       console.log('🔍 Checking backend availability on /health...');
       try {
         const healthCheck = await axios.get('/health', { 
-          timeout: 3000,
+          timeout: 10000, // Increased timeout to 10 seconds
           validateStatus: (status) => status < 500 // Accept any status < 500 as "available"
         });
-        console.log('✅ Backend is available on port 8000:', healthCheck.data);
+        console.log('✅ Backend is available on port 8001:', healthCheck.data);
       } catch (healthError: any) {
         console.error('❌ Backend is not available');
         console.error('Health check error:', healthError.message);
         console.error('Error code:', healthError.code);
         setRunning(false);
-        alert('Backend server is not running or not accessible on port 8000.\n\nPlease ensure the backend server is started with:\n\ncd api-testing-suite/backend\n./venv/bin/python3 -m uvicorn main:app --reload --host 0.0.0.0 --port 8000\n\nOr check if the server is already running on a different port.');
+        alert('Backend server is not running or not accessible on port 8001.\n\nPlease ensure the backend server is started with:\n\ncd api-testing-suite/backend\n./venv/bin/python3 -m uvicorn main:app --reload --host 0.0.0.0 --port 8001\n\nOr check if the server is already running on a different port.');
         return;
       }
 

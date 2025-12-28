@@ -161,7 +161,13 @@ class ComparativeAnalysisService:
             'category': 'Basic Information',
             'metric': 'Location',
             'homes': {f'home_{i+1}': {
-                'value': home.get('location', 'N/A'),
+                'value': (
+                    home.get('location') or 
+                    home.get('city') or 
+                    (home.get('rawData', {}).get('location') if isinstance(home.get('rawData'), dict) else None) or
+                    (home.get('rawData', {}).get('city') if isinstance(home.get('rawData'), dict) else None) or
+                    'N/A'
+                ),
                 'highlight': False
             } for i, home in enumerate(homes)}
         })
@@ -170,9 +176,20 @@ class ComparativeAnalysisService:
             'category': 'Basic Information',
             'metric': 'Distance',
             'homes': {f'home_{i+1}': {
-                'value': home.get('distance', 'N/A'),
+                'value': (
+                    home.get('distance') or 
+                    (f"{round(home.get('distance_km'), 1)} km" if home.get('distance_km') is not None else None) or
+                    (home.get('rawData', {}).get('distance') if isinstance(home.get('rawData'), dict) else None) or
+                    (f"{round(home.get('rawData', {}).get('distance_km'), 1)} km" if isinstance(home.get('rawData'), dict) and home.get('rawData', {}).get('distance_km') is not None else None) or
+                    'N/A'
+                ),
                 'highlight': False,
-                'sort_value': self._extract_distance_value(home.get('distance', ''))
+                'sort_value': self._extract_distance_value(
+                    home.get('distance') or 
+                    (f"{home.get('distance_km')} km" if home.get('distance_km') is not None else '') or
+                    (home.get('rawData', {}).get('distance') if isinstance(home.get('rawData'), dict) else '') or
+                    ''
+                )
             } for i, home in enumerate(homes)}
         })
         
@@ -205,7 +222,24 @@ class ComparativeAnalysisService:
                 'CQC Compliance', 'Additional Services'
             ]
             
+            # ✅ DEBUG: Log available factorScores for first home to diagnose missing categories
+            first_home_factor_scores = homes[0].get('factorScores', [])
+            if first_home_factor_scores:
+                available_categories = [fs.get('category', 'Unknown') for fs in first_home_factor_scores]
+                print(f"\n   📊 Analysis Tab: Available factorScores categories: {available_categories}")
+                print(f"   📊 Analysis Tab: Expected categories: {factor_categories}")
+            
             for category in factor_categories:
+                # ✅ DEBUG: Check if category will be found for first home
+                first_home_score = self._get_factor_score(homes[0], category)
+                if first_home_score == 'N/A':
+                    # Try to find why it's N/A
+                    first_home_factor_scores = homes[0].get('factorScores', [])
+                    available_cats = [fs.get('category', 'Unknown') for fs in first_home_factor_scores]
+                    # Only log once per category to avoid spam
+                    if category in ['Medical Capabilities', 'Safety & Quality', 'Location & Access']:
+                        print(f"   ⚠️ Analysis Tab: Category '{category}' not found. Available: {available_cats}")
+                
                 comparison_rows.append({
                     'category': 'Factor Scores',
                     'metric': category,
@@ -693,18 +727,75 @@ class ComparativeAnalysisService:
     def _get_factor_score(self, home: Dict[str, Any], category: str) -> str:
         """Get factor score for a category"""
         factor_scores = home.get('factorScores', [])
+        
+        # ✅ FIX: Try exact match first
         score_obj = next((fs for fs in factor_scores if fs.get('category') == category), None)
+        
+        # ✅ FIX: If not found, try alternative category name mappings
+        # This handles cases where Simple Matching, Enhanced MVP, and Professional Matching use different category names
+        if not score_obj:
+            category_mapping = {
+                'Medical Capabilities': ['Medical & Safety', 'Medical Capabilities', 'Medical'],  # Enhanced MVP uses 'Medical'
+                'Safety & Quality': ['Quality & Care', 'Safety & Quality', 'Safety'],  # Enhanced MVP uses 'Safety'
+                'Cultural & Social': ['Lifestyle', 'Cultural & Social', 'Social'],  # Professional uses 'Social'
+                'CQC Compliance': ['CQC Compliance', 'CQC', 'Cqc'],  # Professional uses 'CQC'
+                'Staff Quality': ['Staff Quality', 'Staff'],  # Professional uses 'Staff'
+                'Financial Stability': ['Financial Stability', 'Financial'],  # Professional uses 'Financial'
+                'Location & Access': ['Location & Access', 'Location'],  # All use 'Location'
+                'Additional Services': ['Additional Services', 'Services']  # Professional uses 'Services'
+            }
+            
+            # Try alternative names for this category
+            alternative_names = category_mapping.get(category, [])
+            for alt_name in alternative_names:
+                score_obj = next((fs for fs in factor_scores if fs.get('category') == alt_name), None)
+                if score_obj:
+                    break
+        
         if score_obj:
             score = score_obj.get('score', 0)
             max_score = score_obj.get('maxScore', 0)
-            # Round to 2 decimal places to avoid floating point precision issues
-            return f"{round(score, 2)}/{int(max_score)}"
+            # ✅ FIX: Handle percentage display for normalized scores (maxScore = 100)
+            if max_score == 100.0:
+                # Score is already in 0-100 range, just format as percentage
+                return f"{round(score, 1)}%"
+            elif max_score > 0:
+                # Score needs to be normalized to percentage
+                percentage = (score / max_score * 100)
+                return f"{round(percentage, 1)}%"
+            else:
+                # Fallback: show as raw score
+                return f"{round(score, 2)}"
         return 'N/A'
     
     def _get_factor_score_value(self, home: Dict[str, Any], category: str) -> float:
         """Get numeric factor score value for sorting"""
         factor_scores = home.get('factorScores', [])
+        
+        # ✅ FIX: Try exact match first
         score_obj = next((fs for fs in factor_scores if fs.get('category') == category), None)
+        
+        # ✅ FIX: If not found, try alternative category name mappings
+        # This handles cases where Simple Matching, Enhanced MVP, and Professional Matching use different category names
+        if not score_obj:
+            category_mapping = {
+                'Medical Capabilities': ['Medical & Safety', 'Medical Capabilities', 'Medical'],  # Enhanced MVP uses 'Medical'
+                'Safety & Quality': ['Quality & Care', 'Safety & Quality', 'Safety'],  # Enhanced MVP uses 'Safety'
+                'Cultural & Social': ['Lifestyle', 'Cultural & Social', 'Social'],  # Professional uses 'Social'
+                'CQC Compliance': ['CQC Compliance', 'CQC', 'Cqc'],  # Professional uses 'CQC'
+                'Staff Quality': ['Staff Quality', 'Staff'],  # Professional uses 'Staff'
+                'Financial Stability': ['Financial Stability', 'Financial'],  # Professional uses 'Financial'
+                'Location & Access': ['Location & Access', 'Location'],  # All use 'Location'
+                'Additional Services': ['Additional Services', 'Services']  # Professional uses 'Services'
+            }
+            
+            # Try alternative names for this category
+            alternative_names = category_mapping.get(category, [])
+            for alt_name in alternative_names:
+                score_obj = next((fs for fs in factor_scores if fs.get('category') == alt_name), None)
+                if score_obj:
+                    break
+        
         if score_obj:
             max_score = score_obj.get('maxScore', 1)
             score = score_obj.get('score', 0)

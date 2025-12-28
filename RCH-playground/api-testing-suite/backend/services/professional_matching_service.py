@@ -57,24 +57,54 @@ class ScoringWeights:
         }
 
     def normalize(self) -> 'ScoringWeights':
-        """Normalize weights to sum to 100%"""
-        total = sum([
-            self.medical, self.safety, self.location, self.social,
-            self.financial, self.staff, self.cqc, self.services
-        ])
-        if total == 0:
-            return self
-        
-        return ScoringWeights(
-            medical=round((self.medical / total) * 100, 1),
-            safety=round((self.safety / total) * 100, 1),
-            location=round((self.location / total) * 100, 1),
-            social=round((self.social / total) * 100, 1),
-            financial=round((self.financial / total) * 100, 1),
-            staff=round((self.staff / total) * 100, 1),
-            cqc=round((self.cqc / total) * 100, 1),
-            services=round((self.services / total) * 100, 1)
-        )
+         """Normalize weights to sum to 100%"""
+         total = sum([
+             self.medical, self.safety, self.location, self.social,
+             self.financial, self.staff, self.cqc, self.services
+         ])
+         
+         # LOW FIX #9: Edge case - all weights are zero
+         if total == 0:
+             # Log warning instead of silently returning
+             import logging
+             logger = logging.getLogger(__name__)
+             logger.warning("⚠️ normalize() called with all zero weights - returning defaults")
+             # Assert this shouldn't happen in production
+             assert False, "normalize() called with all zero weights - likely a bug in weight calculation"
+         
+         # LOW FIX #9: Validate weights are positive
+         assert self.medical >= 0, f"medical weight must be >= 0, got {self.medical}"
+         assert self.safety >= 0, f"safety weight must be >= 0, got {self.safety}"
+         assert self.location >= 0, f"location weight must be >= 0, got {self.location}"
+         assert self.social >= 0, f"social weight must be >= 0, got {self.social}"
+         assert self.financial >= 0, f"financial weight must be >= 0, got {self.financial}"
+         assert self.staff >= 0, f"staff weight must be >= 0, got {self.staff}"
+         assert self.cqc >= 0, f"cqc weight must be >= 0, got {self.cqc}"
+         assert self.services >= 0, f"services weight must be >= 0, got {self.services}"
+         
+         # LOW FIX #9: Validate total is reasonable (not negative or too small)
+         assert total > 0, f"total weight must be > 0, got {total}"
+         assert total < 1000, f"total weight suspiciously large: {total} - possible bug in weight calculation"
+         
+         normalized = ScoringWeights(
+             medical=round((self.medical / total) * 100, 1),
+             safety=round((self.safety / total) * 100, 1),
+             location=round((self.location / total) * 100, 1),
+             social=round((self.social / total) * 100, 1),
+             financial=round((self.financial / total) * 100, 1),
+             staff=round((self.staff / total) * 100, 1),
+             cqc=round((self.cqc / total) * 100, 1),
+             services=round((self.services / total) * 100, 1)
+         )
+         
+         # LOW FIX #9: Validate normalized weights sum to ~100 (within rounding tolerance)
+         normalized_sum = sum([
+             normalized.medical, normalized.safety, normalized.location, normalized.social,
+             normalized.financial, normalized.staff, normalized.cqc, normalized.services
+         ])
+         assert 99.0 <= normalized_sum <= 101.0, f"normalized weights sum to {normalized_sum}, expected ~100"
+         
+         return normalized
 
 
 class ProfessionalMatchingService:
@@ -92,6 +122,77 @@ class ProfessionalMatchingService:
     
     BASE_WEIGHTS = ScoringWeights()
     
+    # LOW FIX #11: Define required and optional questionnaire fields
+    REQUIRED_SECTIONS = [
+         'section_1_contact_emergency',
+         'section_2_location_budget',
+         'section_3_medical_needs',
+         'section_4_safety_special_needs',
+         'section_5_timeline'
+    ]
+    
+    EXPECTED_FIELD_TYPES = {
+         'q8_care_types': (list, type(None)),
+         'q9_medical_conditions': (list, type(None)),
+         'q13_fall_history': (str, type(None)),
+         'q7_budget': (str, type(None)),
+         'q17_placement_timeline': (str, type(None)),
+         'q16_social_personality': (str, type(None)),
+    }
+    
+    def _validate_questionnaire(self, questionnaire: Any) -> None:
+        """
+        LOW FIX #11: Comprehensive questionnaire validation.
+        
+        Args:
+            questionnaire: Data to validate
+            
+        Raises:
+            TypeError: If questionnaire is not a dict
+            ValueError: If required sections missing or field types wrong
+        """
+        # Type check
+        if not isinstance(questionnaire, dict):
+            raise TypeError(f"Questionnaire must be dict, got {type(questionnaire).__name__}")
+        
+        if not questionnaire:  # Empty dict is valid (returns base weights)
+            return
+        
+        # Check for at least one required section
+        has_section = any(section in questionnaire for section in self.REQUIRED_SECTIONS)
+        if not has_section and questionnaire:
+            raise ValueError(f"Questionnaire missing all required sections. Expected at least one of: {self.REQUIRED_SECTIONS}")
+        
+        # Metadata fields that should be ignored (not sections)
+        metadata_fields = {'profile_description', 'section_6_priorities'}
+        
+        # Validate field types in each section
+        validation_errors = []
+        for section_name, section_data in questionnaire.items():
+            # Skip metadata fields
+            if section_name in metadata_fields:
+                continue
+            
+            if section_data is None:
+                continue
+            
+            if not isinstance(section_data, dict):
+                validation_errors.append(f"Section '{section_name}' must be dict, got {type(section_data).__name__}")
+                continue
+            
+            # Check specific fields if they exist
+            for field_name, field_value in section_data.items():
+                if field_name in self.EXPECTED_FIELD_TYPES:
+                    expected_types = self.EXPECTED_FIELD_TYPES[field_name]
+                    if not isinstance(field_value, expected_types):
+                        validation_errors.append(
+                            f"Field '{field_name}' must be {expected_types}, got {type(field_value).__name__}: {field_value}"
+                        )
+        
+        if validation_errors:
+            error_msg = "Questionnaire validation errors:\n  " + "\n  ".join(validation_errors)
+            raise ValueError(error_msg)
+    
     def calculate_dynamic_weights(
         self,
         questionnaire: Dict[str, Any]
@@ -99,14 +200,22 @@ class ProfessionalMatchingService:
         """
         Calculate adaptive weights based on client conditions.
         
-        Priority order: Fall Risk > Dementia > Complex Medical > Nursing > Budget > Urgent
+        Combines multiple conditions (no early returns). Priority is expressed through weights:
+        Fall Risk > Dementia > Complex Medical > Nursing > Budget > Urgent
         
         Args:
             questionnaire: Professional questionnaire response
             
         Returns:
             Tuple of (ScoringWeights, applied_conditions)
+        
+        Raises:
+            ValueError: If questionnaire validation fails
+            TypeError: If questionnaire is not a dictionary
         """
+        # LOW FIX #11: Full questionnaire validation
+        self._validate_questionnaire(questionnaire)
+        
         weights = ScoringWeights()
         applied_conditions = []
         
@@ -122,7 +231,8 @@ class ProfessionalMatchingService:
         budget = location_budget.get('q7_budget', '')
         placement_timeline = timeline.get('q17_placement_timeline', '')
         
-        # Priority 1: Fall Risk (HIGHEST - overrides other medical adjustments)
+        # CRITICAL FIX #8: Apply ALL conditions, cumulative (no early returns)
+        # Priority 1: Fall Risk (HIGHEST - but allows combining with other conditions)
         if fall_history in ["3_plus_or_serious_injuries", "high_risk_of_falling"]:
             weights.safety += 9
             weights.medical -= 1
@@ -133,9 +243,8 @@ class ProfessionalMatchingService:
             weights.cqc -= 1
             weights.services -= 2
             applied_conditions.append('high_fall_risk')
-            return weights.normalize(), applied_conditions
         
-        # Priority 2: Dementia (if no fall risk)
+        # Priority 2: Dementia (now combines with fall risk if both present)
         if 'dementia_alzheimers' in medical_conditions:
             weights.medical += 7
             weights.safety += 2
@@ -144,21 +253,20 @@ class ProfessionalMatchingService:
             weights.cqc -= 3
             weights.services -= 5
             applied_conditions.append('dementia')
-            return weights.normalize(), applied_conditions
         
-        # Priority 3: Multiple complex conditions (if not dementia)
+        # Priority 3: Multiple complex conditions (if not dementia already)
         # Filter out 'no_serious_medical' if present
-        actual_conditions = [c for c in medical_conditions if c != 'no_serious_medical']
-        if len(actual_conditions) >= 3:
-            weights.medical += 10
-            weights.location -= 3
-            weights.social -= 3
-            weights.staff += 1
-            weights.services -= 4
-            applied_conditions.append('multiple_conditions')
-            return weights.normalize(), applied_conditions
+        elif 'dementia_alzheimers' not in medical_conditions:
+            actual_conditions = [c for c in medical_conditions if c != 'no_serious_medical']
+            if len(actual_conditions) >= 3:
+                weights.medical += 10
+                weights.location -= 3
+                weights.social -= 3
+                weights.staff += 1
+                weights.services -= 4
+                applied_conditions.append('multiple_conditions')
         
-        # Priority 4: Nursing required
+        # Priority 4: Nursing required (can combine with above)
         if 'medical_nursing' in care_types:
             weights.medical += 3
             weights.staff += 3
@@ -185,7 +293,17 @@ class ProfessionalMatchingService:
             weights.services -= 5
             applied_conditions.append('urgent_placement')
         
-        # Normalize to ensure sum = 100%
+        # CRITICAL FIX #8.5: Clamp weights to ensure no negative values (can happen with cumulative adjustments)
+        weights.medical = max(0, weights.medical)
+        weights.safety = max(0, weights.safety)
+        weights.location = max(0, weights.location)
+        weights.social = max(0, weights.social)
+        weights.financial = max(0, weights.financial)
+        weights.staff = max(0, weights.staff)
+        weights.cqc = max(0, weights.cqc)
+        weights.services = max(0, weights.services)
+        
+        # CRITICAL FIX #1: Normalize ONLY ONCE at the end to preserve weight intent
         normalized_weights = weights.normalize()
         
         # Apply user priorities if provided
@@ -376,6 +494,63 @@ class ProfessionalMatchingService:
         
         # Calculate total match score
         total_score = sum(point_allocations.values())
+        
+        # PRIORITY FIX #1: Apply care type match bonus / penalty
+        # Reward homes that provide exactly what patient needs, penalize mismatch
+        user_care_types = user_profile.get('section_3_medical_needs', {}).get('q8_care_types', [])
+        home_care_types = home.get('care_types', [])
+        
+        if user_care_types and home_care_types:
+            # Normalize care type names for comparison
+            def normalize_care_type(ct):
+                if ct == 'general_residential':
+                   return 'residential'
+                return ct
+            
+            user_normalized = set(normalize_care_type(ct) for ct in user_care_types)
+            home_normalized = set(normalize_care_type(ct) for ct in home_care_types)
+            
+            # Exact match: home provides EXACTLY what patient needs (not more)
+            if user_normalized == home_normalized:
+                total_score += 5  # +5 point bonus for perfect match
+            # Superset match: home provides all required + more (acceptable but may have cost)
+            elif user_normalized.issubset(home_normalized):
+                extra_specs = home_normalized - user_normalized
+                if extra_specs:
+                    # CRITICAL: Penalize homes that over-specialize when not needed
+                    # If patient wants just residential:
+                    if 'residential' in user_normalized:
+                        # Penalize dementia or nursing specialization if patient doesn't need it
+                        if 'dementia' in extra_specs or 'nursing' in extra_specs:
+                            # Significant penalty for wrong specialization
+                            # Count number of unnecessary specs
+                            num_unnecessary = sum(1 for s in extra_specs if s in ['dementia', 'nursing'])
+                            total_score -= (5 * num_unnecessary)  # 5 points per unnecessary spec
+                        else:
+                            total_score += 1  # Minimal bonus for other specs
+                    else:
+                        # Patient needs special care, extra specs are acceptable
+                        total_score += 2  # +2 bonus for meeting + additional capability
+                else:
+                    # Exact same set after normalization
+                    total_score += 2
+            # CRITICAL: Subset mismatch - home doesn't have what patient needs
+            elif home_normalized.issubset(user_normalized):
+                # Home provides only PART of what patient needs
+                # This is bad - penalize significantly
+                missing_specs = user_normalized - home_normalized
+                if 'residential' in missing_specs:
+                    # If patient needs residential care but home doesn't claim it,penalty
+                    total_score -= 15  # Large penalty (-15 points) for missing core care
+            else:
+                # Complete mismatch: home has specializations patient doesn't need
+                # AND patient needs care home doesn't provide
+                # This is worst case scenario
+                only_in_home = home_normalized - user_normalized
+                only_in_user = user_normalized - home_normalized
+                if 'dementia' in only_in_home and 'residential' in only_in_user:
+                    # Home is dementia specialist but patient needs generic residential
+                    total_score -= 12  # Strong penalty (-12 points) for wrong specialization
         
         # Ensure total_score is a number
         if total_score is None:
@@ -659,19 +834,28 @@ class ProfessionalMatchingService:
         
         # 3. Safeguarding incidents (5 points)
         # PRIORITY: Use enriched_data (API) first
-        incident_score = 5.0
+        # MEDIUM FIX #7: Better handling for missing incident data
         incidents = (
             enriched_data.get('cqc_detailed', {}).get('safeguarding_incidents') or  # API data first
             home.get('safeguarding_incidents') or  # DB/CSV fallback
-            0
+            None  # No default, will handle as missing data
         )
+        
+        incident_score = 0.0
         if incidents is not None:
             try:
                 incidents = float(incidents)
                 if incidents > 0:
                     incident_score = max(0.0, 5.0 - (incidents * 1.0))
+                else:
+                    # Zero incidents = max score
+                    incident_score = 5.0
             except (ValueError, TypeError):
-                pass
+                # MEDIUM FIX #7: Unparseable data = unknown = medium score (not 5.0)
+                incident_score = 2.5
+        else:
+            # MEDIUM FIX #7: Missing data = medium score (not 5.0 - was implicit before)
+            incident_score = 2.5
         
         score += incident_score
         
@@ -727,12 +911,12 @@ class ProfessionalMatchingService:
                 distance_miles = calculate_distance_miles(user_lat, user_lon, home_lat, home_lon)
                 # Ensure distance_miles is a number
                 if distance_miles is None:
-                    distance_score = 5.0  # Default score if calculation fails
+                    distance_score = 0.0  # CRITICAL FIX #3: No data = no score (was 5.0)
                 else:
                     try:
                         distance_miles = float(distance_miles)
                     except (ValueError, TypeError):
-                        distance_score = 5.0  # Default score if conversion fails
+                        distance_score = 0.0  # CRITICAL FIX #3: No data = no score (was 5.0)
                         distance_miles = None
                 
                 if distance_miles is not None:
@@ -773,10 +957,10 @@ class ProfessionalMatchingService:
                         else:
                             distance_score = max(0.0, 5.0 - (distance_miles - max_miles) * 0.3)
             except (ValueError, TypeError, Exception):
-                distance_score = 5.0  # Default score if calculation fails
+                distance_score = 0.0  # CRITICAL FIX #3: No data = no score (was 5.0)
         else:
-            # Default score if coordinates missing
-            distance_score = 5.0
+            # CRITICAL FIX #3: Missing coordinates = no score, not artificial 50%
+            distance_score = 0.0
         
         score += distance_score
         
@@ -1049,42 +1233,43 @@ class ProfessionalMatchingService:
         staff_quality = enriched_data.get('staff_quality', {})
         staff_quality_score_data = staff_quality.get('staff_quality_score', {})
         
+        # MEDIUM FIX #2: Explicit check - only apply Priority 1 if we have COMPLETE data
         if staff_quality_score_data and staff_quality_score_data.get('overall_score') is not None:
-            # Use the comprehensive staff quality score (0-100 scale)
-            overall_score = staff_quality_score_data.get('overall_score', 0)
-            try:
-                overall_score = float(overall_score)
-            except (ValueError, TypeError):
-                overall_score = 0.0
-            
-            # Convert 0-100 to 0-16 points (max 16 from overall score)
-            base_score = (overall_score / 100) * 16.0
-            score += base_score
-            
-            # Bonus points from CQC components (max 4 points)
-            components = staff_quality_score_data.get('components', {})
-            
-            # CQC Well-Led bonus (0-2 points)
-            well_led = components.get('cqc_well_led', {})
-            well_led_rating = well_led.get('rating', '')
-            if well_led_rating == 'Outstanding':
-                score += 2.0
-            elif well_led_rating == 'Good':
-                score += 1.5
-            elif well_led_rating == 'Requires improvement':
-                score += 0.5
-            
-            # CQC Effective bonus (0-2 points)
-            effective = components.get('cqc_effective', {})
-            effective_rating = effective.get('rating', '')
-            if effective_rating == 'Outstanding':
-                score += 2.0
-            elif effective_rating == 'Good':
-                score += 1.5
-            elif effective_rating == 'Requires improvement':
-                score += 0.5
-            
-            return min(score / max_score, 1.0)
+             # Use the comprehensive staff quality score (0-100 scale)
+             overall_score = staff_quality_score_data.get('overall_score', 0)
+             try:
+                 overall_score = float(overall_score)
+             except (ValueError, TypeError):
+                 overall_score = 0.0
+             
+             # Convert 0-100 to 0-16 points (max 16 from overall score)
+             base_score = (overall_score / 100) * 16.0
+             score += base_score
+             
+             # MEDIUM FIX #2: Only apply component bonuses if components data exists
+             components = staff_quality_score_data.get('components', {})
+             if components:  # Explicit check to avoid applying bonuses without data
+                 # CQC Well-Led bonus (0-2 points)
+                 well_led = components.get('cqc_well_led', {})
+                 well_led_rating = well_led.get('rating', '')
+                 if well_led_rating == 'Outstanding':
+                     score += 2.0
+                 elif well_led_rating == 'Good':
+                     score += 1.5
+                 elif well_led_rating == 'Requires improvement':
+                     score += 0.5
+                 
+                 # CQC Effective bonus (0-2 points)
+                 effective = components.get('cqc_effective', {})
+                 effective_rating = effective.get('rating', '')
+                 if effective_rating == 'Outstanding':
+                     score += 2.0
+                 elif effective_rating == 'Good':
+                     score += 1.5
+                 elif effective_rating == 'Requires improvement':
+                     score += 0.5
+             
+             return min(score / max_score, 1.0)
         
         # Priority 2: Fallback to CQC Well-Led/Effective ratings (for matching stage)
         # This is used when Staff Quality API hasn't been called yet (saves paid API costs)
@@ -1235,8 +1420,8 @@ class ProfessionalMatchingService:
                     # Use overall rating as fallback (slightly lower score)
                     score += rating_map[overall_rating] * 0.8
                 else:
-                    # Default to Good if not specified
-                    score += 2.0
+                    # CRITICAL FIX #6: No data = minimal score, not 50% (was 2.0, now 1.0)
+                    score += 1.0
         
         return min(score / max_score, 1.0)
     
@@ -1382,10 +1567,22 @@ class ProfessionalMatchingService:
                 print(f"⚠️ Error scoring home {home.get('name', 'unknown')}: {e}")
                 continue
         
+        # LOW FIX #12: Handle empty results with helpful error context
         if not scored_homes:
             return {
                 'top_5': [],
-                'category_winners': {}
+                'category_winners': {},
+                'error': {
+                    'code': 'NO_MATCHES_FOUND',
+                    'message': 'No care homes found matching your criteria',
+                    'suggestions': [
+                        'Try expanding your maximum distance preference',
+                        'Consider different care type requirements',
+                        'Check that postcode is valid and has available homes',
+                        'Relax budget constraints if too restrictive'
+                    ],
+                    'homes_evaluated': 0
+                }
             }
         
         # Sort by match score and take TOP 5
@@ -1490,23 +1687,30 @@ class ProfessionalMatchingService:
             
             # Find best match for this priority
             if priority_info.get('use_value_ratio'):
-                # For cost, calculate value ratio
+                # For cost, calculate value ratio (quality per £100)
                 for home_data in top_5:
                     price = self._get_home_price(home_data['home'], user_profile)
+                    # CRITICAL FIX #4: Guard against division by zero
                     if price > 0:
                         quality_total = sum(
                             home_data['category_scores'].get(cat, 0)
                             for cat in ['medical', 'safety', 'cqc']
                         )
-                        home_data['value_ratio'] = quality_total / (price / 100)
+                        normalized_price = price / 100
+                        if normalized_price > 0:
+                            home_data['value_ratio'] = quality_total / normalized_price
+                        else:
+                            home_data['value_ratio'] = 0
                     else:
                         home_data['value_ratio'] = 0
                 
+                # MEDIUM FIX #10: Sort by quality first, then by LOWER price (better value)
+                # When quality is same, cheaper is better = lower price wins
                 best_match = max(
                     top_5,
                     key=lambda h: (
                         sum(h['category_scores'].get(cat, 0) for cat in categories),
-                        h.get('value_ratio', 0)
+                        -self._get_home_price(h['home'], user_profile)  # Negative: lower price = higher sort value
                     )
                 )
             else:

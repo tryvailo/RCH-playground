@@ -10,11 +10,22 @@ import asyncio
 
 from services.professional_report_validator import validate_questionnaire, QuestionnaireValidationError
 from services.professional_matching_service import ProfessionalMatchingService
+from services.enhanced_mvp_matching_service import EnhancedMVPMatchingService
+from services.distance_expansion_manager import DistanceExpansionManager
+from services.constraint_relaxation_manager import ConstraintRelaxationManager, ConstraintLevel
 from services.async_data_loader import get_async_loader
 from services.cost_analysis_service import CostAnalysisService
 from utils.state_manager import test_results_store
+import os
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["Reports"])
+
+# Matching service configuration
+USE_ENHANCED_MVP = os.getenv('USE_ENHANCED_MVP', 'true').lower() == 'true'
+USE_SIMPLE_MATCHING = os.getenv('USE_SIMPLE_MATCHING', 'false').lower() == 'true'
 
 VALID_CARE_TYPES = {'residential', 'nursing', 'dementia', 'respite'}
 VALID_REGIONS = {'england', 'wales', 'scotland', 'northern_ireland'}
@@ -73,11 +84,31 @@ async def generate_professional_report(request: Dict[str, Any] = Body(...)):
         # Extract questionnaire (handle both direct questionnaire and wrapped format)
         questionnaire = request.get('questionnaire', request)
         
-        # Validate questionnaire
+        # Phase 1: Validate questionnaire completeness (#11)
+        # TODO: Consider adding these validations in future versions:
+        # ├─ q7_budget validation (currently loaded but not used in matching)
+        # ├─ q12_age_range extraction (age-specific care needs)
+        # ├─ q14_allergies validation (check home can handle)
+        # ├─ q15_dietary_requirements validation (kitchen capabilities)
+        # ├─ q16_social_personality extraction (match care home environment)
+        # ├─ q17_placement_timeline extraction (urgency level)
+        # └─ q18_priority_ranking implementation (weight results by user priorities)
+        
         try:
-            validate_questionnaire(questionnaire)
+            if USE_ENHANCED_MVP:
+                # New: Complete validation + normalization
+                matching_service_temp = EnhancedMVPMatchingService()
+                questionnaire = matching_service_temp.validate_questionnaire_complete(questionnaire)
+                questionnaire = matching_service_temp.normalize_edge_cases(questionnaire)
+            else:
+                # Fallback to old validation
+                validate_questionnaire(questionnaire)
         except QuestionnaireValidationError as e:
             raise HTTPException(status_code=400, detail=str(e))
+        except Exception as e:
+            error_msg = f"Questionnaire validation error: {str(e)}"
+            logger.error(error_msg)
+            raise HTTPException(status_code=400, detail=error_msg)
         
         # Extract location and care type from questionnaire
         location_budget = questionnaire.get('section_2_location_budget', {})
@@ -125,11 +156,16 @@ async def generate_professional_report(request: Dict[str, Any] = Body(...)):
             questionnaire['section_2_location_budget']['user_longitude'] = user_lon
         
         # Initialize matching service
-        # Wrap in try-except to handle any MSIF data loading errors gracefully
+        # Wrap in try-except to handle any initialization errors gracefully
         try:
-            matching_service = ProfessionalMatchingService()
+            if USE_ENHANCED_MVP:
+                print("📊 Using ENHANCED MVP matching service (100-point, 85% data coverage)")
+                matching_service = EnhancedMVPMatchingService()
+            else:
+                print("📊 Using PROFESSIONAL matching service (156-point)")
+                matching_service = ProfessionalMatchingService()
         except Exception as e:
-            # If service initialization fails (e.g., MSIF data loading), log and continue
+            # If service initialization fails (e.g., data loading), log and continue
             import traceback
             error_msg = str(e)
             if 'data/msif' in error_msg or 'msif' in error_msg.lower():
@@ -138,41 +174,173 @@ async def generate_professional_report(request: Dict[str, Any] = Body(...)):
             else:
                 print(f"⚠️ Matching service initialization warning: {error_msg}")
             # Re-initialize - should work without MSIF data
-            matching_service = ProfessionalMatchingService()
-        
-        # Calculate dynamic weights
-        try:
-            weights, applied_conditions = matching_service.calculate_dynamic_weights(questionnaire)
-        except Exception as e:
-            # Fallback to base weights if calculation fails
-            print(f"⚠️ Dynamic weights calculation failed, using base weights: {e}")
-            weights = matching_service.BASE_WEIGHTS
-            applied_conditions = []
+            if USE_ENHANCED_MVP:
+                matching_service = EnhancedMVPMatchingService()
+            else:
+                matching_service = ProfessionalMatchingService()
         
         # Score all care homes
         scored_homes = []
-        for home in care_homes:
+        
+        if USE_ENHANCED_MVP:
+            # Enhanced MVP with distance expansion (Phase 2)
             try:
-                # Use empty enriched_data for now (can be enhanced later)
-                enriched_data = {}
+                print("📊 Using ENHANCED MVP with distance expansion")
                 
-                match_result = matching_service.calculate_156_point_match(
-                    home=home,
-                    user_profile=questionnaire,
-                    enriched_data=enriched_data,
-                    weights=weights
+                # Phase 2: Use distance expansion manager for better result handling
+                expansion_manager = DistanceExpansionManager()
+                
+                # TODO: Database fields available but not yet used in scoring (future improvements):
+                # CQC Ratings (2 unused):
+                #   ├─ cqc_rating_responsive → Quality-of-life score
+                #   └─ cqc_rating_well_led → Stability/governance score
+                # Facilities:
+                #   ├─ ensuite_rooms → Privacy bonus for dementia care
+                #   ├─ secure_garden → Safety bonus for dementia patients
+                #   ├─ wifi_available → Quality-of-life bonus
+                #   └─ parking_onsite → Family convenience bonus
+                # Availability:
+                #   ├─ beds_available → Filter only available homes
+                #   └─ has_availability → Availability penalty if unknown
+                # TODO: CRITICAL - These fields are referenced in code but MISSING FROM DB:
+                #   ├─ has_nursing_staff → Check if home has nursing staff (MISSING!)
+                #   ├─ has_hoist → Equipment availability (MISSING!)
+                #   └─ has_hospital_bed → Equipment availability (MISSING!)
+                
+                # Determine initial radius
+                initial_radius = 5.0  # Default preferred distance
+                if max_distance_km:
+                    initial_radius = min(max_distance_km, 5.0)
+                
+                # Run expansion search
+                expansion_result = expansion_manager.expand_search(
+                    homes=care_homes,
+                    matching_service=matching_service,
+                    questionnaire=questionnaire,
+                    preferred_radius_km=initial_radius,
+                    top_n=min(5, len(care_homes)) if care_homes else 5
                 )
                 
-                scored_homes.append({
-                    'home': home,
-                    'matchScore': match_result.get('total_score', 0),
-                    'factorScores': match_result.get('factor_scores', {}),
-                    'matchResult': match_result
-                })
+                # Convert MatchingResult objects to scored_homes format
+                for idx, result in enumerate(expansion_result.matched_homes, 1):
+                    # Extract home data
+                    home_data = result.home if isinstance(result.home, dict) else result.home
+                    
+                    scored_homes.append({
+                        'home': home_data,
+                        'matchScore': result.score.total_score,
+                        'rank': idx,
+                        'factorScores': {
+                            'medical': result.score.medical_score,
+                            'safety': result.score.safety_score,
+                            'location': result.score.location_score,
+                        },
+                        'matchResult': {
+                            'total_score': result.score.total_score,
+                            'medical_score': result.score.medical_score,
+                            'safety_score': result.score.safety_score,
+                            'location_score': result.score.location_score,
+                            'constraints_met': result.score.constraints_met,
+                            'warnings': result.score.warnings
+                        },
+                        'distanceContext': {
+                            'actual_distance_km': home_data.get('distance_km', 0) if isinstance(home_data, dict) else 0,
+                            'within_preferred_radius': home_data.get('distance_km', 0) <= initial_radius if isinstance(home_data, dict) else False,
+                            'search_expanded': expansion_result.search_expanded
+                        }
+                    })
+                
+                # Phase 4: Check if constraint relaxation is needed
+                if len(expansion_result.matched_homes) < 3:
+                    print("📊 Insufficient results from distance expansion. Applying constraint relaxation...")
+                    
+                    try:
+                        relaxation_manager = ConstraintRelaxationManager()
+                        relaxed_homes, relaxed_config, relaxation_message = relaxation_manager.relax_constraints_progressively(
+                            homes=care_homes,
+                            matching_service=matching_service,
+                            questionnaire=questionnaire,
+                            top_n=5,
+                            min_results_threshold=3
+                        )
+                        
+                        # Use relaxed results if better than expansion results
+                        if len(relaxed_homes) > len(expansion_result.matched_homes):
+                            logger.info(f"Using relaxed constraints (level: {relaxed_config.level.name})")
+                            expansion_result.matched_homes = relaxed_homes
+                            expansion_result.expansion_message += f" | Constraints relaxed to {relaxed_config.level.name}"
+                            
+                            # Clear previous scored_homes and rebuild with relaxed results
+                            scored_homes = []
+                        
+                        # Store constraint relaxation metadata
+                        request['_constraint_metadata'] = {
+                            'constraint_level': relaxed_config.level.name,
+                            'constraint_message': relaxation_message,
+                            'constraints_applied': {
+                                'care_type': relaxed_config.apply_care_type,
+                                'cqc_safety': relaxed_config.apply_cqc_safety,
+                                'wheelchair': relaxed_config.apply_wheelchair,
+                                'medication': relaxed_config.apply_medication,
+                                'equipment': relaxed_config.apply_equipment,
+                                'nursing': relaxed_config.apply_nursing,
+                            }
+                        }
+                    
+                    except Exception as e:
+                        logger.warning(f"Constraint relaxation failed: {e}")
+                        # Continue with expansion results
+                
+                # Store expansion metadata for response
+                request['_expansion_metadata'] = {
+                    'expansion_phase': expansion_result.expansion_phase,
+                    'expansion_message': expansion_result.expansion_message,
+                    'total_homes_evaluated': expansion_result.total_homes_evaluated,
+                    'homes_at_preferred_distance': expansion_result.homes_at_preferred_distance,
+                    'search_expanded': expansion_result.search_expanded
+                }
+                
             except Exception as e:
-                print(f"⚠️ Error scoring home {home.get('name', 'unknown')}: {e}")
-                # Continue with other homes
-                continue
+                print(f"⚠️ Enhanced MVP matching failed: {e}")
+                import traceback
+                traceback.print_exc()
+                logger.error(f"Enhanced MVP matching error: {e}")
+                # Fallback to professional matching
+                print("⚠️ Falling back to ProfessionalMatchingService")
+                USE_ENHANCED_MVP = False
+        
+        if not USE_ENHANCED_MVP:
+            # Original ProfessionalMatchingService scoring
+            try:
+                weights, applied_conditions = matching_service.calculate_dynamic_weights(questionnaire)
+            except Exception as e:
+                # Fallback to base weights if calculation fails
+                print(f"⚠️ Dynamic weights calculation failed, using base weights: {e}")
+                weights = matching_service.BASE_WEIGHTS
+                applied_conditions = []
+            
+            for home in care_homes:
+                try:
+                    # Use empty enriched_data for now (can be enhanced later)
+                    enriched_data = {}
+                    
+                    match_result = matching_service.calculate_156_point_match(
+                        home=home,
+                        user_profile=questionnaire,
+                        enriched_data=enriched_data,
+                        weights=weights
+                    )
+                    
+                    scored_homes.append({
+                        'home': home,
+                        'matchScore': match_result.get('total_score', 0),
+                        'factorScores': match_result.get('factor_scores', {}),
+                        'matchResult': match_result
+                    })
+                except Exception as e:
+                    print(f"⚠️ Error scoring home {home.get('name', 'unknown')}: {e}")
+                    # Continue with other homes
+                    continue
         
         # Check if we have any scored homes
         if not scored_homes:
@@ -1038,13 +1206,97 @@ async def generate_professional_report(request: Dict[str, Any] = Body(...)):
             import traceback
             print(f"Traceback: {traceback.format_exc()}")
         
-        return {
+        # Phase 3: Add searchMetadata if expansion happened
+        response = {
             'questionnaire': questionnaire,
             'report': report,
             'generated_at': datetime.now().isoformat(),
             'report_id': report_id,
             'status': 'completed'
         }
+        
+        # Validate metadata before using (Issue #2: Response validation)
+        def validate_expansion_metadata(meta: Dict[str, Any]) -> bool:
+            """Validate expansion metadata structure"""
+            if not isinstance(meta, dict):
+                logger.error("expansion_metadata is not a dict")
+                return False
+            
+            required_fields = [
+                'expansion_phase', 'expansion_message', 'total_homes_evaluated',
+                'homes_at_preferred_distance', 'search_expanded'
+            ]
+            
+            for field in required_fields:
+                if field not in meta:
+                    logger.error(f"Missing metadata field: {field}")
+                    return False
+            
+            # Validate types
+            if not isinstance(meta.get('expansion_phase'), int):
+                logger.error("expansion_phase must be int")
+                return False
+            
+            if not isinstance(meta.get('search_expanded'), bool):
+                logger.error("search_expanded must be bool")
+                return False
+            
+            return True
+        
+        # Include expansion + constraint metadata in response if using Enhanced MVP
+        if USE_ENHANCED_MVP and '_expansion_metadata' in request:
+            expansion_meta = request.get('_expansion_metadata', {})
+            
+            # Validate metadata before using
+            if not validate_expansion_metadata(expansion_meta):
+                logger.error("Invalid expansion metadata, using safe defaults")
+                expansion_meta = {
+                    'expansion_phase': 0,
+                    'expansion_message': 'Search completed',
+                    'total_homes_evaluated': len(top_5_homes),
+                    'homes_at_preferred_distance': len(top_5_homes),
+                    'search_expanded': False
+                }
+            
+            constraint_meta = request.get('_constraint_metadata', {})
+            
+            response['searchMetadata'] = {
+                'total_homes_considered': expansion_meta['total_homes_evaluated'],
+                'homes_matched': len(top_5_homes),
+                'homes_at_preferred_distance': expansion_meta['homes_at_preferred_distance'],
+                'expansion_phase': expansion_meta['expansion_phase'],
+                'expansion_message': expansion_meta['expansion_message'],
+                'search_expanded': expansion_meta['search_expanded'],
+                'constraint_level': constraint_meta.get('constraint_level', 'strict'),
+                'constraint_message': constraint_meta.get('constraint_message', ''),
+                'notes': []
+            }
+            
+            # Build notes based on search/constraint phases
+            if not expansion_meta['search_expanded'] and not constraint_meta:
+                response['searchMetadata']['notes'] = [
+                    "Homes scored on: medical fit (30%), safety (40%), location (25%), bonus (5%)",
+                    "Hard constraints enforced for patient safety"
+                ]
+            else:
+                response['searchMetadata']['notes'] = [
+                    f"Initial search returned {expansion_meta['homes_at_preferred_distance']} homes at preferred distance",
+                    f"Search automatically expanded: {expansion_meta['expansion_message']}",
+                ]
+                
+                if constraint_meta:
+                    response['searchMetadata']['notes'].append(
+                        f"Constraints relaxed to {constraint_meta['constraint_level']} level: {constraint_meta['constraint_message']}"
+                    )
+                
+                response['searchMetadata']['notes'].append(
+                    "Results ranked by match score. Closer homes score higher."
+                )
+            
+            logger.info(f"Added searchMetadata: expansion_phase={expansion_meta['expansion_phase']}, "
+                       f"constraint_level={constraint_meta.get('constraint_level', 'strict')}")
+        
+        return response
         
     except HTTPException:
         raise

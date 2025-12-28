@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 from services.professional_report_validator import validate_questionnaire, QuestionnaireValidationError
 from services.professional_matching_service import ProfessionalMatchingService
 from services.simple_matching_service import SimpleMatchingService
+from services.enhanced_mvp_matching_service import EnhancedMVPMatchingService
 from services.async_data_loader import get_async_loader
 from services.cost_analysis_service import CostAnalysisService
 from services.data_quality_diagnostics import diagnose_matching_data, analyze_fallback_usage
@@ -28,11 +29,512 @@ router = APIRouter(prefix="/api", tags=["Reports"])
 
 VALID_CARE_TYPES = {'residential', 'nursing', 'dementia', 'respite'}
 VALID_REGIONS = {'england', 'wales', 'scotland', 'northern_ireland'}
+
+
+@router.get("/care-homes")
+async def get_care_homes(
+    postcode: Optional[str] = None,
+    distance: Optional[float] = None,
+    limit: Optional[int] = 10,
+    cache: Optional[bool] = True
+):
+    """
+    Get care homes from SQLite database
+    
+    This endpoint is used by the new Professional Report frontend (React Data Engine).
+    It exclusively uses SQLite database - no CSV fallback.
+    
+    Args:
+        postcode: Postcode to search near
+        distance: Maximum distance in km (default: 30)
+        limit: Maximum number of results (default: 10)
+        cache: Whether to use cache (ignored, kept for compatibility)
+    
+    Returns:
+        JSON with 'homes' array containing care home data
+    """
+    try:
+        from pathlib import Path as PathlibPath
+        from services.sqlite_care_homes_service import SQLiteCareHomesService
+        
+        # DB path relative to backend directory
+        db_path = PathlibPath(__file__).parent.parent / 'care_homes.db'
+        
+        if not db_path.exists():
+            raise HTTPException(
+                status_code=500,
+                detail="SQLite database not found. Please ensure care_homes.db exists."
+            )
+        
+        # Use SQLite for lightning-fast queries
+        service = SQLiteCareHomesService(str(db_path))
+        
+        # Get user coordinates from postcode if provided
+        # ✅ FIX: Add timeout to prevent blocking if postcode resolution is slow
+        user_lat = None
+        user_lon = None
+        if postcode:
+            try:
+                import asyncio
+                from routers.os_places_routes import resolve_postcode
+                # ✅ FIX: Add 5 second timeout for postcode resolution to prevent blocking
+                postcode_data = await asyncio.wait_for(
+                    resolve_postcode(postcode),
+                    timeout=5.0
+                )
+                if postcode_data and 'latitude' in postcode_data and 'longitude' in postcode_data:
+                    user_lat = postcode_data['latitude']
+                    user_lon = postcode_data['longitude']
+            except asyncio.TimeoutError:
+                logger.warning(f"Postcode resolution timeout for {postcode}, continuing without coordinates")
+            except Exception as e:
+                logger.warning(f"Could not resolve postcode {postcode}: {e}")
+        
+        # ✅ REFACTOR: For professional report, load ALL homes matching non-strict filters
+        # No quality filter at load time - filtering happens during matching
+        # If no limit specified, load all matching homes
+        professional_limit = None if not limit else limit
+        
+        care_homes = service.get_care_homes(
+            local_authority=None,  # Will be resolved from postcode if needed
+            max_distance_km=distance or 30.0,
+            user_lat=user_lat,
+            user_lon=user_lon,
+            postcode=postcode,  # Pass postcode for compatibility
+            limit=professional_limit,
+            apply_quality_filter=False  # ✅ Don't filter by quality - let matching algorithm decide
+        )
+        service.close()
+        
+        logger.info(f"✅ Loaded {len(care_homes)} care homes from SQLite for postcode {postcode}")
+        
+        return {
+            "homes": care_homes,
+            "count": len(care_homes),
+            "source": "sqlite"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Failed to load care homes from SQLite: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to load care homes from SQLite database: {str(e)}"
+        )
 MAX_CARE_HOMES = 50
 
-# Configuration flag: Use simplified matching for bootstrap MVP
-# Set USE_SIMPLE_MATCHING=true in environment to enable
-USE_SIMPLE_MATCHING = os.getenv('USE_SIMPLE_MATCHING', 'true').lower() == 'true'
+# Configuration flags: Matching service selection
+# Priority: Enhanced MVP > Simple Matching > Professional (156-point)
+USE_ENHANCED_MVP = os.getenv('USE_ENHANCED_MVP', 'true').lower() == 'true'  # Default: enabled
+USE_SIMPLE_MATCHING = os.getenv('USE_SIMPLE_MATCHING', 'false').lower() == 'true'  # Fallback if Enhanced MVP disabled
+
+# Helper function to convert Enhanced MVP MatchingResult to standard format
+def _convert_enhanced_mvp_result(matching_results, home_dict):
+    """Convert Enhanced MVP MatchingResult to standard match_result format"""
+    if not matching_results or len(matching_results) == 0:
+        return {
+            'total': 0,
+            'normalized': 0,
+            'category_scores': {},
+            'point_allocations': {},
+            'weights': {},
+            'constraints_met': False,
+            'warnings': []
+        }
+    
+    result = matching_results[0]  # Get first result
+    score = result.score
+    
+    # Enhanced MVP uses 3 categories: medical (30 max), safety (40 max), location (25 max)
+    # Normalize to 0-1 scale for category_scores
+    category_scores = {
+        'medical': score.medical_score / 30.0 if 30.0 > 0 else 0.0,  # Normalize to 0-1
+        'safety': score.safety_score / 40.0 if 40.0 > 0 else 0.0,
+        'location': score.location_score / 25.0 if 25.0 > 0 else 0.0
+    }
+    
+    # Point allocations are raw scores (not normalized)
+    point_allocations = {
+        'medical': round(score.medical_score, 1),
+        'safety': round(score.safety_score, 1),
+        'location': round(score.location_score, 1)
+    }
+    
+    return {
+        'total': round(score.total_score, 1),
+        'normalized': round(score.total_score, 1),  # Already 0-100
+        'category_scores': category_scores,
+        'point_allocations': point_allocations,
+        'weights': {},  # Enhanced MVP doesn't return weights in same format
+        'constraints_met': score.constraints_met,
+        'warnings': score.warnings
+    }
+
+
+@router.post("/match-unenriched-homes")
+async def match_unenriched_homes(request: Dict[str, Any] = Body(...)):
+    """
+    Match homes WITHOUT enrichment - uses only database data
+    
+    ✅ REFACTOR: This endpoint matches homes using only database fields,
+    then top-5 candidates will be enriched separately. More efficient approach.
+    
+    Args:
+        request: {
+            "homes": List[Dict] - Raw care homes from database (20-30 homes)
+            "questionnaire": Dict - User questionnaire for matching
+        }
+    
+    Returns:
+        {
+            "matched_homes": List[Dict] - Scored and ranked homes (top 5)
+            "count": int - Number of matched homes
+        }
+    """
+    try:
+        homes = request.get('homes', [])
+        questionnaire = request.get('questionnaire', {})
+        
+        if not homes or len(homes) == 0:
+            raise HTTPException(
+                status_code=400,
+                detail="No homes provided"
+            )
+        
+        if not questionnaire:
+            raise HTTPException(
+                status_code=400,
+                detail="Questionnaire is required for matching"
+            )
+        
+        print(f"📊 Matching {len(homes)} homes WITHOUT enrichment (database-only)")
+        
+        # Initialize matching service - Enhanced MVP is default
+        if USE_ENHANCED_MVP:
+            matching_service = EnhancedMVPMatchingService()
+            print("   Using Enhanced MVP Matching (100-point, 85% coverage, hard constraints)")
+        elif USE_SIMPLE_MATCHING:
+            matching_service = SimpleMatchingService()
+            print("   Using Simple Matching (100-point, 60% coverage)")
+        else:
+            matching_service = ProfessionalMatchingService()
+            print("   Using Professional Matching (156-point)")
+        
+        # Enhanced MVP uses match_homes() method which handles everything
+        if USE_ENHANCED_MVP:
+            try:
+                matching_results = matching_service.match_homes(
+                    homes=homes,
+                    questionnaire=questionnaire,
+                    top_n=5
+                )
+                
+                # Convert MatchingResult objects to standard format
+                scored_homes = []
+                for result in matching_results:
+                    match_result = _convert_enhanced_mvp_result([result], result.home.__dict__)
+                    scored_homes.append({
+                        'home': {
+                            'name': result.home.name,
+                            'id': result.home.name,  # Use name as ID for now
+                            'cqc_rating_safe': result.home.cqc_rating_safe,
+                            'cqc_rating_overall': result.home.cqc_rating_overall,
+                            'distance_km': result.home.distance_km,
+                            **{k: v for k, v in result.home.__dict__.items() if v is not None}
+                        },
+                        'matchScore': match_result.get('total', 0),
+                        'factorScores': match_result.get('category_scores', {}),
+                        'matchResult': match_result
+                    })
+            except Exception as e:
+                print(f"⚠️ Enhanced MVP matching failed: {e}")
+                import traceback
+                traceback.print_exc()
+                raise HTTPException(status_code=500, detail=f"Matching failed: {str(e)}")
+        else:
+            # Calculate dynamic weights for Simple/Professional matching
+            weights, conditions = matching_service.calculate_dynamic_weights(questionnaire)
+            print(f"   Applied conditions: {len(conditions)}")
+            
+            # Score each home using ONLY database data (no enriched_data)
+            scored_homes = []
+            for home in homes:
+                try:
+                    # Prepare home data for matching
+                    home_data = {
+                        'name': home.get('name', ''),
+                        'postcode': home.get('postcode', ''),
+                        'id': home.get('id'),
+                        'cqc_location_id': home.get('id') or home.get('cqc_location_id'),
+                        'cqc_rating_overall': home.get('cqcRating') or home.get('cqc_rating') or home.get('cqc_rating_overall') or 'Unknown',
+                        'distance_km': float(home.get('distance', '0km').replace('km', '')) if isinstance(home.get('distance'), str) else home.get('distance', 0),
+                        'weekly_cost': home.get('weeklyPrice', 0) or home.get('weekly_cost', 0),
+                    }
+                    # Include all other fields from home
+                    home_data.update(home)
+                    
+                    # ✅ REFACTOR: Use EMPTY enriched_data - matching based on DB only
+                    enriched_data = {}
+                    
+                    # Calculate match score
+                    if USE_ENHANCED_MVP:
+                        # Enhanced MVP uses match_homes() which takes a list
+                        try:
+                            matching_results = matching_service.match_homes(
+                                homes=[home_data],
+                                questionnaire=questionnaire,
+                                top_n=1
+                            )
+                            if matching_results and len(matching_results) > 0:
+                                match_result = _convert_enhanced_mvp_result(matching_results, home_data)
+                            else:
+                                match_result = {
+                                    'total': 0,
+                                    'normalized': 0,
+                                    'category_scores': {},
+                                    'point_allocations': {},
+                                    'weights': {},
+                                    'constraints_met': False,
+                                    'warnings': []
+                                }
+                        except Exception as e:
+                            print(f"⚠️ Enhanced MVP matching failed for {home_data.get('name', 'unknown')}: {e}")
+                            match_result = {
+                                'total': 0,
+                                'normalized': 0,
+                                'category_scores': {},
+                                'point_allocations': {},
+                                'weights': {},
+                                'constraints_met': False,
+                                'warnings': [str(e)]
+                            }
+                    elif USE_SIMPLE_MATCHING:
+                        match_result = matching_service.calculate_100_point_match(
+                            home=home_data,
+                            user_profile=questionnaire,
+                            enriched_data=enriched_data,  # Empty - no enrichment yet
+                            weights=weights
+                        )
+                    else:
+                        match_result = matching_service.calculate_156_point_match(
+                            home=home_data,
+                            user_profile=questionnaire,
+                            enriched_data=enriched_data,  # Empty - no enrichment yet
+                            weights=weights
+                        )
+                    
+                    scored_homes.append({
+                        'home': home_data,
+                        'matchScore': match_result.get('total', 0),
+                        'factorScores': match_result.get('category_scores', {}),
+                        'matchResult': match_result,
+                    })
+                    
+                except Exception as e:
+                    print(f"⚠️ Error scoring home {home.get('name', 'unknown')}: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    continue
+        
+        if not scored_homes:
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to score any homes"
+            )
+        
+        # Sort by match score and return ALL (frontend will select top-30 for enrichment)
+        scored_homes.sort(key=lambda h: h.get('matchScore', 0), reverse=True)
+        
+        print(f"✅ Matched {len(scored_homes)} homes (top score: {scored_homes[0].get('matchScore', 0) if scored_homes else 0})")
+        print(f"   📌 All scored homes returned (frontend will select top-30 for enrichment)")
+        
+        return {
+            "matched_homes": scored_homes,  # Return all, not just top-5
+            "count": len(scored_homes),
+            "algorithm": "Enhanced MVP (100-point)" if USE_ENHANCED_MVP else ("Simple (100-point)" if USE_SIMPLE_MATCHING else "Professional (156-point)"),
+            "note": "All scored homes returned. Frontend will select top-30 for enrichment, then top-5 after re-scoring."
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Failed to match unenriched homes: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to match homes: {str(e)}"
+        )
+
+
+@router.post("/match-enriched-homes")
+async def match_enriched_homes(request: Dict[str, Any] = Body(...)):
+    """
+    Match already enriched homes without reloading from database
+    
+    ✅ FIX: This endpoint accepts pre-enriched homes from frontend,
+    avoiding duplicate database queries. Used by React Data Engine.
+    
+    Args:
+        request: {
+            "enriched_homes": List[Dict] - Already enriched care homes from frontend
+            "questionnaire": Dict - User questionnaire for matching
+        }
+    
+    Returns:
+        {
+            "matched_homes": List[Dict] - Scored and ranked homes
+            "count": int - Number of matched homes
+        }
+    """
+    try:
+        enriched_homes = request.get('enriched_homes', [])
+        questionnaire = request.get('questionnaire', {})
+        
+        if not enriched_homes or len(enriched_homes) == 0:
+            raise HTTPException(
+                status_code=400,
+                detail="No enriched homes provided"
+            )
+        
+        if not questionnaire:
+            raise HTTPException(
+                status_code=400,
+                detail="Questionnaire is required for matching"
+            )
+        
+        print(f"📊 Matching {len(enriched_homes)} pre-enriched homes (no DB reload)")
+        
+        # Initialize matching service
+        if USE_SIMPLE_MATCHING:
+            matching_service = SimpleMatchingService()
+            print("   Using Simple Matching (100-point Enhanced MVP)")
+        else:
+            matching_service = ProfessionalMatchingService()
+            print("   Using Professional Matching (156-point)")
+        
+        # Calculate dynamic weights
+        weights, conditions = matching_service.calculate_dynamic_weights(questionnaire)
+        print(f"   Applied conditions: {len(conditions)}")
+        
+        # Score each enriched home
+        scored_homes = []
+        for enriched_home in enriched_homes:
+            try:
+                # Extract enriched data
+                enriched_data = {
+                    'cqc_detailed': enriched_home.get('cqcDeepDive', {}),
+                    'fsa_detailed': enriched_home.get('fsaDetailed', {}),
+                    'financial': enriched_home.get('financialStability', {}),
+                    'google_places': enriched_home.get('googlePlaces', {}),
+                    'staff_quality': enriched_home.get('staffQuality', {}),
+                    'neighbourhood': enriched_home.get('neighbourhood', {}),
+                }
+                
+                # Prepare home data for matching
+                home_data = {
+                    'name': enriched_home.get('name', ''),
+                    'postcode': enriched_home.get('postcode', ''),
+                    'id': enriched_home.get('id'),
+                    'cqc_location_id': enriched_home.get('id') or enriched_home.get('cqc_location_id'),
+                    'cqc_rating_overall': enriched_home.get('cqcRating') or enriched_home.get('cqcDeepDive', {}).get('overall_rating'),
+                    'distance_km': float(enriched_home.get('distance', '0km').replace('km', '')) if isinstance(enriched_home.get('distance'), str) else enriched_home.get('distance', 0),
+                    'weekly_cost': enriched_home.get('weeklyPrice', 0),
+                }
+                # Include all other fields from enriched_home
+                home_data.update(enriched_home)
+                
+                # Calculate match score
+                if USE_ENHANCED_MVP:
+                    # Enhanced MVP uses match_homes() which takes a list
+                    try:
+                        matching_results = matching_service.match_homes(
+                            homes=[home_data],
+                            questionnaire=questionnaire,
+                            top_n=1
+                        )
+                        if matching_results and len(matching_results) > 0:
+                            match_result = _convert_enhanced_mvp_result(matching_results, home_data)
+                        else:
+                            match_result = {
+                                'total': 0,
+                                'normalized': 0,
+                                'category_scores': {},
+                                'point_allocations': {},
+                                'weights': {},
+                                'constraints_met': False,
+                                'warnings': []
+                            }
+                    except Exception as e:
+                        print(f"⚠️ Enhanced MVP matching failed for {home_data.get('name', 'unknown')}: {e}")
+                        match_result = {
+                            'total': 0,
+                            'normalized': 0,
+                            'category_scores': {},
+                            'point_allocations': {},
+                            'weights': {},
+                            'constraints_met': False,
+                            'warnings': [str(e)]
+                        }
+                elif USE_SIMPLE_MATCHING:
+                    match_result = matching_service.calculate_100_point_match(
+                        home=home_data,
+                        user_profile=questionnaire,
+                        enriched_data=enriched_data,
+                        weights=weights
+                    )
+                else:
+                    match_result = matching_service.calculate_156_point_match(
+                        home=home_data,
+                        user_profile=questionnaire,
+                        enriched_data=enriched_data,
+                        weights=weights
+                    )
+                
+                scored_homes.append({
+                    'home': home_data,
+                    'matchScore': match_result.get('total', 0),
+                    'factorScores': match_result.get('category_scores', {}),
+                    'matchResult': match_result,
+                    'enriched_data': enriched_data,  # Keep enriched data
+                })
+                
+            except Exception as e:
+                print(f"⚠️ Error scoring home {enriched_home.get('name', 'unknown')}: {e}")
+                import traceback
+                traceback.print_exc()
+                continue
+        
+        if not scored_homes:
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to score any homes"
+            )
+        
+        # Sort by match score and return top 5
+        scored_homes.sort(key=lambda h: h.get('matchScore', 0), reverse=True)
+        top_homes = scored_homes[:5]
+        
+        print(f"✅ Matched {len(top_homes)} homes (top score: {top_homes[0].get('matchScore', 0) if top_homes else 0})")
+        
+        return {
+            "matched_homes": top_homes,
+            "count": len(top_homes),
+            "algorithm": "Enhanced MVP (100-point)" if USE_ENHANCED_MVP else ("Simple (100-point)" if USE_SIMPLE_MATCHING else "Professional (156-point)")
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Failed to match enriched homes: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to match enriched homes: {str(e)}"
+        )
 
 
 @router.get("/report/summary/{job_id}")
@@ -106,7 +608,8 @@ async def generate_professional_report(request: Dict[str, Any] = Body(...)):
         
         preferred_city = location_budget.get('q5_preferred_city', '')
         max_distance = location_budget.get('q6_max_distance', 'distance_not_important')
-        postcode = location_budget.get('q4_postcode', '')  # Extract postcode for geo resolution
+        # ✅ FIX: Remove non-existent q4_postcode (Professional questionnaire doesn't have it)
+        postcode = ''  # Professional questionnaire only has city, not postcode
         care_types = medical_needs.get('q8_care_types', [])
         
         # Normalize preferred_city for better matching
@@ -119,14 +622,17 @@ async def generate_professional_report(request: Dict[str, Any] = Body(...)):
             except ImportError:
                 print(f"⚠️ Location normalizer not available, using original: '{preferred_city}'")
         
-        # Determine care type
-        care_type: Optional[str] = None
-        if 'specialised_dementia' in care_types:
-            care_type = 'dementia'
-        elif 'nursing' in care_types or 'general_nursing' in care_types:
-            care_type = 'nursing'
-        elif 'general_residential' in care_types:
-            care_type = 'residential'
+        # Determine care type with fallback to residential
+        # ✅ FIX: Default to residential if no match (was: None = no results)
+        care_type: str = 'residential'  # Default fallback
+        if care_types:
+            if any(ct in care_types for ct in ['specialised_dementia', 'dementia_care']):
+                care_type = 'dementia'
+            elif any(ct in care_types for ct in ['nursing', 'general_nursing', 'nursing_care']):
+                care_type = 'nursing'
+            elif any(ct in care_types for ct in ['general_residential', 'residential']):
+                care_type = 'residential'
+            # Otherwise keep default 'residential'
         
         # Calculate max distance in km
         # Start with user's preference, but will expand if needed
@@ -218,88 +724,134 @@ async def generate_professional_report(request: Dict[str, Any] = Body(...)):
         saved_user_lat = user_lat
         saved_user_lon = user_lon
         
-        # Get care homes using hybrid approach (CQC + Staging) with fallback to legacy CSV
+        # Get care homes using SQLite (FAST - <100ms instead of 40-60s!)
+        print(f"\n{'='*80}")
+        print(f"📥 Loading care homes from SQLite database...")
+        print(f"{'='*80}")
         care_homes = []
+        
         try:
-            from services.csv_care_homes_service import get_care_homes as get_csv_care_homes
+            from pathlib import Path as PathlibPath
+            from services.sqlite_care_homes_service import SQLiteCareHomesService
             
-            # Start with higher limit to get more candidates
-            initial_limit = 50
-            care_homes = await asyncio.to_thread(
-                get_csv_care_homes,
+            # DB path relative to backend directory
+            db_path = PathlibPath(__file__).parent.parent / 'care_homes.db'
+            
+            # Use SQLite for lightning-fast queries
+            service = SQLiteCareHomesService(str(db_path))
+            care_homes = service.get_care_homes(
+                postcode=postcode,
                 local_authority=normalized_city if normalized_city else preferred_city,
                 care_type=care_type,
                 max_distance_km=max_distance_km,
                 user_lat=user_lat,
                 user_lon=user_lon,
-                limit=initial_limit,
-                use_hybrid=True  # Enable hybrid approach (CQC + Staging)
+                limit=50
             )
-            print(f"✅ Loaded {len(care_homes)} care homes using hybrid approach (CQC + Staging) (limit={initial_limit}, distance={max_distance_km}km)")
-        except AttributeError:
-            # Fallback for Python < 3.9
-            try:
-                from services.csv_care_homes_service import get_care_homes as get_csv_care_homes
-                loop = asyncio.get_event_loop()
-                initial_limit = 50
-                care_homes = await loop.run_in_executor(
-                    None,
-                    lambda: get_csv_care_homes(
+            service.close()
+            
+            print(f"✅ Loaded {len(care_homes)} care homes from SQLite (FAST!)")
+        except Exception as e:
+            print(f"❌ SQLite load failed: {e}")
+            import traceback
+            traceback.print_exc()
+            # SQLite is the only source - no CSV fallback
+            care_homes = []
+            print(f"⚠️ No care homes loaded - SQLite database is required")
+        
+        # ✅ FIX: Implement fallback strategies if 0 homes found (SQLite only)
+        # Try expanding filters using SQLite
+        if not care_homes or len(care_homes) == 0:
+            print(f"\n   🔴 CRITICAL: 0 care homes found! Starting SQLite fallback strategies...")
+            
+            # Fallback 1: Expand distance (SQLite)
+            if max_distance_km and max_distance_km < 50:
+                expanded_distance = min(max_distance_km * 2, 50)
+                print(f"\n   🔄 Fallback 1: Expanding distance {max_distance_km}km → {expanded_distance}km (SQLite)")
+                try:
+                    from pathlib import Path as PathlibPath
+                    from services.sqlite_care_homes_service import SQLiteCareHomesService
+                    
+                    db_path = PathlibPath(__file__).parent.parent / 'care_homes.db'
+                    service = SQLiteCareHomesService(str(db_path))
+                    care_homes = service.get_care_homes(
+                        postcode=postcode,
                         local_authority=normalized_city if normalized_city else preferred_city,
                         care_type=care_type,
-                        max_distance_km=max_distance_km,
+                        max_distance_km=expanded_distance,
                         user_lat=user_lat,
                         user_lon=user_lon,
-                        limit=initial_limit,
-                        use_hybrid=True  # Enable hybrid approach (CQC + Staging)
+                        limit=initial_limit
                     )
-                )
-                print(f"✅ Loaded {len(care_homes)} care homes using hybrid approach (CQC + Staging) (limit={initial_limit}, distance={max_distance_km}km)")
-            except Exception as e:
-                print(f"⚠️ Hybrid approach failed, trying legacy CSV: {e}")
-                # Try legacy CSV without hybrid
-                try:
-                    care_homes = await loop.run_in_executor(
-                        None,
-                        lambda: get_csv_care_homes(
-                            local_authority=normalized_city if normalized_city else preferred_city,
-                            care_type=care_type,
-                            max_distance_km=max_distance_km,
-                            user_lat=user_lat,
-                            user_lon=user_lon,
-                            limit=initial_limit,
-                            use_hybrid=False  # Disable hybrid, use legacy CSV
-                        )
-                    )
-                    print(f"✅ Loaded {len(care_homes)} care homes from legacy CSV (limit={initial_limit}, distance={max_distance_km}km)")
-                except Exception as e2:
-                    print(f"⚠️ Legacy CSV also failed: {e2}")
+                    service.close()
+                    if care_homes and len(care_homes) > 0:
+                        print(f"   ✅ Fallback 1 SUCCESS: {len(care_homes)} homes found (SQLite)")
+                except Exception as e:
+                    print(f"   ❌ Fallback 1 failed: {e}")
                     care_homes = []
-        except Exception as e:
-            print(f"⚠️ Hybrid approach failed, trying legacy CSV: {e}")
-            # Try legacy CSV without hybrid
-            try:
-                from services.csv_care_homes_service import get_care_homes as get_csv_care_homes
-                care_homes = await asyncio.to_thread(
-                    get_csv_care_homes,
-                    local_authority=normalized_city if normalized_city else preferred_city,
-                    care_type=care_type,
-                    max_distance_km=max_distance_km,
-                    user_lat=user_lat,
-                    user_lon=user_lon,
-                    limit=initial_limit,
-                    use_hybrid=False  # Disable hybrid, use legacy CSV
-                )
-                print(f"✅ Loaded {len(care_homes)} care homes from legacy CSV (limit={initial_limit}, distance={max_distance_km}km)")
-            except Exception as e2:
-                print(f"⚠️ Legacy CSV also failed: {e2}")
-                care_homes = []
+            else:
+                expanded_distance = 50
+            
+            # Fallback 2: Remove care_type restriction (SQLite)
+            if (not care_homes or len(care_homes) == 0) and care_type != 'residential':
+                print(f"\n   🔄 Fallback 2: Removing care_type filter ('{care_type}' → 'residential') (SQLite)")
+                try:
+                    from pathlib import Path as PathlibPath
+                    from services.sqlite_care_homes_service import SQLiteCareHomesService
+                    
+                    db_path = PathlibPath(__file__).parent.parent / 'care_homes.db'
+                    service = SQLiteCareHomesService(str(db_path))
+                    care_homes = service.get_care_homes(
+                        postcode=postcode,
+                        local_authority=normalized_city if normalized_city else preferred_city,
+                        care_type='residential',
+                        max_distance_km=expanded_distance,
+                        user_lat=user_lat,
+                        user_lon=user_lon,
+                        limit=initial_limit
+                    )
+                    service.close()
+                    if care_homes and len(care_homes) > 0:
+                        print(f"   ✅ Fallback 2 SUCCESS: {len(care_homes)} homes found (SQLite)")
+                except Exception as e:
+                    print(f"   ❌ Fallback 2 failed: {e}")
+                    care_homes = []
+            
+            # Fallback 3: Use AsyncDataLoader (database)
+            if not care_homes or len(care_homes) == 0:
+                try:
+                    loader = get_async_loader()
+                    print(f"\n   🔄 Fallback 3: Using AsyncDataLoader (database)...")
+                    
+                    care_homes, loader_lat, loader_lon = await loader.load_initial_data(
+                        preferred_city=normalized_city if normalized_city else preferred_city if preferred_city else None,
+                        care_type='residential',  # Broad search
+                        max_distance_km=50,
+                        postcode=postcode if postcode else None,
+                        limit=50
+                    )
+                    
+                    if care_homes and len(care_homes) > 0:
+                        print(f"   ✅ Fallback 3 SUCCESS: {len(care_homes)} homes found from AsyncDataLoader")
+                    
+                    # Use new coordinates if available
+                    if loader_lat and loader_lon:
+                        user_lat = loader_lat
+                        user_lon = loader_lon
+                    else:
+                        user_lat = saved_user_lat
+                        user_lon = saved_user_lon
+                except Exception as e:
+                    print(f"   ❌ Fallback 3 failed: {e}")
+                    care_homes = []
+                    user_lat = saved_user_lat
+                    user_lon = saved_user_lon
         
-        # If CSV failed, try AsyncDataLoader fallback
+        # If still no homes, try original AsyncDataLoader as last resort
         if not care_homes or len(care_homes) == 0:
             try:
                 loader = get_async_loader()
-                print(f"\n   🔄 Falling back to AsyncDataLoader.load_initial_data()...")
+                print(f"\n   🔄 Fallback 4 (Last Resort): Using AsyncDataLoader.load_initial_data()...")
                 
                 care_homes, loader_lat, loader_lon = await loader.load_initial_data(
                     preferred_city=normalized_city if normalized_city else preferred_city if preferred_city else None,
@@ -630,9 +1182,12 @@ async def generate_professional_report(request: Dict[str, Any] = Body(...)):
             import traceback
             traceback.print_exc()
         
-        # Initialize matching service (simple or full version)
-        if USE_SIMPLE_MATCHING:
-            print("📊 Using SIMPLIFIED matching service (100-point MVP)")
+        # Initialize matching service - Enhanced MVP is default
+        if USE_ENHANCED_MVP:
+            print("📊 Using ENHANCED MVP matching service (100-point, 85% coverage, hard constraints)")
+            matching_service = EnhancedMVPMatchingService()
+        elif USE_SIMPLE_MATCHING:
+            print("📊 Using SIMPLIFIED matching service (100-point MVP, 60% coverage)")
             matching_service = SimpleMatchingService()
         else:
             print("📊 Using FULL matching service (156-point)")
@@ -651,14 +1206,19 @@ async def generate_professional_report(request: Dict[str, Any] = Body(...)):
                 # Re-initialize - should work without MSIF data
                 matching_service = ProfessionalMatchingService()
         
-        # Calculate dynamic weights
-        try:
-            weights, applied_conditions = matching_service.calculate_dynamic_weights(questionnaire)
-        except Exception as e:
-            # Fallback to base weights if calculation fails
-            print(f"⚠️ Dynamic weights calculation failed, using base weights: {e}")
-            weights = matching_service.BASE_WEIGHTS
+        # Calculate dynamic weights (Enhanced MVP doesn't use this, but kept for compatibility)
+        if USE_ENHANCED_MVP:
+            weights = None
             applied_conditions = []
+            print("   Enhanced MVP uses built-in dynamic weights based on fall risk")
+        else:
+            try:
+                weights, applied_conditions = matching_service.calculate_dynamic_weights(questionnaire)
+            except Exception as e:
+                # Fallback to base weights if calculation fails
+                print(f"⚠️ Dynamic weights calculation failed, using base weights: {e}")
+                weights = matching_service.BASE_WEIGHTS
+                applied_conditions = []
         
         # Score all care homes
         # Build basic enriched_data from home data for matching
@@ -693,7 +1253,39 @@ async def generate_professional_report(request: Dict[str, Any] = Body(...)):
                 }
                 
                 # Use appropriate method based on service type
-                if USE_SIMPLE_MATCHING:
+                if USE_ENHANCED_MVP:
+                    # Enhanced MVP uses match_homes() which takes a list
+                    try:
+                        matching_results = matching_service.match_homes(
+                            homes=[home],
+                            questionnaire=questionnaire,
+                            top_n=1
+                        )
+                        if matching_results and len(matching_results) > 0:
+                            match_result = _convert_enhanced_mvp_result(matching_results, home)
+                        else:
+                            # No match found, create empty result
+                            match_result = {
+                                'total': 0,
+                                'normalized': 0,
+                                'category_scores': {},
+                                'point_allocations': {},
+                                'weights': {},
+                                'constraints_met': False,
+                                'warnings': []
+                            }
+                    except Exception as e:
+                        print(f"⚠️ Enhanced MVP matching failed for {home.get('name', 'unknown')}: {e}")
+                        match_result = {
+                            'total': 0,
+                            'normalized': 0,
+                            'category_scores': {},
+                            'point_allocations': {},
+                            'weights': {},
+                            'constraints_met': False,
+                            'warnings': [str(e)]
+                        }
+                elif USE_SIMPLE_MATCHING:
                     match_result = matching_service.calculate_100_point_match(
                         home=home,
                         user_profile=questionnaire,
@@ -726,7 +1318,7 @@ async def generate_professional_report(request: Dict[str, Any] = Body(...)):
             max_match = max(h.get('matchScore', 0) for h in scored_homes)
             
             print(f"\n   📊 Initial Match Quality:")
-            max_score = 100 if USE_SIMPLE_MATCHING else 156
+            max_score = 100 if (USE_ENHANCED_MVP or USE_SIMPLE_MATCHING) else 156
             print(f"      Average match: {avg_match:.1f} / {max_score} ({avg_match/max_score*100:.1f}%)")
             print(f"      Best match: {max_match:.1f} / {max_score} ({max_match/max_score*100:.1f}%)")
             print(f"      Homes analyzed: {len(scored_homes)}")
@@ -743,21 +1335,22 @@ async def generate_professional_report(request: Dict[str, Any] = Body(...)):
                 print(f"      Expanding: distance {initial_max_distance_km}km → {expanded_distance}km, limit {initial_limit} → {expanded_limit}")
                 
                 try:
-                    from services.csv_care_homes_service import get_care_homes as get_csv_care_homes
-                    loop = asyncio.get_event_loop()
-                    expanded_care_homes = await loop.run_in_executor(
-                        None,
-                        lambda: get_csv_care_homes(
-                            local_authority=normalized_city if normalized_city else preferred_city,
-                            care_type=care_type,
-                            max_distance_km=expanded_distance,
-                            user_lat=user_lat,
-                            user_lon=user_lon,
-                            limit=expanded_limit,
-                            use_hybrid=True  # Enable hybrid approach (CQC + Staging)
-                        )
+                    from pathlib import Path as PathlibPath
+                    from services.sqlite_care_homes_service import SQLiteCareHomesService
+                    
+                    db_path = PathlibPath(__file__).parent.parent / 'care_homes.db'
+                    service = SQLiteCareHomesService(str(db_path))
+                    expanded_care_homes = service.get_care_homes(
+                        postcode=postcode,
+                        local_authority=normalized_city if normalized_city else preferred_city,
+                        care_type=care_type,
+                        max_distance_km=expanded_distance,
+                        user_lat=user_lat,
+                        user_lon=user_lon,
+                        limit=expanded_limit
                     )
-                    print(f"      ✅ Loaded {len(expanded_care_homes)} homes with expanded search (hybrid approach)")
+                    service.close()
+                    print(f"      ✅ Loaded {len(expanded_care_homes)} homes with expanded search (SQLite)")
                     
                     # Score expanded homes
                     expanded_scored = []
@@ -819,7 +1412,7 @@ async def generate_professional_report(request: Dict[str, Any] = Body(...)):
                     print(f"      ✅ Expanded search added {len(expanded_scored)} new homes")
                     print(f"      📊 Total homes analyzed: {len(scored_homes)}")
                     if scored_homes:
-                        max_score = 100 if USE_SIMPLE_MATCHING else 156
+                        max_score = 100 if (USE_ENHANCED_MVP or USE_SIMPLE_MATCHING) else 156
                         print(f"      📊 New average match: {sum(h.get('matchScore', 0) for h in scored_homes) / len(scored_homes):.1f} / {max_score}")
                         print(f"      📊 New best match: {max(h.get('matchScore', 0) for h in scored_homes):.1f} / {max_score}")
                 except Exception as e:
@@ -1436,10 +2029,66 @@ async def generate_professional_report(request: Dict[str, Any] = Body(...)):
             })
         
         # Convert to old format for backward compatibility
+        print(f"\n{'='*80}")
+        print(f"🔍 DEBUG: Building top_5_homes from top_5_data")
+        print(f"   top_5_data count: {len(top_5_data)}")
+        print(f"{'='*80}\n")
+        
         top_5_homes = []
         for home_data in top_5_data:
             home = home_data.get('home', {})
             match_result = home_data.get('match_result', {})
+            
+            # ✅ FIX: Ensure home has all necessary fields (id, postcode, etc.)
+            # Try to get from original care_homes if not in home
+            home_name = home.get('name', 'Unknown')
+            original_home = None
+            for ch in care_homes:
+                if ch.get('name') == home_name or ch.get('id') == home.get('id'):
+                    original_home = ch
+                    break
+            
+            # ✅ FIX: Copy missing fields from original_home or home_data
+            if not home.get('id') and not home.get('cqc_location_id'):
+                home['id'] = (
+                    original_home.get('id') if original_home else None
+                    or home_data.get('id')
+                    or home.get('id')
+                )
+                home['cqc_location_id'] = (
+                    original_home.get('cqc_location_id') if original_home else None
+                    or original_home.get('id') if original_home else None
+                    or home_data.get('cqc_location_id')
+                    or home_data.get('id')
+                    or home.get('cqc_location_id')
+                )
+                home['location_id'] = home.get('cqc_location_id') or home.get('id')
+            
+            if not home.get('postcode'):
+                home['postcode'] = (
+                    original_home.get('postcode') if original_home else None
+                    or home_data.get('postcode')
+                    or home.get('postcode')
+                )
+            
+            if not home.get('latitude'):
+                home['latitude'] = (
+                    original_home.get('latitude') if original_home else None
+                    or home_data.get('latitude')
+                    or home.get('latitude')
+                )
+            
+            if not home.get('longitude'):
+                home['longitude'] = (
+                    original_home.get('longitude') if original_home else None
+                    or home_data.get('longitude')
+                    or home.get('longitude')
+                )
+            
+            # ✅ FIX: Store rawData for later use in enrichment
+            if 'rawData' not in home:
+                # Use original_home if available, otherwise use home itself
+                home['rawData'] = original_home.copy() if original_home else home.copy()
             
             # Add category winner info
             home_id = home.get('id') or home.get('cqc_location_id')
@@ -1458,6 +2107,18 @@ async def generate_professional_report(request: Dict[str, Any] = Body(...)):
                     home['is_category_winner'][category_key] = True
                     home['category_labels'].append(winner_info.get('label', category_key))
                     home['category_reasoning'][category_key] = winner_info.get('reasoning', [])
+            
+            # ✅ FIX: Debug logging for first home
+            if len(top_5_homes) == 0:
+                print(f"   🔍 DEBUG: First home structure:")
+                print(f"      home keys: {list(home.keys())[:20]}")
+                print(f"      home.get('id'): {home.get('id')}")
+                print(f"      home.get('cqc_location_id'): {home.get('cqc_location_id')}")
+                print(f"      home.get('postcode'): {home.get('postcode')}")
+                print(f"      home_data keys: {list(home_data.keys())[:10]}")
+                if original_home:
+                    print(f"      original_home.get('id'): {original_home.get('id')}")
+                    print(f"      original_home.get('postcode'): {original_home.get('postcode')}")
             
             top_5_homes.append({
                 'home': home,
@@ -1709,9 +2370,17 @@ async def generate_professional_report(request: Dict[str, Any] = Body(...)):
         # FSA data must come from real FSA API via FSAEnrichmentService only
         
         # STEP: Enrich FSA data for top-5 finalists only (parallel) - uses FSAEnrichmentService
+        # ✅ ENRICHMENT ENABLED: FSA enrichment is active for professional reports
         print(f"\n{'='*80}")
         print(f"STEP: FSA API ENRICHMENT (Section 7 - Food Hygiene) - TOP 5 FINALISTS ONLY")
+        print(f"✅ ENRICHMENT STATUS: ENABLED - Will enrich top-5 homes with FSA food hygiene ratings")
         print(f"{'='*80}")
+        print(f"   🔍 DEBUG: top_5_homes count: {len(top_5_homes)}")
+        if len(top_5_homes) == 0:
+            print(f"   ⚠️ WARNING: top_5_homes is EMPTY! Enrichment will be skipped!")
+            print(f"   This means no homes were selected for enrichment.")
+        else:
+            print(f"   ✅ top_5_homes has {len(top_5_homes)} homes, proceeding with enrichment")
         
         # Prepare FSA enrichment tasks - ONLY for top-5 finalists
         fsa_enrichment_tasks = {}
@@ -1741,6 +2410,7 @@ async def generate_professional_report(request: Dict[str, Any] = Body(...)):
                 # asyncio already imported at top of file
                 
                 async def enrich_all_fsa():
+                    import asyncio  # ✅ FIX: Import asyncio inside function
                     service = FSAEnrichmentService(use_cache=True, cache_ttl=604800)  # 7 days cache
                     tasks = []
                     task_keys = []
@@ -1789,6 +2459,8 @@ async def generate_professional_report(request: Dict[str, Any] = Body(...)):
                 # Run async enrichment
                 fsa_enriched_data = await enrich_all_fsa()
                 print(f"   ✅ FSA enrichment completed for {len([v for v in fsa_enriched_data.values() if v])} homes")
+                print(f"   🔍 DEBUG: fsa_enriched_data keys: {list(fsa_enriched_data.keys())}")
+                print(f"   🔍 DEBUG: fsa_enriched_data values (non-None): {len([v for v in fsa_enriched_data.values() if v])}")
             except Exception as e:
                 print(f"   ⚠️ FSA enrichment error: {e}")
                 import traceback
@@ -1796,9 +2468,12 @@ async def generate_professional_report(request: Dict[str, Any] = Body(...)):
                 fsa_enriched_data = {}
         
         # STEP: Enrich CQC data for all homes (parallel)
+        # ✅ ENRICHMENT ENABLED: CQC enrichment is active for professional reports
         print(f"\n{'='*80}")
         print(f"STEP: CQC API ENRICHMENT (Section 6)")
+        print(f"✅ ENRICHMENT STATUS: ENABLED - Will enrich top-5 homes with CQC detailed data")
         print(f"{'='*80}")
+        print(f"   🔍 DEBUG: top_5_homes count: {len(top_5_homes)}")
         
         # Check if CQC API is configured
         try:
@@ -1864,6 +2539,7 @@ async def generate_professional_report(request: Dict[str, Any] = Body(...)):
                             # asyncio already imported at top of file
                             
                             async def enrich_all_cqc():
+                                import asyncio  # ✅ FIX: Import asyncio inside function
                                 # Get credentials and create properly configured CQC client
                                 creds = get_credentials()
                                 cqc_client = None
@@ -1936,9 +2612,12 @@ async def generate_professional_report(request: Dict[str, Any] = Body(...)):
             cqc_enriched_data = {}
         
         # STEP: Enrich Google Places data for all homes (parallel) - uses GooglePlacesEnrichmentService
+        # ✅ ENRICHMENT ENABLED: Google Places enrichment is active for professional reports
         print(f"\n{'='*80}")
         print(f"STEP: GOOGLE PLACES API ENRICHMENT (Sections 10, 11, 15, 16)")
+        print(f"✅ ENRICHMENT STATUS: ENABLED - Will enrich top-5 homes with Google Places data")
         print(f"{'='*80}")
+        print(f"   🔍 DEBUG: top_5_homes count: {len(top_5_homes)}")
         
         # Prepare Google Places enrichment tasks
         google_places_enrichment_tasks = {}
@@ -1972,6 +2651,7 @@ async def generate_professional_report(request: Dict[str, Any] = Body(...)):
                     # asyncio already imported at top of file
                     
                     async def enrich_all_google_places():
+                        import asyncio  # ✅ FIX: Import asyncio inside function
                         service = GooglePlacesEnrichmentService(
                             api_key=creds.google_places.api_key,
                             use_cache=True,
@@ -2023,9 +2703,12 @@ async def generate_professional_report(request: Dict[str, Any] = Body(...)):
                 google_places_enriched_data = {}
         
         # STEP: Enrich Companies House data for all homes (parallel) - uses CompaniesHouseService
+        # ✅ ENRICHMENT ENABLED: Companies House enrichment is active for professional reports
         print(f"\n{'='*80}")
         print(f"STEP: COMPANIES HOUSE API ENRICHMENT (Section 8 - Financial Stability)")
+        print(f"✅ ENRICHMENT STATUS: ENABLED - Will enrich top-5 homes with financial stability data")
         print(f"{'='*80}")
+        print(f"   🔍 DEBUG: top_5_homes count: {len(top_5_homes)}")
         
         # Check if Companies House API is configured
         try:
@@ -2073,6 +2756,7 @@ async def generate_professional_report(request: Dict[str, Any] = Body(...)):
                             # asyncio already imported at top of file
                             
                             async def enrich_all_companies_house():
+                                import asyncio  # ✅ FIX: Import asyncio inside function
                                 tasks = []
                                 task_keys = []
                                 for home_name, task_data in companies_house_enrichment_tasks.items():
@@ -2081,7 +2765,8 @@ async def generate_professional_report(request: Dict[str, Any] = Body(...)):
                                             enrich_care_home_with_financial_data(
                                                 care_home_name=task_data['home_name'],
                                                 address=task_data['address'],
-                                                postcode=task_data['postcode']
+                                                postcode=task_data['postcode'],
+                                                api_key=api_key  # ✅ FIX: Pass API key explicitly
                                             ),
                                             timeout=15.0  # 15 seconds timeout per home
                                         )
@@ -2180,27 +2865,43 @@ async def generate_professional_report(request: Dict[str, Any] = Body(...)):
             companies_house_enriched_data = {}
         
         # STEP: Enrich Staff Quality data for all homes (parallel)
+        # ✅ ENRICHMENT ENABLED: Staff Quality enrichment is active for professional reports
         print(f"\n{'='*80}")
         print(f"STEP: STAFF QUALITY ENRICHMENT (Section 9 - Staff Analysis)")
+        print(f"✅ ENRICHMENT STATUS: ENABLED - Will enrich top-5 homes with staff quality data")
         print(f"{'='*80}")
 
         staff_quality_enrichment_tasks = {}
         for scored in top_5_homes:
             home = scored['home']
             raw_home = home.get('rawData') or home
+            
+            # ✅ FIX: Try multiple sources for location_id
             location_id = (
                 home.get('cqc_location_id') or
                 home.get('location_id') or
+                home.get('id') or  # ✅ FIX: Also check 'id' in home
                 raw_home.get('cqc_location_id') or
-                raw_home.get('location_id')
+                raw_home.get('location_id') or
+                raw_home.get('id')  # ✅ FIX: Also try 'id' field in raw_home
             )
             home_name = home.get('name') or raw_home.get('name', 'Unknown')
+            
+            # ✅ FIX: Debug logging for first home only
+            if not location_id and len(staff_quality_enrichment_tasks) == 0:
+                print(f"      ⚠️ No location_id for {home_name}, skipping Staff Quality enrichment")
+                print(f"         home keys: {list(home.keys())[:15]}")
+                print(f"         raw_home keys: {list(raw_home.keys())[:15] if isinstance(raw_home, dict) else 'Not a dict'}")
+                print(f"         home.get('id'): {home.get('id')}")
+                print(f"         home.get('cqc_location_id'): {home.get('cqc_location_id')}")
             
             if location_id:
                 staff_quality_enrichment_tasks[location_id] = {
                     'home_name': home_name,
                     'location_id': location_id
                 }
+                if len(staff_quality_enrichment_tasks) <= 2:  # Log first 2
+                    print(f"      ✅ Added Staff Quality task for {home_name}: location_id={location_id}")
 
         staff_quality_enriched_data = {}
         if staff_quality_enrichment_tasks:
@@ -2209,6 +2910,7 @@ async def generate_professional_report(request: Dict[str, Any] = Body(...)):
                 from services.staff_quality_service import StaffQualityService
                 
                 async def enrich_all_staff_quality():
+                    import asyncio  # ✅ FIX: Import asyncio inside function
                     service = StaffQualityService()
                     tasks = []
                     task_keys = []
@@ -2230,7 +2932,7 @@ async def generate_professional_report(request: Dict[str, Any] = Body(...)):
                                     location_id,
                                     companies_house_data=companies_house_data
                                 ),
-                                timeout=10.0
+                                timeout=30.0  # ✅ FIX: Increased timeout from 10s to 30s for Staff Quality API
                             )
                         )
                         task_keys.append(location_id)
@@ -2266,6 +2968,7 @@ async def generate_professional_report(request: Dict[str, Any] = Body(...)):
         print(f"\n{'='*80}")
         print(f"STEP: NEIGHBOURHOOD ANALYSIS ENRICHMENT (Section 18 - Location Wellbeing) - TOP 5 FINALISTS ONLY")
         print(f"{'='*80}")
+        print(f"   🔍 DEBUG: top_5_homes count: {len(top_5_homes)}")
 
         neighbourhood_enrichment_tasks = {}
         for scored in top_5_homes:
@@ -2276,6 +2979,13 @@ async def generate_professional_report(request: Dict[str, Any] = Body(...)):
             home_lat = home.get('latitude') or raw_home.get('latitude')
             home_lon = home.get('longitude') or raw_home.get('longitude')
             
+            # ✅ FIX: Debug logging for first home only
+            if not home_postcode and len(neighbourhood_enrichment_tasks) == 0:
+                print(f"      ⚠️ No postcode for {home_name}, skipping Neighbourhood enrichment")
+                print(f"         home keys: {list(home.keys())[:15]}")
+                print(f"         raw_home keys: {list(raw_home.keys())[:15] if isinstance(raw_home, dict) else 'Not a dict'}")
+                print(f"         home.get('postcode'): {home.get('postcode')}")
+            
             if home_postcode:
                 neighbourhood_enrichment_tasks[home_name] = {
                     'home_name': home_name,
@@ -2283,14 +2993,18 @@ async def generate_professional_report(request: Dict[str, Any] = Body(...)):
                     'latitude': home_lat,
                     'longitude': home_lon
                 }
+                if len(neighbourhood_enrichment_tasks) <= 2:  # Log first 2
+                    print(f"      ✅ Added Neighbourhood task for {home_name}: postcode={home_postcode}")
 
         neighbourhood_enriched_data = {}
+        print(f"   🔍 DEBUG: neighbourhood_enrichment_tasks count: {len(neighbourhood_enrichment_tasks)}")
         if neighbourhood_enrichment_tasks:
             print(f"   Enriching {len(neighbourhood_enrichment_tasks)} homes with Neighbourhood data...")
             try:
                 from data_integrations.batch_processor import NeighbourhoodAnalyzer
                 
                 async def enrich_all_neighbourhood():
+                    import asyncio  # ✅ FIX: Import asyncio inside function
                     analyzer = NeighbourhoodAnalyzer()
                     tasks = []
                     task_keys = []
@@ -2307,7 +3021,7 @@ async def generate_professional_report(request: Dict[str, Any] = Body(...)):
                                     include_nhsbsa=False,  # Not used in professional report
                                     include_environmental=False  # Skip for speed
                                 ),
-                                timeout=15.0
+                                timeout=30.0  # ✅ FIX: Increased timeout from 15s to 30s
                             )
                         )
                         task_keys.append(home_name)
@@ -2338,6 +3052,20 @@ async def generate_professional_report(request: Dict[str, Any] = Body(...)):
                 import traceback
                 print(f"   Traceback: {traceback.format_exc()}")
                 neighbourhood_enriched_data = {}
+        else:
+            print(f"   ⚠️ WARNING: No Neighbourhood enrichment tasks created! Check if postcode is available in top_5_homes.")
+        
+        # ✅ FIX: Log summary of all enrichment results before building care_homes_list
+        print(f"\n{'='*80}")
+        print(f"📊 ENRICHMENT SUMMARY - Before building care_homes_list")
+        print(f"{'='*80}")
+        print(f"   FSA enriched_data: {len([v for v in fsa_enriched_data.values() if v])}/{len(fsa_enriched_data)} homes")
+        print(f"   CQC enriched_data: {len([v for v in cqc_enriched_data.values() if v])}/{len(cqc_enriched_data)} homes")
+        print(f"   Google Places enriched_data: {len([v for v in google_places_enriched_data.values() if v])}/{len(google_places_enriched_data)} homes")
+        print(f"   Companies House enriched_data: {len([v for v in companies_house_enriched_data.values() if v])}/{len(companies_house_enriched_data)} homes")
+        print(f"   Staff Quality enriched_data: {len([v for v in staff_quality_enriched_data.values() if v])}/{len(staff_quality_enriched_data)} homes")
+        print(f"   Neighbourhood enriched_data: {len([v for v in neighbourhood_enriched_data.values() if v])}/{len(neighbourhood_enriched_data)} homes")
+        print(f"{'='*80}\n")
         
         # Convert scored homes to format expected by frontend
         care_homes_list = []
@@ -2345,6 +3073,9 @@ async def generate_professional_report(request: Dict[str, Any] = Body(...)):
             home = scored['home']
             raw_home = home.get('rawData') or home
             match_result = scored.get('matchResult', {})
+            
+            # ✅ FIX: Define is_first_home at the start of the loop
+            is_first_home = home_index == 0
             
             # Extract values for enrichment
             weekly_price_value = extract_weekly_price(home, care_type) or 0.0
@@ -2370,19 +3101,26 @@ async def generate_professional_report(request: Dict[str, Any] = Body(...)):
             google_rating_value = raw_home.get('google_rating') or raw_home.get('googleRating') or home.get('rating')
             review_count_value = raw_home.get('review_count') or raw_home.get('reviewCount') or home.get('user_ratings_total', 0)
             
-            # Extract FSA/Food Hygiene data
-            food_hygiene_rating = (
-                raw_home.get('food_hygiene_rating')
-                or raw_home.get('fsa_rating')
-                or raw_home.get('foodHygieneRating')
-                or home.get('food_hygiene_rating')
-                or home.get('fsa_rating')
-            )
+            # ✅ FIX: food_hygiene_rating will be extracted AFTER fsa_detailed is set (see below around line 3520)
+            # This is a placeholder - will be set later when fsa_detailed is available
+            food_hygiene_rating = None
             
             # Extract factor scores from match_result (convert to array format expected by frontend)
             point_allocations = match_result.get('point_allocations', {})
             category_scores = match_result.get('category_scores', {})
             weights_dict = match_result.get('weights', {})
+            
+            # ✅ FIX: Debug logging to understand data structure
+            if not category_scores or len(category_scores) == 0:
+                print(f"\n   ⚠️ WARNING: category_scores is empty for {home.get('name', 'unknown')}:")
+                print(f"      match_result keys: {list(match_result.keys()) if match_result else 'None'}")
+                print(f"      point_allocations: {point_allocations}")
+                print(f"      weights_dict: {weights_dict}")
+            
+            # ✅ FIX: Handle Enhanced MVP (3 categories), Simple Matching (5 categories), and Professional Matching (8 categories)
+            # Enhanced MVP uses: medical, safety, location (3 categories, 100-point)
+            # Simple Matching uses: medical_safety, quality_care, location, financial, lifestyle (5 categories, 100-point)
+            # Professional Matching uses: medical, safety, location, social, financial, staff, cqc, services (8 categories, 156-point)
             
             # Map category names to display names
             category_display_names = {
@@ -2393,11 +3131,22 @@ async def generate_professional_report(request: Dict[str, Any] = Body(...)):
                 'financial': 'Financial Stability',
                 'staff': 'Staff Quality',
                 'cqc': 'CQC Compliance',
-                'services': 'Additional Services'
+                'services': 'Additional Services',
+                # Simple Matching category names
+                'medical_safety': 'Medical & Safety',
+                'quality_care': 'Quality & Care',
+                'lifestyle': 'Lifestyle'
             }
             
-            # Maximum possible points per category (156 total, distributed by weights)
-            max_points_per_category = {
+            # Maximum possible points per category
+            # Enhanced MVP: 3 categories (medical: 30, safety: 40, location: 25)
+            max_points_per_category_enhanced = {
+                'medical': 30.0,
+                'safety': 40.0,
+                'location': 25.0
+            }
+            # For 156-point: distributed by weights
+            max_points_per_category_156 = {
                 'medical': 30.0,  # ~19% of 156
                 'safety': 25.0,   # ~16% of 156
                 'location': 15.0, # ~10% of 156
@@ -2407,22 +3156,422 @@ async def generate_professional_report(request: Dict[str, Any] = Body(...)):
                 'cqc': 20.0,     # ~13% of 156
                 'services': 11.0  # ~7% of 156
             }
+            # For 100-point Simple: distributed by weights (35%, 25%, 15%, 15%, 10%)
+            max_points_per_category_100 = {
+                'medical_safety': 35.0,  # 35% of 100
+                'quality_care': 25.0,   # 25% of 100
+                'location': 15.0,        # 15% of 100
+                'financial': 15.0,       # 15% of 100
+                'lifestyle': 10.0        # 10% of 100
+            }
+            
+            # Determine which format we're using based on point_allocations keys
+            is_enhanced_mvp = any(key in point_allocations for key in ['medical', 'safety']) and \
+                             'medical_safety' not in point_allocations and \
+                             len(point_allocations) == 3  # Enhanced MVP has exactly 3 categories
+            is_simple_matching = any(key in point_allocations for key in ['medical_safety', 'quality_care', 'lifestyle'])
+            
+            if is_enhanced_mvp:
+                max_points_per_category = max_points_per_category_enhanced
+            elif is_simple_matching:
+                max_points_per_category = max_points_per_category_100
+            else:
+                max_points_per_category = max_points_per_category_156
             
             # Convert to array format expected by frontend
             factor_scores = []
-            for category in ['medical', 'safety', 'location', 'social', 'financial', 'staff', 'cqc', 'services']:
-                points = round(point_allocations.get(category, 0.0), 1)
-                score_normalized = category_scores.get(category, 0.0)  # 0-1.0 scale
-                max_points = max_points_per_category.get(category, 20.0)
-                weight = weights_dict.get(category, 0.0) if isinstance(weights_dict, dict) else 0.0
+            
+            if is_enhanced_mvp:
+                # Enhanced MVP format: 3 core categories + 5 additional categories from enriched_data
+                # Core categories (from matching algorithm)
+                enhanced_categories = ['medical', 'safety', 'location']
+                for category in enhanced_categories:
+                    points = round(point_allocations.get(category, 0.0), 1)
+                    score_normalized = category_scores.get(category, 0.0)  # 0-1.0 scale
+                    max_points = max_points_per_category.get(category, 30.0)
+                    
+                    # ✅ FIX: For Enhanced MVP, convert points to 0-100 scale for consistency
+                    # points are in 0-30, 0-40, 0-25 range, normalize to 0-100
+                    normalized_points = (points / max_points) * 100 if max_points > 0 else 0
+                    
+                    factor_scores.append({
+                        'category': category_display_names.get(category, category.title()),
+                        'score': round(normalized_points, 1),  # ✅ FIX: Use normalized score (0-100)
+                        'maxScore': 100.0,  # ✅ FIX: Use 100 as maxScore for consistency
+                        'weight': 0.0,  # Enhanced MVP doesn't expose weights in same format
+                        'verified': True
+                    })
                 
+                # ✅ ADDITIONAL CATEGORIES: Calculate from enriched_data to show all 8 categories
+                # These are calculated from enriched data, not from matching algorithm
+                
+                # 4. Cultural & Social (from neighbourhood data)
+                home_name_for_enrichment = home.get('name') or raw_home.get('name', 'Unknown')
+                neighbourhood_data = neighbourhood_enriched_data.get(home_name_for_enrichment) if neighbourhood_enriched_data else None
+                if neighbourhood_data and neighbourhood_data.get('overall'):
+                    # Use neighbourhood score (0-100) as Cultural & Social score
+                    cultural_score = neighbourhood_data.get('overall', {}).get('score', 0)
+                    factor_scores.append({
+                        'category': 'Cultural & Social',
+                        'score': round(cultural_score, 1),
+                        'maxScore': 100.0,
+                        'weight': 0.0,
+                        'verified': True
+                    })
+                else:
+                    # Default to 0 if no neighbourhood data
+                    factor_scores.append({
+                        'category': 'Cultural & Social',
+                        'score': 0.0,
+                        'maxScore': 100.0,
+                        'weight': 0.0,
+                        'verified': False
+                    })
+                
+                # 5. Financial Stability (from Companies House data)
+                financial_data = None
+                if home_name_for_enrichment and companies_house_enriched_data:
+                    financial_data = companies_house_enriched_data.get(home_name_for_enrichment)
+                    # ✅ DEBUG: Log if financial data not found
+                    if not financial_data and is_first_home:
+                        print(f"   ⚠️ Financial Stability: No data in companies_house_enriched_data for '{home_name_for_enrichment}'")
+                        print(f"      Available keys: {list(companies_house_enriched_data.keys())[:5] if companies_house_enriched_data else 'None'}")
+                if not financial_data:
+                    financial_data = raw_home.get('financial_stability') or raw_home.get('financialStability')
+                    if is_first_home and not financial_data:
+                        print(f"   ⚠️ Financial Stability: No data in raw_home either")
+                
+                if financial_data and isinstance(financial_data, dict):
+                    # Use risk_score (inverted: higher risk_score = lower financial stability)
+                    # risk_score is 0-100, where 0 = high risk, 100 = low risk
+                    # For Financial Stability, we want: 100 = high stability, 0 = low stability
+                    risk_score = financial_data.get('risk_score')
+                    altman_z = financial_data.get('altman_z_score')
+                    
+                    # ✅ DEBUG: Log financial data for first home
+                    if is_first_home:
+                        print(f"   📊 Financial Stability data for {home_name_for_enrichment}:")
+                        print(f"      - risk_score: {risk_score}")
+                        print(f"      - altman_z_score: {altman_z}")
+                        print(f"      - financial_data keys: {list(financial_data.keys())[:10]}")
+                    
+                    if risk_score is not None:
+                        # risk_score: 0 = high risk, 100 = low risk
+                        # financial_stability: 100 = high stability, 0 = low stability
+                        # So: financial_stability = risk_score (they're already aligned)
+                        normalized_financial = min(max(risk_score, 0), 100)
+                        factor_scores.append({
+                            'category': 'Financial Stability',
+                            'score': round(normalized_financial, 1),
+                            'maxScore': 100.0,
+                            'weight': 0.0,
+                            'verified': True
+                        })
+                        if is_first_home:
+                            print(f"      ✅ Financial Stability score: {normalized_financial}%")
+                    elif altman_z is not None:
+                        # Fallback: Use Altman Z-Score to estimate financial stability
+                        # Altman Z > 2.99 = safe, 1.81-2.99 = grey, < 1.81 = distress
+                        # Convert to 0-100 scale: Z > 2.99 = 100, Z < 1.81 = 0, linear interpolation
+                        if altman_z >= 2.99:
+                            normalized_financial = 100.0
+                        elif altman_z <= 1.81:
+                            normalized_financial = 0.0
+                        else:
+                            # Linear interpolation between 1.81 and 2.99
+                            normalized_financial = ((altman_z - 1.81) / (2.99 - 1.81)) * 100.0
+                        factor_scores.append({
+                            'category': 'Financial Stability',
+                            'score': round(normalized_financial, 1),
+                            'maxScore': 100.0,
+                            'weight': 0.0,
+                            'verified': True
+                        })
+                        if is_first_home:
+                            print(f"      ✅ Financial Stability score (from Altman Z): {normalized_financial}%")
+                    else:
+                        # ✅ FIX: Use fallback score (50 = medium stability) instead of 0
+                        # 0 would indicate very low stability, which is misleading when data is unavailable
+                        factor_scores.append({
+                            'category': 'Financial Stability',
+                            'score': 50.0,  # Medium stability as fallback
+                            'maxScore': 100.0,
+                            'weight': 0.0,
+                            'verified': False
+                        })
+                        if is_first_home:
+                            print(f"      ⚠️ Financial Stability: No risk_score or altman_z_score, using fallback 50")
+                else:
+                    # ✅ FIX: Use fallback score (50 = medium stability) instead of 0
+                    # 0 would indicate very low stability, which is misleading when data is unavailable
+                    factor_scores.append({
+                        'category': 'Financial Stability',
+                        'score': 50.0,  # Medium stability as fallback
+                        'maxScore': 100.0,
+                        'weight': 0.0,
+                        'verified': False
+                    })
+                    if is_first_home:
+                        print(f"      ⚠️ Financial Stability: No financial_data, using fallback 50")
+                
+                # 6. Staff Quality (from Staff Quality API)
+                location_id_for_staff = (
+                    home.get('cqc_location_id') or
+                    home.get('location_id') or
+                    raw_home.get('cqc_location_id') or
+                    raw_home.get('location_id')
+                )
+                staff_data = None
+                if location_id_for_staff and staff_quality_enriched_data:
+                    staff_data = staff_quality_enriched_data.get(location_id_for_staff)
+                
+                if staff_data and isinstance(staff_data, dict):
+                    staff_score_obj = staff_data.get('staff_quality_score', {})
+                    staff_score = staff_score_obj.get('overall_score', 0) if staff_score_obj else 0
+                    if staff_score and staff_score > 0:
+                        # Normalize to 0-100 scale
+                        normalized_staff = min(max(staff_score, 0), 100)
+                        factor_scores.append({
+                            'category': 'Staff Quality',
+                            'score': round(normalized_staff, 1),
+                            'maxScore': 100.0,
+                            'weight': 0.0,
+                            'verified': True
+                        })
+                    else:
+                        factor_scores.append({
+                            'category': 'Staff Quality',
+                            'score': 0.0,
+                            'maxScore': 100.0,
+                            'weight': 0.0,
+                            'verified': False
+                        })
+                else:
+                    factor_scores.append({
+                        'category': 'Staff Quality',
+                        'score': 0.0,
+                        'maxScore': 100.0,
+                        'weight': 0.0,
+                        'verified': False
+                    })
+                
+                # 7. CQC Compliance (from CQC Deep Dive data)
+                location_id_for_cqc = (
+                    home.get('cqc_location_id') or
+                    home.get('location_id') or
+                    raw_home.get('cqc_location_id') or
+                    raw_home.get('location_id')
+                )
+                cqc_data = None
+                if location_id_for_cqc and cqc_enriched_data:
+                    cqc_data = cqc_enriched_data.get(location_id_for_cqc)
+                if not cqc_data:
+                    cqc_data = raw_home.get('cqc_detailed') or raw_home.get('cqcDeepDive')
+                
+                if cqc_data and isinstance(cqc_data, dict):
+                    # Calculate CQC Compliance score from ratings
+                    # Use all available CQC ratings to calculate a composite score
+                    detailed_ratings = cqc_data.get('detailed_ratings', {})
+                    ratings = []
+                    if detailed_ratings:
+                        for key, rating_obj in detailed_ratings.items():
+                            if isinstance(rating_obj, dict):
+                                rating = rating_obj.get('rating', 'Unknown')
+                                if rating and rating != 'Unknown':
+                                    ratings.append(rating)
+                    
+                    # Also check overall rating
+                    overall_rating = cqc_data.get('overall_rating') or cqc_data.get('current_rating')
+                    if overall_rating and overall_rating != 'Unknown':
+                        ratings.append(overall_rating)
+                    
+                    if ratings:
+                        # Convert ratings to scores: Outstanding=100, Good=80, Requires Improvement=40, Inadequate=0
+                        rating_scores = []
+                        for rating in ratings:
+                            rating_lower = str(rating).lower()
+                            if 'outstanding' in rating_lower:
+                                rating_scores.append(100)
+                            elif 'good' in rating_lower:
+                                rating_scores.append(80)
+                            elif 'requires improvement' in rating_lower or 'improvement' in rating_lower:
+                                rating_scores.append(40)
+                            elif 'inadequate' in rating_lower:
+                                rating_scores.append(0)
+                            else:
+                                rating_scores.append(50)  # Unknown = 50
+                        
+                        # Average all ratings
+                        cqc_compliance_score = sum(rating_scores) / len(rating_scores) if rating_scores else 0
+                        factor_scores.append({
+                            'category': 'CQC Compliance',
+                            'score': round(cqc_compliance_score, 1),
+                            'maxScore': 100.0,
+                            'weight': 0.0,
+                            'verified': True
+                        })
+                    else:
+                        factor_scores.append({
+                            'category': 'CQC Compliance',
+                            'score': 0.0,
+                            'maxScore': 100.0,
+                            'weight': 0.0,
+                            'verified': False
+                        })
+                else:
+                    factor_scores.append({
+                        'category': 'CQC Compliance',
+                        'score': 0.0,
+                        'maxScore': 100.0,
+                        'weight': 0.0,
+                        'verified': False
+                    })
+                
+                # 8. Additional Services (from home data or enriched data)
+                # Check for available services/amenities
+                services_list = (
+                    home.get('services') or
+                    raw_home.get('services') or
+                    home.get('amenities') or
+                    raw_home.get('amenities') or
+                    []
+                )
+                
+                # ✅ FIX: If no services found, try to build from available amenities data
+                if not services_list or (isinstance(services_list, list) and len(services_list) == 0):
+                    # Build services list from available amenities/features
+                    services_from_amenities = []
+                    
+                    # Check staging data amenities
+                    if raw_home.get('wheelchair_access'):
+                        services_from_amenities.append('wheelchair_access')
+                    if raw_home.get('wifi_available'):
+                        services_from_amenities.append('wifi')
+                    if raw_home.get('parking_onsite'):
+                        services_from_amenities.append('parking')
+                    if raw_home.get('ensuite_rooms'):
+                        services_from_amenities.append('ensuite_rooms')
+                    if raw_home.get('secure_garden'):
+                        services_from_amenities.append('garden')
+                    
+                    # Check Google Places data for services
+                    google_places_data = None
+                    if home_name_for_enrichment and google_places_enriched_data:
+                        google_places_data = google_places_enriched_data.get(home_name_for_enrichment)
+                    if not google_places_data:
+                        google_places_data = raw_home.get('google_places') or raw_home.get('googlePlaces')
+                    
+                    if google_places_data and isinstance(google_places_data, dict):
+                        # Add Google Places amenities as services
+                        if google_places_data.get('rating'):
+                            services_from_amenities.append('google_reviews')
+                        if google_places_data.get('user_ratings_total', 0) > 0:
+                            services_from_amenities.append('verified_reviews')
+                    
+                    if services_from_amenities:
+                        services_list = services_from_amenities
+                
+                # Also check Google Places data for services (if not already used)
+                google_places_data = None
+                if home_name_for_enrichment and google_places_enriched_data:
+                    google_places_data = google_places_enriched_data.get(home_name_for_enrichment)
+                if not google_places_data:
+                    google_places_data = raw_home.get('google_places') or raw_home.get('googlePlaces')
+                
+                # Count available services
+                services_count = 0
+                if isinstance(services_list, list):
+                    services_count = len(services_list)
+                elif isinstance(services_list, dict):
+                    services_count = len([k for k, v in services_list.items() if v])
+                
+                # Score based on number of services (0-100 scale, max 10 services = 100 points)
+                max_services = 10
+                services_score = min((services_count / max_services) * 100, 100) if max_services > 0 else 0
+                
+                # ✅ DEBUG: Log Additional Services calculation for first home
+                if is_first_home:
+                    print(f"   📊 Additional Services calculation for {home_name_for_enrichment}:")
+                    print(f"      - services_list type: {type(services_list)}")
+                    print(f"      - services_list: {services_list[:5] if isinstance(services_list, list) and len(services_list) > 0 else services_list}")
+                    print(f"      - services_count: {services_count}")
+                    print(f"      - services_score: {services_score}")
+                
+                # ✅ FIX: Always add Additional Services, even if score is 0
+                # This ensures the category appears in Performance Matrix
                 factor_scores.append({
-                    'category': category_display_names.get(category, category.title()),
-                    'score': points,
-                    'maxScore': max_points,
-                    'weight': weight,
-                    'verified': True  # All scores are verified from matching algorithm
+                    'category': 'Additional Services',
+                    'score': round(services_score, 1),
+                    'maxScore': 100.0,
+                    'weight': 0.0,
+                    'verified': services_count > 0
                 })
+                
+                if is_first_home:
+                    print(f"      ✅ Additional Services added to factorScores: score={round(services_score, 1)}, verified={services_count > 0}")
+            elif is_simple_matching:
+                # Simple Matching format (100-point)
+                # ✅ FIX: category_scores are in 0-100 scale (normalized)
+                # point_allocations are weighted (category_score * weight/100), which is 0-100 scale
+                # For Performance Matrix, we want to show raw category_score (0-100) with maxScore = 100
+                simple_categories = ['medical_safety', 'quality_care', 'location', 'financial', 'lifestyle']
+                for category in simple_categories:
+                    # ✅ FIX: Use raw category_score (0-100 normalized) for display
+                    # This shows the actual category performance, not weighted contribution
+                    raw_score = category_scores.get(category, 0.0)  # 0-100 normalized scale
+                    
+                    # ✅ FIX: If category_score is missing but point_allocations exists, try to reverse-calculate
+                    if raw_score == 0.0 and category in point_allocations:
+                        weighted_points = point_allocations.get(category, 0.0)
+                        weight = weights_dict.get(category, 0.0) if isinstance(weights_dict, dict) else 0.0
+                        # Reverse calculate: raw_score = weighted_points / (weight / 100)
+                        if weight > 0:
+                            raw_score = (weighted_points / (weight / 100.0)) if (weight / 100.0) > 0 else 0.0
+                    
+                    points = round(raw_score, 1)  # Use raw score for display
+                    max_points = 100.0  # ✅ FIX: Max is 100 for normalized scores
+                    weight = weights_dict.get(category, 0.0) if isinstance(weights_dict, dict) else 0.0
+                    
+                    # ✅ FIX: Map Simple Matching categories to display names that match Performance Matrix
+                    simple_to_display = {
+                        'medical_safety': 'Medical Capabilities',  # Map to match frontend expectations
+                        'quality_care': 'Safety & Quality',  # Map quality_care to Safety
+                        'location': 'Location & Access',
+                        'financial': 'Financial Stability',
+                        'lifestyle': 'Cultural & Social'  # Map lifestyle to Cultural
+                    }
+                    display_name = simple_to_display.get(category, category_display_names.get(category, category.title()))
+                    
+                    # ✅ FIX: Debug logging for zero scores
+                    if points == 0 and category in ['medical_safety', 'quality_care', 'lifestyle']:
+                        print(f"   ⚠️ Zero score for {category} ({display_name}) in {home.get('name', 'unknown')}:")
+                        print(f"      raw_score: {raw_score}, category_scores[{category}]: {category_scores.get(category, 'missing')}")
+                        print(f"      point_allocations[{category}]: {point_allocations.get(category, 'missing')}")
+                        print(f"      weight: {weight}")
+                    
+                    factor_scores.append({
+                        'category': display_name,
+                        'score': points,
+                        'maxScore': max_points,
+                        'weight': weight,
+                        'verified': True
+                    })
+            else:
+                # Professional Matching format (156-point)
+                professional_categories = ['medical', 'safety', 'location', 'social', 'financial', 'staff', 'cqc', 'services']
+                for category in professional_categories:
+                    points = round(point_allocations.get(category, 0.0), 1)
+                    score_normalized = category_scores.get(category, 0.0)  # 0-1.0 scale
+                    max_points = max_points_per_category.get(category, 20.0)
+                    weight = weights_dict.get(category, 0.0) if isinstance(weights_dict, dict) else 0.0
+                    
+                    factor_scores.append({
+                        'category': category_display_names.get(category, category.title()),
+                        'score': points,
+                        'maxScore': max_points,
+                        'weight': weight,
+                        'verified': True  # All scores are verified from matching algorithm
+                    })
             
             # Debug logging for first home (check if we're in the top 5 loop)
             # This will help diagnose why factor_scores might be empty
@@ -2432,6 +3581,14 @@ async def generate_professional_report(request: Dict[str, Any] = Body(...)):
                 print(f"      category_scores: {category_scores}")
                 print(f"      weights_dict: {weights_dict}")
                 print(f"      match_result keys: {list(match_result.keys()) if match_result else 'None'}")
+                print(f"      is_simple_matching: {is_simple_matching}")
+            
+            # ✅ FIX: Additional logging for specific zero categories
+            zero_categories = [fs for fs in factor_scores if fs['score'] == 0]
+            if zero_categories and len(zero_categories) > 0:
+                print(f"\n   ⚠️ Zero scores detected for {home.get('name', 'unknown')}:")
+                for fs in zero_categories:
+                    print(f"      - {fs['category']}: score={fs['score']}, maxScore={fs['maxScore']}, weight={fs['weight']}")
             
             # Get photo URL
             placeholder_photo = "https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?auto=format&fit=crop&w=800&q=80"
@@ -2449,13 +3606,19 @@ async def generate_professional_report(request: Dict[str, Any] = Body(...)):
             financial_stability = None
             if home_name_for_enrichment and home_name_for_enrichment in companies_house_enriched_data:
                 financial_stability = companies_house_enriched_data[home_name_for_enrichment]
-                # Ensure it's a dict (not None) for frontend
-                if financial_stability is None:
-                    financial_stability = {}
+                # ✅ FIX: Only use if it has actual data (not empty dict)
+                if financial_stability and isinstance(financial_stability, dict):
+                    # Check if it has meaningful data (altman_z_score or bankruptcy_risk_score)
+                    if not financial_stability.get('altman_z_score') and not financial_stability.get('bankruptcy_risk_score'):
+                        financial_stability = None
+                elif not financial_stability:
+                    financial_stability = None
             if not financial_stability:
                 financial_stability = raw_home.get('financial_stability') or raw_home.get('financialStability')
-                # Ensure it's a dict or None (not empty string)
+                # Ensure it's a dict or None (not empty string or empty dict)
                 if financial_stability == '':
+                    financial_stability = None
+                elif isinstance(financial_stability, dict) and not financial_stability.get('altman_z_score') and not financial_stability.get('bankruptcy_risk_score'):
                     financial_stability = None
             
             # Get Google Places - prefer enriched data from Google Places API, fallback to existing or synthetic
@@ -2556,8 +3719,33 @@ async def generate_professional_report(request: Dict[str, Any] = Body(...)):
             fsa_detailed = None
             if home_name_for_fsa and home_name_for_fsa in fsa_enriched_data:
                 fsa_detailed = fsa_enriched_data[home_name_for_fsa]
+                # ✅ FIX: Only use if it has actual data (not empty dict or None)
+                if fsa_detailed and isinstance(fsa_detailed, dict):
+                    # Check if it has meaningful data (rating)
+                    if not fsa_detailed.get('rating'):
+                        fsa_detailed = None
+                elif not fsa_detailed:
+                    fsa_detailed = None
             if not fsa_detailed:
                 fsa_detailed = raw_home.get('fsa_detailed') or raw_home.get('fsaDetailed')
+                # ✅ FIX: Ensure it has meaningful data
+                if fsa_detailed and isinstance(fsa_detailed, dict) and not fsa_detailed.get('rating') and not fsa_detailed.get('rating_value'):
+                    fsa_detailed = None
+            
+            # ✅ FIX: Extract food_hygiene_rating from fsa_detailed (NOW that it's set)
+            if not food_hygiene_rating:
+                if fsa_detailed and isinstance(fsa_detailed, dict):
+                    food_hygiene_rating = fsa_detailed.get('rating') or fsa_detailed.get('rating_value')
+            
+            # Fallback to raw_home data if not found in enriched data
+            if not food_hygiene_rating:
+                food_hygiene_rating = (
+                    raw_home.get('food_hygiene_rating')
+                    or raw_home.get('fsa_rating')
+                    or raw_home.get('foodHygieneRating')
+                    or home.get('food_hygiene_rating')
+                    or home.get('fsa_rating')
+                )
             
             # Ensure google_places has place_id if it exists
             if google_places and isinstance(google_places, dict):
@@ -2733,13 +3921,80 @@ async def generate_professional_report(request: Dict[str, Any] = Body(...)):
                     'review_sources': ['Google'] if reviews else []
                 }
             
+            # ✅ FIX: Build pricing history from available data
+            # Try to get pricing history from raw_home or home data
+            pricing_history = (
+                raw_home.get('pricing_history') or 
+                raw_home.get('pricingHistory') or 
+                home.get('pricing_history') or 
+                home.get('pricingHistory') or 
+                []
+            )
+            
+            # If no pricing history but we have current price, create minimal history
+            if not pricing_history and weekly_price_value > 0:
+                # Create a basic pricing history entry with current price
+                pricing_history = [{
+                    'weekly_price': weekly_price_value,
+                    'date': datetime.now().isoformat(),
+                    'source': 'current'
+                }]
+            
+            # ✅ FIX: Log enriched data before building care_home (for first home only)
+            if is_first_home:
+                print(f"\n   📊 Enriched data check for {home.get('name', 'unknown')}:")
+                print(f"      - fsa_detailed: {'✅' if fsa_detailed else '❌'} {fsa_detailed.get('rating') if fsa_detailed and isinstance(fsa_detailed, dict) else 'None'}")
+                print(f"      - google_places: {'✅' if google_places else '❌'} {google_places.get('rating') if google_places and isinstance(google_places, dict) else 'None'}")
+                print(f"      - financial_stability: {'✅' if financial_stability else '❌'} {financial_stability.get('altman_z_score') if financial_stability and isinstance(financial_stability, dict) else 'None'}")
+                print(f"      - cqc_details: {'✅' if cqc_details else '❌'} {cqc_details.get('overall_rating') if cqc_details and isinstance(cqc_details, dict) else 'None'}")
+                print(f"      - staff_quality: {'✅' if staff_quality else '❌'} {staff_quality.get('overallScore') if staff_quality and isinstance(staff_quality, dict) else 'None'}")
+                print(f"      - food_hygiene_rating: {food_hygiene_rating}")
+            
             # Build home object in format expected by frontend
+            # Extract distance (can be in different formats)
+            distance_value = None
+            if home.get('distance_km') is not None:
+                distance_value = f"{round(home.get('distance_km'), 1)} km"
+            elif raw_home.get('distance_km') is not None:
+                distance_value = f"{round(raw_home.get('distance_km'), 1)} km"
+            elif home.get('distance'):
+                distance_str = str(home.get('distance'))
+                if 'km' in distance_str.lower():
+                    distance_value = distance_str
+                else:
+                    try:
+                        distance_float = float(distance_str)
+                        distance_value = f"{round(distance_float, 1)} km"
+                    except (ValueError, TypeError):
+                        distance_value = distance_str
+            elif raw_home.get('distance'):
+                distance_str = str(raw_home.get('distance'))
+                if 'km' in distance_str.lower():
+                    distance_value = distance_str
+                else:
+                    try:
+                        distance_float = float(distance_str)
+                        distance_value = f"{round(distance_float, 1)} km"
+                    except (ValueError, TypeError):
+                        distance_value = distance_str
+            
+            # Extract location (can be in different formats)
+            location_value = (
+                home.get('location') or 
+                home.get('city') or 
+                raw_home.get('location') or 
+                raw_home.get('city') or 
+                home.get('address', '').split(',')[0] if home.get('address') else '' or
+                raw_home.get('address', '').split(',')[0] if raw_home.get('address') else ''
+            )
+            
             care_home = {
                 'id': home.get('cqc_location_id') or home.get('id') or str(uuid.uuid4()),
                 'name': home.get('name', 'Unknown'),
                 'matchScore': round(scored['matchScore'], 1),
                 'weeklyPrice': weekly_price_value,
-                'location': home.get('location') or home.get('city', ''),
+                'location': location_value,
+                'distance': distance_value or 'N/A',
                 'postcode': home.get('postcode', ''),
                 'cqcRating': cqc_rating_value,
                 'googleRating': google_rating_value or 0,
@@ -2748,15 +4003,17 @@ async def generate_professional_report(request: Dict[str, Any] = Body(...)):
                 'careTypes': home.get('care_types', []),
                 'photo': photo_url,  # Add photo URL
                 'rawData': home,
-                # Add Food Hygiene Rating
+                # Add Food Hygiene Rating (legacy field for compatibility)
                 'foodHygiene': food_hygiene_rating if food_hygiene_rating is not None else None,
                 # Add factor scores for medical matching chart
                 'factorScores': factor_scores,
+                # ✅ FIX: Add pricing history for risk assessment
+                'pricingHistory': pricing_history,
                 # Add enriched data - NO SYNTHETIC DATA, only real API data or null
                 'financialStability': financial_stability,  # Real Companies House data or null
                 'googlePlaces': google_places,  # Real Google Places data or null
                 'cqcDeepDive': cqc_details,  # Real CQC data or null
-                'fsaDetailed': fsa_detailed,  # Real FSA data or null
+                'fsaDetailed': fsa_detailed,  # Real FSA data or null - THIS IS THE FOOD HYGIENE RATING
                 'staffQuality': staff_quality,  # Real Staff Quality data or null
                 'neighbourhood': neighbourhood,  # Real Neighbourhood data or null
                 # Additional sections from enriched data
@@ -2770,6 +4027,15 @@ async def generate_professional_report(request: Dict[str, Any] = Body(...)):
                 'category_reasoning': home.get('category_reasoning', {}),
                 'value_ratio': home.get('value_ratio')  # For Best Cost & Financial
             }
+            
+            # ✅ FIX: Log what was added to care_home (for first home only)
+            if is_first_home:
+                print(f"\n   ✅ care_home built for {home.get('name', 'unknown')}:")
+                print(f"      - fsaDetailed: {'✅' if care_home.get('fsaDetailed') else '❌'}")
+                print(f"      - googlePlaces: {'✅' if care_home.get('googlePlaces') else '❌'}")
+                print(f"      - financialStability: {'✅' if care_home.get('financialStability') else '❌'}")
+                print(f"      - cqcDeepDive: {'✅' if care_home.get('cqcDeepDive') else '❌'}")
+                print(f"      - staffQuality: {'✅' if care_home.get('staffQuality') else '❌'}")
             
             care_homes_list.append(care_home)
         
@@ -2973,6 +4239,36 @@ async def generate_professional_report(request: Dict[str, Any] = Body(...)):
         try:
             from services.comparative_analysis_service import ComparativeAnalysisService
             comparative_service = ComparativeAnalysisService()
+            
+            # ✅ DEBUG: Log data availability for comparative analysis
+            print(f"\n{'='*80}")
+            print(f"DEBUG: Data availability for Comparative Analysis")
+            print(f"{'='*80}")
+            for i, home in enumerate(care_homes_list[:5], 1):
+                print(f"\nHome #{i}: {home.get('name', 'Unknown')}")
+                print(f"  - factorScores: {len(home.get('factorScores', []))} categories")
+                print(f"  - cqcDeepDive: {'✅' if home.get('cqcDeepDive') else '❌'}")
+                if home.get('cqcDeepDive'):
+                    cqc = home.get('cqcDeepDive', {})
+                    print(f"    - overall_rating: {cqc.get('overall_rating', 'N/A')}")
+                    print(f"    - detailed_ratings: {bool(cqc.get('detailed_ratings'))}")
+                print(f"  - financialStability: {'✅' if home.get('financialStability') else '❌'}")
+                if home.get('financialStability'):
+                    fin = home.get('financialStability', {})
+                    print(f"    - altman_z_score: {fin.get('altman_z_score', 'N/A')}")
+                    print(f"    - bankruptcy_risk_score: {fin.get('bankruptcy_risk_score', 'N/A')}")
+                print(f"  - fsaDetailed: {'✅' if home.get('fsaDetailed') else '❌'}")
+                if home.get('fsaDetailed'):
+                    fsa = home.get('fsaDetailed', {})
+                    print(f"    - rating: {fsa.get('rating', 'N/A')}")
+                print(f"  - googlePlaces: {'✅' if home.get('googlePlaces') else '❌'}")
+                if home.get('googlePlaces'):
+                    gp = home.get('googlePlaces', {})
+                    print(f"    - rating: {gp.get('rating', 'N/A')}")
+                    print(f"    - user_ratings_total: {gp.get('user_ratings_total', 'N/A')}")
+                print(f"  - weeklyPrice: {home.get('weeklyPrice', 'N/A')}")
+                print(f"  - matchScore: {home.get('matchScore', 'N/A')}")
+            
             comparative_analysis = comparative_service.generate_comparative_analysis(care_homes_list, questionnaire)
             if comparative_analysis:
                 report['comparativeAnalysis'] = comparative_analysis
@@ -2986,6 +4282,20 @@ async def generate_professional_report(request: Dict[str, Any] = Body(...)):
         try:
             from services.red_flags_service import RedFlagsService
             red_flags_service = RedFlagsService()
+            
+            # ✅ FIX: Debug logging to check data availability before risk assessment
+            print(f"\n{'='*80}")
+            print(f"STEP: RISK ASSESSMENT")
+            print(f"{'='*80}")
+            print(f"   Assessing {len(care_homes_list)} homes for risks...")
+            for i, home in enumerate(care_homes_list[:5], 1):
+                print(f"   Home {i}: {home.get('name', 'Unknown')}")
+                print(f"      financialStability: {bool(home.get('financialStability'))}")
+                print(f"      cqcRating: {home.get('cqcRating', 'None')}")
+                print(f"      cqcDeepDive: {bool(home.get('cqcDeepDive'))}")
+                print(f"      staffQuality: {bool(home.get('staffQuality'))}")
+                print(f"      pricingHistory: {bool(home.get('pricingHistory'))}")
+            
             risk_assessment = red_flags_service.generate_risk_assessment(care_homes_list, questionnaire)
             if risk_assessment and risk_assessment.get('summary'):
                 all_homes_assessed = risk_assessment.get('homes_assessment', [])
@@ -3365,7 +4675,318 @@ async def generate_professional_report(request: Dict[str, Any] = Body(...)):
             import traceback
             print(f"Traceback: {traceback.format_exc()}")
         
-        return {
+        # Generate LLM Insights - ALWAYS generate fallback if LLM unavailable
+        print(f"\n{'='*80}")
+        print(f"STEP: LLM INSIGHTS GENERATION")
+        print(f"{'='*80}")
+        print(f"   ✅ CRITICAL: This block MUST execute and add llmInsights to report")
+        print(f"   ✅ If this block fails, llmInsights will be missing in response")
+        
+        # ✅ FIX: Ensure care_homes_list exists and has homes
+        if not care_homes_list or len(care_homes_list) == 0:
+            print(f"⚠️ WARNING: care_homes_list is empty, cannot generate LLM Insights")
+            care_homes_list = []
+        
+        print(f"   📊 Preparing LLM data:")
+        print(f"      - care_homes_list length: {len(care_homes_list)}")
+        print(f"      - Top 5 homes: {[h.get('name', 'Unknown') for h in care_homes_list[:5]]}")
+        
+        # Prepare report data for LLM
+        llm_report_data = {
+            'clientName': client_name,
+            'city': questionnaire.get('section_2_location_budget', {}).get('q5_preferred_city', ''),
+            'postcode': questionnaire.get('section_2_location_budget', {}).get('q5_preferred_city', ''),
+            'analysisSummary': report.get('analysisSummary', {}),
+            'executiveSummary': report.get('executiveSummary', {}),
+            'careHomes': care_homes_list[:5] if care_homes_list else [],  # Top 5 homes
+            'fundingOptimization': report.get('fundingOptimization'),
+        }
+        
+        print(f"   ✅ llm_report_data prepared:")
+        print(f"      - clientName: {llm_report_data['clientName']}")
+        print(f"      - city: {llm_report_data['city']}")
+        print(f"      - careHomes count: {len(llm_report_data['careHomes'])}")
+        print(f"      - analysisSummary: {bool(llm_report_data.get('analysisSummary'))}")
+        print(f"      - executiveSummary: {bool(llm_report_data.get('executiveSummary'))}")
+        
+        llm_service = None
+        try:
+            from services.report_llm_insights_service import ReportLLMInsightsService
+            from utils.auth import get_credentials
+            
+            creds = get_credentials()
+            openai_api_key = None
+            anthropic_api_key = None
+            
+            # ✅ FIX: Use same logic as free report - let service validate the key
+            # Get OpenAI API key from credentials (same as free_report_routes.py)
+            if creds and hasattr(creds, 'openai') and creds.openai:
+                openai_api_key = getattr(creds.openai, 'api_key', None)
+                if openai_api_key:
+                    print(f"✅ OpenAI API key found: {openai_api_key[:10]}...{openai_api_key[-4:] if len(openai_api_key) > 14 else ''}")
+            
+            # Get Anthropic API key from credentials
+            if creds and hasattr(creds, 'anthropic') and creds.anthropic:
+                anthropic_api_key = getattr(creds.anthropic, 'api_key', None)
+                if anthropic_api_key:
+                    print(f"✅ Anthropic API key found: {anthropic_api_key[:10]}...{anthropic_api_key[-4:] if len(anthropic_api_key) > 14 else ''}")
+            
+            llm_service = ReportLLMInsightsService(
+                openai_api_key=openai_api_key,
+                anthropic_api_key=anthropic_api_key
+            )
+            print(f"✅ LLM Insights Service initialized (OpenAI key: {'✅ configured' if openai_api_key else '❌ not configured'}, Anthropic key: {'✅ configured' if anthropic_api_key else '❌ not configured'})")
+            
+            # Generate insights (with timeout to avoid blocking)
+            import asyncio
+            try:
+                llm_insights = await asyncio.wait_for(
+                    llm_service.generate_report_insights(
+                        report_data=llm_report_data,
+                        questionnaire=questionnaire
+                    ),
+                    timeout=30.0  # 30 second timeout
+                )
+                report['llmInsights'] = llm_insights
+                print(f"✅ LLM Insights generated successfully (model: {llm_insights.get('model', 'fallback')})")
+            except asyncio.TimeoutError:
+                print(f"⚠️ LLM Insights generation timeout, using fallback")
+                report['llmInsights'] = llm_service._generate_fallback_insights(llm_report_data)
+            except Exception as e:
+                print(f"⚠️ LLM Insights generation failed: {e}")
+                report['llmInsights'] = llm_service._generate_fallback_insights(llm_report_data)
+        except ImportError as import_error:
+            print(f"⚠️ LLM Insights Service not available: {import_error}")
+            # ✅ FIX: Always generate fallback insights
+            try:
+                from services.report_llm_insights_service import ReportLLMInsightsService
+                fallback_service = ReportLLMInsightsService(openai_api_key=None, anthropic_api_key=None)
+                report['llmInsights'] = fallback_service._generate_fallback_insights(llm_report_data)
+                print(f"✅ Fallback LLM Insights generated")
+            except Exception as fallback_error:
+                print(f"⚠️ Fallback generation also failed: {fallback_error}")
+                # Last resort: create minimal structure
+                report['llmInsights'] = {
+                    'generated_at': datetime.now().isoformat(),
+                    'model': 'fallback',
+                    'method': 'data_driven_analysis',
+                    'insights': {
+                        'overall_explanation': {
+                            'summary': f"This report analyzed {len(care_homes_list)} care homes to find the best matches.",
+                            'key_insights': ['Each home has been carefully matched to your profile'],
+                            'confidence_level': 'medium'
+                        },
+                        'top_home_analysis': [
+                            {
+                                'home_name': home.get('name', 'Recommended Home'),
+                                'rank': idx + 1,
+                                'why_recommended': home.get('whyChosen', f'Strong match with your requirements (Score: {home.get("matchScore", 0)}%)'),
+                                'key_strengths': home.get('keyStrengths', [])[:3],
+                                'considerations': home.get('mustVerify', [])[:2],
+                                'match_score_explanation': f'Match score of {home.get("matchScore", 0)}% indicates strong alignment with your needs'
+                            }
+                            for idx, home in enumerate(care_homes_list[:5])
+                        ],
+                        'expert_advice': {
+                            'funding_strategy': 'Review funding options in this report',
+                            'decision_timeline': 'Visit top 3 homes within 2-3 weeks'
+                        },
+                        'actionable_next_steps': [
+                            {'step': 'Schedule visits to top homes', 'priority': 'high', 'timeline': 'Within 2 weeks'},
+                            {'step': 'Review funding options', 'priority': 'medium', 'timeline': 'Before decision'}
+                        ]
+                    }
+                }
+        except Exception as e:
+            print(f"⚠️ LLM Insights generation failed: {e}")
+            import traceback
+            print(f"Traceback: {traceback.format_exc()}")
+            # ✅ FIX: Always generate fallback insights
+            try:
+                from services.report_llm_insights_service import ReportLLMInsightsService
+                fallback_service = ReportLLMInsightsService(openai_api_key=None, anthropic_api_key=None)
+                # ✅ FIX: Ensure llm_report_data exists, create if missing
+                if 'llm_report_data' not in locals() or not llm_report_data:
+                    print(f"   ⚠️ llm_report_data not available, creating from report data")
+                    llm_report_data = {
+                        'clientName': client_name if 'client_name' in locals() else 'Client',
+                        'city': questionnaire.get('section_2_location_budget', {}).get('q5_preferred_city', ''),
+                        'postcode': questionnaire.get('section_2_location_budget', {}).get('q5_preferred_city', ''),
+                        'analysisSummary': report.get('analysisSummary', {}),
+                        'executiveSummary': report.get('executiveSummary', {}),
+                        'careHomes': care_homes_list[:5] if 'care_homes_list' in locals() and care_homes_list else [],
+                        'fundingOptimization': report.get('fundingOptimization'),
+                    }
+                report['llmInsights'] = fallback_service._generate_fallback_insights(llm_report_data)
+                print(f"✅ Fallback LLM Insights generated after error")
+            except Exception as fallback_error:
+                print(f"⚠️ Fallback generation also failed: {fallback_error}")
+                import traceback
+                print(f"   Fallback traceback: {traceback.format_exc()}")
+                # Last resort: create minimal structure
+                homes_for_fallback = care_homes_list[:5] if 'care_homes_list' in locals() and care_homes_list else []
+                report['llmInsights'] = {
+                    'generated_at': datetime.now().isoformat(),
+                    'model': 'fallback',
+                    'method': 'data_driven_analysis',
+                    'insights': {
+                        'overall_explanation': {
+                            'summary': f"This report analyzed {len(homes_for_fallback)} care homes to find the best matches.",
+                            'key_insights': ['Each home has been carefully matched to your profile'],
+                            'confidence_level': 'medium'
+                        },
+                        'top_home_analysis': [
+                            {
+                                'home_name': home.get('name', f'Home {idx+1}'),
+                                'rank': idx + 1,
+                                'why_recommended': home.get('whyChosen') or home.get('matchReason') or f'Strong match with your requirements (Score: {home.get("matchScore", 0)}%)',
+                                'key_strengths': home.get('keyStrengths', [])[:3] if home.get('keyStrengths') else [],
+                                'considerations': home.get('mustVerify', [])[:2] if home.get('mustVerify') else [],
+                                'match_score_explanation': f'Match score of {home.get("matchScore", 0)}% indicates strong alignment with your needs'
+                            }
+                            for idx, home in enumerate(homes_for_fallback)
+                        ],
+                        'expert_advice': {
+                            'funding_strategy': 'Review funding options in this report',
+                            'decision_timeline': 'Visit top 3 homes within 2-3 weeks'
+                        },
+                        'actionable_next_steps': [
+                            {'step': 'Schedule visits to top homes', 'priority': 'high', 'timeline': 'Within 2 weeks'},
+                            {'step': 'Review funding options', 'priority': 'medium', 'timeline': 'Before decision'}
+                        ]
+                    }
+                }
+        
+        # ✅ FIX: Ensure llmInsights is always present
+        if 'llmInsights' not in report or not report.get('llmInsights'):
+            print(f"⚠️ LLM Insights missing, generating final fallback")
+            try:
+                from services.report_llm_insights_service import ReportLLMInsightsService
+                fallback_service = ReportLLMInsightsService(openai_api_key=None, anthropic_api_key=None)
+                report['llmInsights'] = fallback_service._generate_fallback_insights(llm_report_data)
+            except Exception as e:
+                print(f"⚠️ Final fallback failed: {e}")
+                # Minimal structure as absolute last resort
+                report['llmInsights'] = {
+                    'generated_at': datetime.now().isoformat(),
+                    'model': 'fallback',
+                    'method': 'data_driven_analysis',
+                    'insights': {
+                        'overall_explanation': {'summary': 'Report analysis completed', 'key_insights': [], 'confidence_level': 'medium'},
+                        'top_home_analysis': [
+                            {
+                                'home_name': home.get('name', f'Home {idx+1}'),
+                                'rank': idx + 1,
+                                'why_recommended': f'Recommended based on comprehensive analysis (Match: {home.get("matchScore", 0)}%)',
+                                'key_strengths': home.get('keyStrengths', [])[:3] if home.get('keyStrengths') else [],
+                                'considerations': home.get('mustVerify', [])[:2] if home.get('mustVerify') else []
+                            }
+                            for idx, home in enumerate(care_homes_list[:5])
+                        ],
+                        'expert_advice': {'funding_strategy': 'Review funding section', 'decision_timeline': '2-3 weeks'},
+                        'actionable_next_steps': []
+                    }
+                }
+        
+        # ✅ FIX: Final verification that llmInsights is in report
+        llm_insights_in_report = report.get('llmInsights')
+        if llm_insights_in_report:
+            model = llm_insights_in_report.get('model', 'unknown')
+            has_insights = bool(llm_insights_in_report.get('insights'))
+            has_top_home_analysis = bool(llm_insights_in_report.get('insights', {}).get('top_home_analysis'))
+            top_home_count = len(llm_insights_in_report.get('insights', {}).get('top_home_analysis', []))
+            print(f"✅ LLM Insights verified in report:")
+            print(f"   - Model: {model}")
+            print(f"   - Has insights: {has_insights}")
+            print(f"   - Has top_home_analysis: {has_top_home_analysis}")
+            print(f"   - Top home count: {top_home_count}")
+        else:
+            print(f"❌ CRITICAL: llmInsights is MISSING from report!")
+            print(f"   Report keys: {list(report.keys())}")
+            # Last resort fallback
+            try:
+                from services.report_llm_insights_service import ReportLLMInsightsService
+                fallback_service = ReportLLMInsightsService(openai_api_key=None, anthropic_api_key=None)
+                report['llmInsights'] = fallback_service._generate_fallback_insights(llm_report_data)
+                print(f"✅ Emergency fallback llmInsights added")
+            except Exception as e:
+                print(f"❌ Emergency fallback failed: {e}")
+        
+        # ✅ FIX: Verify report structure before returning
+        print(f"\n📋 Final report structure check:")
+        print(f"   - report keys: {list(report.keys())}")
+        print(f"   - llmInsights present: {'llmInsights' in report}")
+        
+        # ✅ FIX: Final safety check - ensure llmInsights is always in report
+        if 'llmInsights' not in report or not report.get('llmInsights'):
+            print(f"   ❌ CRITICAL: llmInsights still missing after all checks!")
+            print(f"      Generating emergency fallback...")
+            try:
+                from services.report_llm_insights_service import ReportLLMInsightsService
+                emergency_service = ReportLLMInsightsService(openai_api_key=None, anthropic_api_key=None)
+                # ✅ FIX: Ensure llm_report_data exists
+                if 'llm_report_data' not in locals() or not llm_report_data:
+                    print(f"      ⚠️ llm_report_data not available, creating from report data")
+                    llm_report_data = {
+                        'clientName': client_name if 'client_name' in locals() else 'Client',
+                        'city': questionnaire.get('section_2_location_budget', {}).get('q5_preferred_city', ''),
+                        'postcode': questionnaire.get('section_2_location_budget', {}).get('q5_preferred_city', ''),
+                        'analysisSummary': report.get('analysisSummary', {}),
+                        'executiveSummary': report.get('executiveSummary', {}),
+                        'careHomes': care_homes_list[:5] if 'care_homes_list' in locals() and care_homes_list else [],
+                        'fundingOptimization': report.get('fundingOptimization'),
+                    }
+                report['llmInsights'] = emergency_service._generate_fallback_insights(llm_report_data)
+                print(f"      ✅ Emergency fallback generated")
+            except Exception as e:
+                print(f"      ❌ Emergency fallback failed: {e}")
+                import traceback
+                print(f"      Traceback: {traceback.format_exc()}")
+                # Last resort: minimal structure
+                homes_for_emergency = care_homes_list[:5] if 'care_homes_list' in locals() and care_homes_list else []
+                report['llmInsights'] = {
+                    'generated_at': datetime.now().isoformat(),
+                    'model': 'fallback',
+                    'method': 'emergency',
+                    'insights': {
+                        'overall_explanation': {
+                            'summary': 'Report analysis completed',
+                            'key_insights': [],
+                            'confidence_level': 'medium'
+                        },
+                        'top_home_analysis': [
+                            {
+                                'home_name': home.get('name', f'Home {idx+1}'),
+                                'rank': idx + 1,
+                                'why_recommended': f'Recommended based on comprehensive analysis (Match: {home.get("matchScore", 0)}%)',
+                                'key_strengths': home.get('keyStrengths', [])[:3] if home.get('keyStrengths') else [],
+                                'considerations': home.get('mustVerify', [])[:2] if home.get('mustVerify') else []
+                            }
+                            for idx, home in enumerate(care_homes_list[:5] if care_homes_list else [])
+                        ],
+                        'expert_advice': {
+                            'funding_strategy': 'Review funding section',
+                            'decision_timeline': '2-3 weeks'
+                        },
+                        'actionable_next_steps': []
+                    }
+                }
+        
+        # ✅ FIX: Final verification
+        final_llm_insights = report.get('llmInsights')
+        if final_llm_insights:
+            print(f"   ✅ llmInsights verified in final check:")
+            print(f"      - Model: {final_llm_insights.get('model', 'unknown')}")
+            print(f"      - Has insights: {bool(final_llm_insights.get('insights'))}")
+            print(f"      - Has top_home_analysis: {bool(final_llm_insights.get('insights', {}).get('top_home_analysis'))}")
+            print(f"      - Top home count: {len(final_llm_insights.get('insights', {}).get('top_home_analysis', []))}")
+        else:
+            print(f"   ❌ CRITICAL: llmInsights is STILL missing after emergency fallback!")
+        
+        print(f"   - careHomes count: {len(report.get('careHomes', []))}")
+        
+        # ✅ FIX: Serialize and verify response structure
+        response_data = {
             'questionnaire': questionnaire,
             'report': report,
             'generated_at': datetime.now().isoformat(),
@@ -3373,14 +4994,30 @@ async def generate_professional_report(request: Dict[str, Any] = Body(...)):
             'status': 'completed'
         }
         
+        # ✅ FIX: Verify llmInsights in response
+        response_report = response_data.get('report', {})
+        if 'llmInsights' in response_report:
+            print(f"   ✅ llmInsights confirmed in response structure")
+        else:
+            print(f"   ❌ CRITICAL: llmInsights missing in response structure!")
+            print(f"      Response report keys: {list(response_report.keys())}")
+        
+        return response_data
+        
     except HTTPException:
         raise
     except Exception as e:
         import traceback
         error_trace = traceback.format_exc()
         error_msg = str(e)
-        print(f"❌ Professional report generation error: {error_msg}")
+        error_type = type(e).__name__
+        print(f"❌ Professional report generation error: {error_type}: {error_msg}")
         print(f"Traceback:\n{error_trace}")
+        
+        # ✅ FIX: Simplified error handling - don't try to create partial report
+        # This was causing additional errors and crashes
+        # The llmInsights should be added in the main try block, not in exception handler
+        
         # Return more detailed error for debugging (in production, use generic message)
         raise HTTPException(
             status_code=500, 
@@ -3510,6 +5147,82 @@ async def detect_hidden_fees(home_id: str, request: Dict[str, Any] = Body(...)):
         raise HTTPException(status_code=500, detail="Failed to detect hidden fees. Please try again.")
 
 
+@router.post("/professional-report/llm-insights")
+async def generate_professional_report_llm_insights(request: Dict[str, Any] = Body(...)):
+    """
+    Generate LLM Insights for professional report
+    
+    Accepts:
+    - report_data: Professional report data structure
+    - questionnaire: Original questionnaire
+    
+    Returns LLM-generated insights using OpenAI GPT-4o (priority 1) or Anthropic Claude (priority 2)
+    """
+    try:
+        report_data = request.get('report_data')
+        questionnaire = request.get('questionnaire')
+        
+        if not report_data:
+            raise HTTPException(status_code=400, detail="report_data is required")
+        if not questionnaire:
+            raise HTTPException(status_code=400, detail="questionnaire is required")
+        
+        # Initialize LLM Insights Service
+        try:
+            from services.report_llm_insights_service import ReportLLMInsightsService
+            from utils.auth import get_credentials
+            
+            creds = get_credentials()
+            openai_api_key = None
+            anthropic_api_key = None
+            if creds.openai and creds.openai.api_key:
+                openai_api_key = creds.openai.api_key
+            if creds.anthropic and creds.anthropic.api_key:
+                anthropic_api_key = creds.anthropic.api_key
+            
+            llm_service = ReportLLMInsightsService(
+                openai_api_key=openai_api_key,
+                anthropic_api_key=anthropic_api_key
+            )
+            print(f"✅ LLM Insights Service initialized (OpenAI key: {'present' if openai_api_key else 'not configured'}, Anthropic key: {'present' if anthropic_api_key else 'not configured'})")
+        except ImportError as import_error:
+            print(f"⚠️ Error importing LLM Insights Service: {import_error}")
+            # Use fallback
+            llm_service = None
+        except Exception as e:
+            print(f"⚠️ Error initializing LLM Insights Service: {e}")
+            llm_service = None
+        
+        # Generate insights
+        if llm_service:
+            try:
+                insights = await llm_service.generate_report_insights(
+                    report_data=report_data,
+                    questionnaire=questionnaire
+                )
+                print(f"✅ LLM Insights generated successfully")
+                return insights
+            except Exception as e:
+                print(f"⚠️ Error generating LLM insights: {e}")
+                import traceback
+                print(traceback.format_exc())
+                # Fallback to basic insights
+                if hasattr(llm_service, '_generate_fallback_insights'):
+                    return llm_service._generate_fallback_insights(report_data)
+        
+        # Fallback if service not available
+        from services.report_llm_insights_service import ReportLLMInsightsService
+        fallback_service = ReportLLMInsightsService(openai_api_key=None, anthropic_api_key=None)
+        return fallback_service._generate_fallback_insights(report_data)
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        logger.error(f"LLM Insights generation error: {str(e)}\n{traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail="Failed to generate LLM insights. Please try again.")
+
+
 @router.post("/diagnostics/data-quality")
 async def diagnose_data_quality(request: Dict[str, Any] = Body(...)):
     """
@@ -3533,22 +5246,28 @@ async def diagnose_data_quality(request: Dict[str, Any] = Body(...)):
         home_ids = request.get('home_ids', None)
         questionnaire = request.get('questionnaire', None)
         
-        # If no homes provided, try to load from CSV
+        # If no homes provided, try to load from SQLite
         if not homes:
             try:
-                from services.csv_care_homes_service import load_csv_care_homes
-                all_homes = load_csv_care_homes()
+                from pathlib import Path as PathlibPath
+                from services.sqlite_care_homes_service import SQLiteCareHomesService
+                
+                db_path = PathlibPath(__file__).parent.parent / 'care_homes.db'
+                service = SQLiteCareHomesService(str(db_path))
+                all_homes = service.get_care_homes(limit=100)  # Limit to 100 for performance
+                service.close()
+                
                 if home_ids:
-                    homes = [h for h in all_homes if h.get('id') in home_ids or h.get('cqc_location_id') in home_ids]
+                    homes = [h for h in all_homes if h.get('id') in home_ids or h.get('cqc_location_id') in home_ids or h.get('location_id') in home_ids]
                 else:
                     homes = all_homes[:100]  # Limit to 100 for performance
             except Exception as e:
-                logger.warning(f"Could not load homes from CSV: {e}")
+                logger.warning(f"Could not load homes from SQLite: {e}")
         
         if not homes:
             raise HTTPException(
                 status_code=400,
-                detail="No homes provided and could not load from CSV"
+                detail="No homes provided and could not load from SQLite database"
             )
         
         # Run diagnostics

@@ -955,7 +955,8 @@ class CompaniesHouseService:
 async def enrich_care_home_with_financial_data(
     care_home_name: str,
     address: Optional[str] = None,
-    postcode: Optional[str] = None
+    postcode: Optional[str] = None,
+    api_key: Optional[str] = None
 ) -> Optional[Dict]:
     """
     Convenience function to enrich a care home with financial data
@@ -964,11 +965,12 @@ async def enrich_care_home_with_financial_data(
         care_home_name: Name of the care home
         address: Optional address
         postcode: Optional postcode
+        api_key: Optional Companies House API key. If None, will try to get from config.
         
     Returns:
         Financial data dict or None if company not found
     """
-    service = CompaniesHouseService()
+    service = CompaniesHouseService(api_key=api_key)
     
     # Find company
     company_number = await service.find_company_for_care_home(

@@ -69,13 +69,13 @@ export default function QuestionnaireProfile({ questionnaire }: QuestionnairePro
               <div className="mt-1 font-medium text-gray-900">
                 {questionnaire.section_2_location_budget.q6_max_distance === 'distance_not_important' 
                   ? 'Not Important' 
-                  : questionnaire.section_2_location_budget.q6_max_distance.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                  : questionnaire.section_2_location_budget.q6_max_distance?.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) || 'Not specified'}
               </div>
             </div>
             <div>
               <span className="text-gray-500 font-medium">Budget:</span>
               <div className="mt-1 font-medium text-gray-900">
-                {questionnaire.section_2_location_budget.q7_budget.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                {questionnaire.section_2_location_budget.q7_budget?.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) || 'Not specified'}
               </div>
             </div>
           </div>
@@ -90,39 +90,39 @@ export default function QuestionnaireProfile({ questionnaire }: QuestionnairePro
             <div>
               <span className="text-gray-500 font-medium">Care Types:</span>
               <div className="mt-2 flex flex-wrap gap-2">
-                {questionnaire.section_3_medical_needs.q8_care_types.map((type, idx) => (
+                {questionnaire.section_3_medical_needs.q8_care_types?.map((type, idx) => (
                   <span key={idx} className="px-3 py-1 bg-blue-100 text-blue-800 rounded-md text-sm font-medium">
-                    {type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                    {type?.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) || 'Not specified'}
                   </span>
-                ))}
+                )) || <span className="text-gray-500 text-sm">Not specified</span>}
               </div>
             </div>
             <div>
               <span className="text-gray-500 font-medium">Medical Conditions:</span>
               <div className="mt-2 flex flex-wrap gap-2">
-                {questionnaire.section_3_medical_needs.q9_medical_conditions.map((condition, idx) => (
+                {questionnaire.section_3_medical_needs.q9_medical_conditions?.map((condition, idx) => (
                   <span key={idx} className="px-3 py-1 bg-red-100 text-red-800 rounded-md text-sm font-medium">
-                    {condition.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                    {condition?.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) || 'Not specified'}
                   </span>
-                ))}
+                )) || <span className="text-gray-500 text-sm">Not specified</span>}
               </div>
             </div>
             <div>
               <span className="text-gray-500 font-medium">Mobility Level:</span>
               <div className="mt-1 font-medium text-gray-900">
-                {questionnaire.section_3_medical_needs.q10_mobility_level.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                {questionnaire.section_3_medical_needs.q10_mobility_level?.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) || 'Not specified'}
               </div>
             </div>
             <div>
               <span className="text-gray-500 font-medium">Medication Management:</span>
               <div className="mt-1 font-medium text-gray-900">
-                {questionnaire.section_3_medical_needs.q11_medication_management.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                {questionnaire.section_3_medical_needs.q11_medication_management?.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) || 'Not specified'}
               </div>
             </div>
             <div>
               <span className="text-gray-500 font-medium">Age Range:</span>
               <div className="mt-1 font-medium text-gray-900">
-                {questionnaire.section_3_medical_needs.q12_age_range.replace(/_/g, '-')}
+                {questionnaire.section_3_medical_needs.q12_age_range?.replace(/_/g, '-') || 'Not specified'}
               </div>
             </div>
           </div>
@@ -137,33 +137,33 @@ export default function QuestionnaireProfile({ questionnaire }: QuestionnairePro
             <div>
               <span className="text-gray-500 font-medium">Fall History:</span>
               <div className="mt-1 font-medium text-gray-900">
-                {questionnaire.section_4_safety_special_needs.q13_fall_history.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                {questionnaire.section_4_safety_special_needs.q13_fall_history?.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) || 'Not specified'}
               </div>
             </div>
             <div>
               <span className="text-gray-500 font-medium">Allergies:</span>
               <div className="mt-2 flex flex-wrap gap-2">
-                {questionnaire.section_4_safety_special_needs.q14_allergies.map((allergy, idx) => (
+                {questionnaire.section_4_safety_special_needs.q14_allergies?.map((allergy, idx) => (
                   <span key={idx} className="px-3 py-1 bg-yellow-100 text-yellow-800 rounded-md text-sm font-medium">
-                    {allergy.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                    {allergy?.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) || 'Not specified'}
                   </span>
-                ))}
+                )) || <span className="text-gray-500 text-sm">Not specified</span>}
               </div>
             </div>
             <div>
               <span className="text-gray-500 font-medium">Dietary Requirements:</span>
               <div className="mt-2 flex flex-wrap gap-2">
-                {questionnaire.section_4_safety_special_needs.q15_dietary_requirements.map((diet, idx) => (
+                {questionnaire.section_4_safety_special_needs.q15_dietary_requirements?.map((diet, idx) => (
                   <span key={idx} className="px-3 py-1 bg-green-100 text-green-800 rounded-md text-sm font-medium">
-                    {diet.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                    {diet?.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) || 'Not specified'}
                   </span>
-                ))}
+                )) || <span className="text-gray-500 text-sm">Not specified</span>}
               </div>
             </div>
             <div>
               <span className="text-gray-500 font-medium">Social Personality:</span>
               <div className="mt-1 font-medium text-gray-900">
-                {questionnaire.section_4_safety_special_needs.q16_social_personality.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                {questionnaire.section_4_safety_special_needs.q16_social_personality?.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) || 'Not specified'}
               </div>
             </div>
           </div>
@@ -177,7 +177,7 @@ export default function QuestionnaireProfile({ questionnaire }: QuestionnairePro
           <div className="text-sm">
             <span className="text-gray-500 font-medium">Placement Timeline:</span>
             <div className="mt-1 font-medium text-gray-900">
-              {questionnaire.section_5_timeline.q17_placement_timeline.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+              {questionnaire.section_5_timeline.q17_placement_timeline?.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) || 'Not specified'}
             </div>
           </div>
         </div>

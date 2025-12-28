@@ -11,16 +11,16 @@ export interface ProfessionalQuestionnaireResponse {
   section_2_location_budget: {
     q5_preferred_city: string;
     q6_max_distance: 'within_5km' | 'within_15km' | 'within_30km' | 'distance_not_important' | '5km' | '10km' | '15km' | '20km' | '30km';
-    q7_budget: 
-      | 'under_3000_self' 
-      | 'under_3000_local' 
-      | '3000_5000_self' 
-      | '3000_5000_local' 
-      | '5000_7000_self' 
-      | '5000_7000_local' 
-      | 'over_7000_self' 
-      | 'over_7000_local' 
-      | 'need_budget_guidance';
+    q7_budget:
+    | 'under_3000_self'
+    | 'under_3000_local'
+    | '3000_5000_self'
+    | '3000_5000_local'
+    | '5000_7000_self'
+    | '5000_7000_local'
+    | 'over_7000_self'
+    | 'over_7000_local'
+    | 'need_budget_guidance';
   };
   section_3_medical_needs: {
     q8_care_types: Array<'general_residential' | 'medical_nursing' | 'specialised_dementia' | 'temporary_respite'>;
@@ -72,16 +72,16 @@ export interface FSADetailed {
   rating?: number | null;
   rating_date?: string | null;
   fhrs_id?: string | null;
-  
+
   // Business info
   business_name?: string | null;
   address?: string | null;
   postcode?: string | null;
-  
+
   // RAW breakdown scores - same format as FSA Explorer
   // These are penalty points (lower is better)
   breakdown_scores?: FSABreakdownScores | null;
-  
+
   // Historical ratings (RAW from FSA API)
   historical_ratings?: Array<{
     date?: string;
@@ -92,7 +92,7 @@ export interface FSADetailed {
     local_authority?: string;
     inspection_type?: string;
   }> | null;
-  
+
   // Trend analysis (RAW from FSA API)
   trend_analysis?: {
     trend?: string;
@@ -105,10 +105,10 @@ export interface FSADetailed {
       confidence?: string;
     };
   } | null;
-  
+
   // Data source flag
   data_source?: 'fsa_api' | 'fallback' | 'not_available';
-  
+
   // Legacy fields for backward compatibility
   health_score?: {
     score?: number | null;
@@ -125,6 +125,14 @@ export interface FSADetailed {
 
 export interface FinancialStability {
   three_year_summary?: {
+    revenue_year_1?: number | null;
+    revenue_year_2?: number | null;
+    revenue_year_3?: number | null;
+    profit_year_1?: number | null;
+    profit_year_2?: number | null;
+    profit_year_3?: number | null;
+    average_revenue?: number | null;
+    average_profit?: number | null;
     revenue_trend?: string | null;
     revenue_3yr_avg?: number | null;
     revenue_growth_rate?: number | null;
@@ -653,7 +661,7 @@ export interface ProfessionalCareHome {
 
   // Section 9: Staff Quality
   staffQuality?: StaffQualityData | null;
-  
+
   // Category Winners (NEW)
   is_category_winner?: {
     [categoryKey: string]: boolean;
@@ -1217,7 +1225,7 @@ export interface RiskAssessment {
 }
 
 export interface NegotiationStrategy {
-    market_rate_analysis: {
+  market_rate_analysis: {
     uk_average_weekly: number;
     regional_average_weekly: number;
     region: string;
@@ -1488,6 +1496,8 @@ export interface ProfessionalReportData {
         home_name: string;
         rank: number;
         why_recommended: string;
+        data_sources_explanation?: string;
+        key_benefits?: string[];
         key_strengths: string[];
         considerations?: string[];
         match_score_explanation?: string;

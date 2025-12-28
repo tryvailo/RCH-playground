@@ -121,10 +121,12 @@ class SimpleMatchingService:
             applied_conditions.append('dementia')
         
         if high_risk:
-            weights.medical_safety += 10  # 35 → 45
-            weights.quality_care += 5     # 25 → 30
-            weights.lifestyle -= 8        # 10 → 2
-            weights.financial -= 7        # 15 → 8
+            # IMPROVEMENT #1: Stronger High-Risk Weighting (MVP Launch)
+            # Increased from +10 to +18 to make specialists stand out more
+            weights.medical_safety += 18  # 35 → 53 (much stronger!)
+            weights.quality_care += 8     # 25 → 33
+            weights.lifestyle -= 12       # 10 → -2 (clamps to minimum 2)
+            weights.financial -= 5        # 15 → 10
         
         # ─────────────────────────────────────────────────────
         # CONDITION 2: URGENT PLACEMENT
@@ -397,6 +399,58 @@ class SimpleMatchingService:
             care_match = 20  # No specific requirement
         
         score += care_match
+        
+        # ─────────────────────────────────────────────────────
+        # IMPROVEMENT #2: Specialty Home Bonus (MVP Launch)
+        # ─────────────────────────────────────────────────────
+        # Gives bonus points when home specialty matches client's medical conditions
+        specialty_bonus = 0.0
+        home_care_types = home.get('care_types', []) or []
+        if isinstance(home_care_types, str):
+            home_care_types = [home_care_types]
+        home_care_types_str = ' '.join([str(t).lower() for t in home_care_types])
+        
+        # Dementia specialty match
+        if 'dementia_alzheimers' in medical_conditions:
+            if 'dementia' in home_care_types_str or 'dementia' in str(home.get('name', '')).lower():
+                specialty_bonus += 15  # +15 points for dementia specialty match
+        
+        # Behavioral specialty match
+        if 'behavioral_concerns' in medical_conditions:
+            if 'behavioral' in home_care_types_str or 'complex' in home_care_types_str:
+                specialty_bonus += 15  # +15 points for behavioral specialty
+        
+        # Nursing specialty match
+        if 'nursing_care' in required_care or any('nursing' in str(c).lower() for c in required_care or []):
+            if 'nursing' in home_care_types_str or home.get('care_nursing', False):
+                specialty_bonus += 12  # +12 points for nursing specialty
+        
+        score += specialty_bonus
+        
+        if debug_info is not None and specialty_bonus > 0:
+            debug_info['specialty_bonus'] = specialty_bonus
+        
+        # ─────────────────────────────────────────────────────
+        # IMPROVEMENT #3: Care Type Mismatch Penalty (MVP Launch)
+        # ─────────────────────────────────────────────────────
+        # Penalizes homes that don't provide required care types
+        care_type_penalty = 0.0
+        
+        if required_care and home_care_types:
+            # Check for NURSING mismatch (critical)
+            if any('nursing' in str(c).lower() for c in required_care):
+                if 'nursing' not in home_care_types_str and not home.get('care_nursing', False):
+                    care_type_penalty = -25  # -25 points for nursing mismatch!
+            
+            # Check for DEMENTIA mismatch (important)
+            elif any('dementia' in str(c).lower() for c in required_care):
+                if 'dementia' not in home_care_types_str and 'dementia' not in str(home.get('name', '')).lower():
+                    care_type_penalty = -20  # -20 points for dementia mismatch
+        
+        score -= care_type_penalty  # Apply penalty (negative of negative = reduction)
+        
+        if debug_info is not None and care_type_penalty > 0:
+            debug_info['care_type_penalty'] = -care_type_penalty
         
         # ─────────────────────────────────────────────────────
         # 3. CQC SAFE RATING (25 points) - USES CQC API DATA

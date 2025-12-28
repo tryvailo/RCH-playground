@@ -16,7 +16,10 @@ import DataIngestionAdmin from './pages/DataIngestionAdmin';
 import PriceCalculator from './pages/PriceCalculator';
 import FundingCalculator from './pages/FundingCalculator';
 import FreeReportViewer from './features/free-report/FreeReportViewer';
+import FreeReportNewViewer from './features/free-report-new/FreeReportNewViewer';
 import ProfessionalReportViewer from './features/professional-report/ProfessionalReportViewer';
+import ProfessionalReportNewViewer from './features/professional-report-new/ProfessionalReportNewViewer';
+import { ErrorBoundary } from './features/professional-report-new/components/ErrorBoundary';
 import NeighbourhoodExplorer from './features/neighbourhood/NeighbourhoodExplorer';
 import AllLocations from './pages/AllLocations';
 import PostcodeCalculator from './pages/PostcodeCalculator';
@@ -69,7 +72,16 @@ function App() {
             <Route path="/funding-calculator" element={<FundingCalculator />} />
             <Route path="/neighbourhood" element={<NeighbourhoodExplorer />} />
             <Route path="/free-report" element={<FreeReportViewer />} />
+            <Route path="/free-report-new" element={<FreeReportNewViewer />} />
             <Route path="/professional-report" element={<ProfessionalReportViewer />} />
+            <Route 
+              path="/professional-report-new" 
+              element={
+                <ErrorBoundary>
+                  <ProfessionalReportNewViewer />
+                </ErrorBoundary>
+              } 
+            />
             <Route path="/all-locations" element={<AllLocations />} />
             <Route path="/postcode-calculator" element={<PostcodeCalculator />} />
             <Route path="/postcode-tester" element={<PostcodeTester />} />

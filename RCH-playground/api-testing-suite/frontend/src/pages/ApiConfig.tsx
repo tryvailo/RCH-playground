@@ -63,19 +63,30 @@ export default function ApiConfig() {
       // Convert camelCase to snake_case and filter out empty credentials
       const cleanedData: any = {};
       
-      // CQC - snake_case
+      // CQC - convert to snake_case like other APIs
       if (formData.cqc && (
         formData.cqc.partnerCode?.trim() ||
         formData.cqc.primarySubscriptionKey?.trim() ||
         formData.cqc.secondarySubscriptionKey?.trim() ||
         formData.cqc.useWithoutCode !== undefined
       )) {
-        cleanedData.cqc = {
-          partnerCode: formData.cqc.partnerCode || '',
-          primarySubscriptionKey: formData.cqc.primarySubscriptionKey || '',
-          secondarySubscriptionKey: formData.cqc.secondarySubscriptionKey || '',
-          useWithoutCode: formData.cqc.useWithoutCode ?? true,
-        };
+        const cqcData: any = {};
+        if (formData.cqc.partnerCode?.trim()) {
+          cqcData.partner_code = formData.cqc.partnerCode.trim();
+        }
+        if (formData.cqc.primarySubscriptionKey?.trim()) {
+          cqcData.primary_subscription_key = formData.cqc.primarySubscriptionKey.trim();
+        }
+        if (formData.cqc.secondarySubscriptionKey?.trim()) {
+          cqcData.secondary_subscription_key = formData.cqc.secondarySubscriptionKey.trim();
+        }
+        if (formData.cqc.useWithoutCode !== undefined) {
+          cqcData.use_without_code = formData.cqc.useWithoutCode;
+        }
+        // Only add if we have at least one non-empty value
+        if (Object.keys(cqcData).length > 0) {
+          cleanedData.cqc = cqcData;
+        }
       }
       
       // Companies House - convert to snake_case
@@ -128,6 +139,7 @@ export default function ApiConfig() {
       
       // Reload credentials from server to ensure they were saved correctly
       await loadCredentials();
+      setHasChanges(false); // Reset changes flag after successful save
       alert('✅ Credentials saved successfully!\n\n' + response.data.message);
     } catch (error: any) {
       console.error('Save error:', error.response?.data || error);

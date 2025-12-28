@@ -113,12 +113,30 @@ class EnrichmentOrchestrator:
         
         try:
             import os
-            google_api_key = os.getenv("GOOGLE_PLACES_API_KEY")
+            google_api_key = None
+            
+            # Method 1: Try to get from config_manager (config.json)
+            try:
+                from config_manager import get_credentials
+                creds = get_credentials()
+                if creds and hasattr(creds, 'google_places') and creds.google_places:
+                    google_api_key = getattr(creds.google_places, 'api_key', None)
+                    if google_api_key:
+                        logger.info("✅ Google Places API key loaded from config.json")
+            except Exception as config_error:
+                logger.debug(f"Could not load Google Places API key from config: {config_error}")
+            
+            # Method 2: Fallback to environment variable
+            if not google_api_key:
+                google_api_key = os.getenv("GOOGLE_PLACES_API_KEY")
+                if google_api_key:
+                    logger.info("✅ Google Places API key loaded from environment variable")
+            
             if google_api_key:
                 self.services['google'] = GooglePlacesEnrichmentService(api_key=google_api_key)
                 logger.info("✅ GooglePlacesEnrichmentService registered")
             else:
-                logger.warning("⚠️ GOOGLE_PLACES_API_KEY not set, skipping GooglePlacesEnrichmentService")
+                logger.warning("⚠️ Google Places API key not found in config.json or environment, skipping GooglePlacesEnrichmentService")
         except Exception as e:
             logger.warning(f"⚠️ Failed to initialize GooglePlacesEnrichmentService: {e}")
     

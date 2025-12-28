@@ -108,30 +108,60 @@ class RedFlagsService:
             home_id = None
             home_name = 'Unknown'
         
+        # ✅ FIX: Debug logging to understand data availability
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(f"Assessing risks for {home_name}:")
+            logger.debug(f"  financialStability: {bool(home.get('financialStability'))}")
+            logger.debug(f"  cqcRating: {home.get('cqcRating', 'None')}")
+            logger.debug(f"  cqcDeepDive: {bool(home.get('cqcDeepDive'))}")
+            logger.debug(f"  staffQuality: {bool(home.get('staffQuality'))}")
+            logger.debug(f"  pricingHistory: {bool(home.get('pricingHistory'))}")
+        
         try:
             # 1. Financial Stability Warnings
             financial_flags = self._assess_financial_stability(home)
             red_flags.extend(financial_flags['red_flags'])
             warnings.extend(financial_flags['warnings'])
-            risk_score += financial_flags['risk_score']
+            financial_risk = financial_flags['risk_score']
+            risk_score += financial_risk
             
             # 2. CQC Compliance Issues
             cqc_flags = self._assess_cqc_compliance(home)
             red_flags.extend(cqc_flags['red_flags'])
             warnings.extend(cqc_flags['warnings'])
-            risk_score += cqc_flags['risk_score']
+            cqc_risk = cqc_flags['risk_score']
+            risk_score += cqc_risk
             
             # 3. Staff Turnover Concerns
             staff_flags = self._assess_staff_turnover(home)
             red_flags.extend(staff_flags['red_flags'])
             warnings.extend(staff_flags['warnings'])
-            risk_score += staff_flags['risk_score']
+            staff_risk = staff_flags['risk_score']
+            risk_score += staff_risk
             
             # 4. Pricing Increases History
             pricing_flags = self._assess_pricing_history(home)
             red_flags.extend(pricing_flags['red_flags'])
             warnings.extend(pricing_flags['warnings'])
-            risk_score += pricing_flags['risk_score']
+            pricing_risk = pricing_flags['risk_score']
+            risk_score += pricing_risk
+            
+            # ✅ DEBUG: Log risk score breakdown (for all homes, but limit output)
+            logger.info(f"Risk Assessment for {home_name}: Financial={financial_risk}, CQC={cqc_risk}, Staff={staff_risk}, Pricing={pricing_risk}, Total={risk_score}, Flags={len(red_flags)}, Warnings={len(warnings)}")
+            
+            # ✅ FIX: Ensure minimum risk score if no data available
+            # If all assessments returned 0 and no flags/warnings, set minimum risk
+            if risk_score == 0 and len(red_flags) == 0 and len(warnings) == 0:
+                # No data available at all - set minimum risk
+                risk_score = 5
+                warnings.append({
+                    'type': 'system',
+                    'severity': 'low',
+                    'title': 'Limited Risk Data',
+                    'description': 'Risk assessment based on limited available data',
+                    'impact': 'Risk score may not reflect full picture',
+                    'recommendation': 'Request additional information during visit'
+                })
             
             # Calculate overall risk level
             overall_risk_level = self._calculate_risk_level(risk_score, len(red_flags))
@@ -170,14 +200,18 @@ class RedFlagsService:
         risk_score = 0
         
         financial = home.get('financialStability')
-        if not financial:
+        # ✅ FIX: Check if financial is None, empty dict, or falsy
+        if not financial or (isinstance(financial, dict) and len(financial) == 0):
             warnings.append({
                 'type': 'financial',
                 'severity': 'low',
                 'title': 'Financial Data Unavailable',
                 'description': 'Financial stability data not available for this home',
-                'impact': 'Cannot assess financial risk'
+                'impact': 'Cannot assess financial risk',
+                'recommendation': 'Request recent financial statements during visit'
             })
+            # ✅ FIX: Add small risk score for missing data (not 0)
+            risk_score = 5
             return {
                 'red_flags': red_flags,
                 'warnings': warnings,
@@ -312,6 +346,12 @@ class RedFlagsService:
                 })
                 risk_score += 25
         
+        # ✅ FIX: If financial data exists but no issues found, add minimal risk
+        # This ensures risk_score is not 0 even for financially stable homes
+        if risk_score == 0 and financial:
+            # Financial data exists but no issues - add minimal risk to indicate assessment was done
+            risk_score = 1
+        
         return {
             'red_flags': red_flags,
             'warnings': warnings,
@@ -329,6 +369,18 @@ class RedFlagsService:
         
         cqc_rating = home.get('cqcRating', '')
         cqc_deep_dive = home.get('cqcDeepDive', {})
+        
+        # ✅ FIX: If no CQC data at all, add warning
+        if not cqc_rating and (not cqc_deep_dive or (isinstance(cqc_deep_dive, dict) and len(cqc_deep_dive) == 0)):
+            warnings.append({
+                'type': 'cqc',
+                'severity': 'low',
+                'title': 'CQC Data Limited',
+                'description': 'CQC rating and detailed data not fully available',
+                'impact': 'Cannot fully assess compliance risk',
+                'recommendation': 'Review CQC website directly for latest inspection reports'
+            })
+            risk_score = 3  # Small risk score for missing data
         
         # Overall Rating Issues
         if cqc_rating:
@@ -353,6 +405,10 @@ class RedFlagsService:
                     'recommendation': 'Review improvement plans and recent inspection reports'
                 })
                 risk_score += 20
+            elif 'good' in rating_lower or 'outstanding' in rating_lower:
+                # ✅ FIX: Good/Outstanding ratings should have low but non-zero risk
+                # This ensures risk_score is not 0 even for good homes
+                risk_score += 1  # Minimal risk for good ratings
         
         # Detailed Ratings Analysis
         detailed_ratings = cqc_deep_dive.get('detailed_ratings', {})
@@ -418,6 +474,11 @@ class RedFlagsService:
                 })
                 risk_score += 15
         
+        # ✅ FIX: If CQC data exists but no issues found, add minimal risk
+        if risk_score == 0 and (cqc_rating or cqc_deep_dive):
+            # CQC data exists but no issues - add minimal risk
+            risk_score = 1
+        
         return {
             'red_flags': red_flags,
             'warnings': warnings,
@@ -438,8 +499,20 @@ class RedFlagsService:
         google_places = home.get('googlePlaces', {})
         staff_quality = home.get('staffQuality', {})
         
+        # ✅ FIX: If no staff quality data, add warning
+        if not staff_quality or (isinstance(staff_quality, dict) and len(staff_quality) == 0):
+            warnings.append({
+                'type': 'staff',
+                'severity': 'low',
+                'title': 'Staff Data Unavailable',
+                'description': 'Staff quality and turnover data not available',
+                'impact': 'Cannot assess staff stability risk',
+                'recommendation': 'Ask about staff retention and turnover during visit'
+            })
+            risk_score = 3  # Small risk score for missing data
+        
         # Staff Turnover Rate
-        turnover_rate = staff_quality.get('turnover_rate_percent')
+        turnover_rate = staff_quality.get('turnover_rate_percent') if staff_quality else None
         if turnover_rate is not None:
             try:
                 turnover_rate = float(turnover_rate)
@@ -533,6 +606,11 @@ class RedFlagsService:
             })
             risk_score += 5
         
+        # ✅ FIX: If staff data exists but no issues found, add minimal risk
+        if risk_score == 0 and (staff_quality or google_places):
+            # Staff data exists but no issues - add minimal risk
+            risk_score = 1
+        
         return {
             'red_flags': red_flags,
             'warnings': warnings,
@@ -554,7 +632,16 @@ class RedFlagsService:
         pricing_history = home.get('pricingHistory', [])
         
         if not pricing_history or len(pricing_history) < 2:
-            # No pricing history available
+            # ✅ FIX: Add warning for missing pricing history instead of returning empty
+            warnings.append({
+                'type': 'pricing',
+                'severity': 'low',
+                'title': 'Pricing History Unavailable',
+                'description': 'Historical pricing data not available to assess price increase trends',
+                'impact': 'Cannot assess pricing stability risk',
+                'recommendation': 'Ask about pricing history and future increase policies during visit'
+            })
+            risk_score = 2  # Small risk score for missing data
             return {
                 'red_flags': red_flags,
                 'warnings': warnings,
@@ -650,6 +737,11 @@ class RedFlagsService:
                     'recommendation': 'Inquire about pricing stability and future increases'
                 })
                 risk_score += 5
+        
+        # ✅ FIX: If pricing data exists but no issues found, add minimal risk
+        if risk_score == 0 and (weekly_price > 0 or (pricing_history and len(pricing_history) > 0)):
+            # Pricing data exists but no issues - add minimal risk
+            risk_score = 1
         
         return {
             'red_flags': red_flags,

@@ -7,7 +7,24 @@ interface LLMInsightsSectionProps {
 }
 
 export default function LLMInsightsSection({ insights }: LLMInsightsSectionProps) {
+  if (!insights || !insights.insights) {
+    return (
+      <div className="glass-card rounded-2xl p-8 border border-gray-100 text-center text-xs text-gray-400 italic">
+        LLM Insights data not available.
+      </div>
+    );
+  }
+
   const { overall_explanation, top_home_analysis, expert_advice, actionable_next_steps } = insights.insights;
+  
+  // Ensure all required fields exist
+  if (!overall_explanation || !expert_advice) {
+    return (
+      <div className="glass-card rounded-2xl p-8 border border-gray-100 text-center text-xs text-gray-400 italic">
+        LLM Insights data is incomplete.
+      </div>
+    );
+  }
 
   const getConfidenceColor = (level: string) => {
     switch (level) {
@@ -59,18 +76,22 @@ export default function LLMInsightsSection({ insights }: LLMInsightsSectionProps
         <div className="mb-4">
           <div className="flex items-center gap-2 mb-2">
             <span className="text-sm font-semibold text-gray-700">Key Insights:</span>
-            <span className={`px-2 py-1 rounded text-xs font-medium ${getConfidenceColor(overall_explanation.confidence_level)}`}>
-              {overall_explanation.confidence_level.toUpperCase()} Confidence
+            <span className={`px-2 py-1 rounded text-xs font-medium ${getConfidenceColor(overall_explanation.confidence_level || 'medium')}`}>
+              {(overall_explanation.confidence_level || 'medium').toUpperCase()} Confidence
             </span>
           </div>
-          <ul className="space-y-2">
-            {overall_explanation.key_insights.map((insight, idx) => (
-              <li key={idx} className="flex items-start gap-2 text-gray-700">
-                <CheckCircle2 className="w-4 h-4 text-green-600 flex-shrink-0 mt-0.5" />
-                <span>{insight}</span>
-              </li>
-            ))}
-          </ul>
+          {overall_explanation.key_insights && overall_explanation.key_insights.length > 0 ? (
+            <ul className="space-y-2">
+              {overall_explanation.key_insights.map((insight, idx) => (
+                <li key={idx} className="flex items-start gap-2 text-gray-700">
+                  <CheckCircle2 className="w-4 h-4 text-green-600 flex-shrink-0 mt-0.5" />
+                  <span>{insight}</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-sm text-gray-500 italic">No key insights available</p>
+          )}
         </div>
       </div>
 

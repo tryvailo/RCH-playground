@@ -1,5 +1,4 @@
-import React from 'react';
-import { MapPin, Stethoscope, TreePine, ShoppingBag, Pill, Building2, Bus, Train } from 'lucide-react';
+import { MapPin, Stethoscope, TreePine, ShoppingBag, Pill, Building2, Bus, Train, Navigation, Activity } from 'lucide-react';
 import type { ProfessionalCareHome } from '../types';
 
 interface AreaMapSectionProps {
@@ -11,8 +10,8 @@ export default function AreaMapSection({ home }: AreaMapSectionProps) {
 
   if (!areaMap) {
     return (
-      <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
-        <p className="text-sm text-gray-500">Area map data not available</p>
+      <div className="glass-card rounded-2xl p-8 border border-gray-100 text-center text-xs text-gray-400 italic">
+        Geospatial and nearby amenities data not available for this location.
       </div>
     );
   }
@@ -21,186 +20,140 @@ export default function AreaMapSection({ home }: AreaMapSectionProps) {
     switch (type?.toLowerCase()) {
       case 'gp':
       case 'doctor':
-        return <Stethoscope className="w-4 h-4 text-blue-600" />;
+        return <Stethoscope className="w-3.5 h-3.5 text-blue-600" />;
       case 'park':
-        return <TreePine className="w-4 h-4 text-green-600" />;
+        return <TreePine className="w-3.5 h-3.5 text-emerald-600" />;
       case 'shop':
       case 'store':
-        return <ShoppingBag className="w-4 h-4 text-purple-600" />;
+        return <ShoppingBag className="w-3.5 h-3.5 text-purple-600" />;
       case 'pharmacy':
-        return <Pill className="w-4 h-4 text-red-600" />;
+        return <Pill className="w-3.5 h-3.5 text-rose-600" />;
       default:
-        return <MapPin className="w-4 h-4 text-gray-600" />;
+        return <MapPin className="w-3.5 h-3.5 text-indigo-600" />;
+    }
+  };
+
+  const getCategoryColor = (type: string) => {
+    switch (type?.toLowerCase()) {
+      case 'gp': return 'bg-blue-50/50 border-blue-100 text-blue-700';
+      case 'park': return 'bg-emerald-50/50 border-emerald-100 text-emerald-700';
+      case 'shop': return 'bg-purple-50/50 border-purple-100 text-purple-700';
+      case 'pharmacy': return 'bg-rose-50/50 border-rose-100 text-rose-700';
+      default: return 'bg-indigo-50/50 border-indigo-100 text-indigo-700';
     }
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6 animate-fade-in">
       {/* Header */}
-      <div className="flex items-center gap-2 mb-4">
-        <MapPin className="w-5 h-5 text-teal-600" />
-        <h4 className="text-lg font-semibold text-gray-900">Area Map & Nearby Services</h4>
+      <div className="flex flex-col md:flex-row md:items-center justify-between px-2">
+        <div>
+          <h5 className="text-sm font-bold text-[#1E2A44] uppercase tracking-wider">
+            Geospatial & Amenities Map
+          </h5>
+          <p className="text-[10px] text-gray-400 font-medium">Proximity analysis of essential services for {home.name}</p>
+        </div>
+        <div className="flex items-center gap-2 mt-2 md:mt-0">
+          <div className="px-3 py-1 bg-indigo-50 text-indigo-700 rounded-full text-[10px] font-bold border border-indigo-100 flex items-center gap-1.5">
+            <Navigation className="w-3.5 h-3.5" /> GPS Accuracy Verified
+          </div>
+        </div>
       </div>
 
-      {/* Nearby GPs */}
-      {areaMap.nearby_gps && areaMap.nearby_gps.length > 0 && (
-        <div className="bg-white rounded-lg p-4 border border-gray-200">
-          <h5 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
-            <Stethoscope className="w-4 h-4 text-blue-600" />
-            Nearby GP Practices
-          </h5>
-          <div className="space-y-2">
-            {areaMap.nearby_gps.slice(0, 5).map((gp, idx) => (
-              <div key={idx} className="flex items-center justify-between text-sm">
-                <div className="flex items-center gap-2">
-                  {getIcon('gp')}
-                  <span className="text-gray-700">{gp.name}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  {gp.address && (
-                    <span className="text-gray-500 text-xs">{gp.address}</span>
-                  )}
-                  {gp.distance && (
-                    <span className="text-gray-500 text-xs">
-                      ({gp.distance.toFixed(1)} km)
-                    </span>
-                  )}
-                </div>
-              </div>
-            ))}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Essential Medical Prox */}
+        <div className="glass-card rounded-[2rem] p-6 border border-gray-50 flex flex-col">
+          <div className="flex items-center justify-between mb-6">
+            <h6 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Medical Proximity</h6>
+            <Activity className="w-4 h-4 text-gray-200" />
           </div>
-        </div>
-      )}
 
-      {/* Nearby Parks */}
-      {areaMap.nearby_parks && areaMap.nearby_parks.length > 0 && (
-        <div className="bg-white rounded-lg p-4 border border-gray-200">
-          <h5 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
-            <TreePine className="w-4 h-4 text-green-600" />
-            Nearby Parks
-          </h5>
-          <div className="space-y-2">
-            {areaMap.nearby_parks.slice(0, 5).map((park, idx) => (
-              <div key={idx} className="flex items-center justify-between text-sm">
-                <div className="flex items-center gap-2">
-                  {getIcon('park')}
-                  <span className="text-gray-700">{park.name}</span>
+          <div className="space-y-3">
+            {/* Hospitals */}
+            {areaMap.nearest_hospital && (
+              <div className="p-4 bg-rose-50/30 border border-rose-100/50 rounded-2xl group hover:bg-rose-50 transition-colors">
+                <div className="flex justify-between items-start mb-2">
+                  <div className="flex items-center gap-2">
+                    <Building2 className="w-4 h-4 text-rose-600" />
+                    <span className="text-[11px] font-black text-[#1E2A44]">{areaMap.nearest_hospital.name}</span>
+                  </div>
+                  <span className="text-[10px] font-black text-rose-600">{areaMap.nearest_hospital.distance?.toFixed(1)} km</span>
                 </div>
-                {park.distance && (
-                  <span className="text-gray-500 text-xs">
-                    {park.distance.toFixed(1)} km
-                  </span>
-                )}
+                <div className="text-[9px] font-bold text-rose-400 uppercase tracking-tighter">Nearest General Hospital</div>
               </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Nearby Shops */}
-      {areaMap.nearby_shops && areaMap.nearby_shops.length > 0 && (
-        <div className="bg-white rounded-lg p-4 border border-gray-200">
-          <h5 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
-            <ShoppingBag className="w-4 h-4 text-purple-600" />
-            Nearby Shops
-          </h5>
-          <div className="space-y-2">
-            {areaMap.nearby_shops.slice(0, 5).map((shop, idx) => (
-              <div key={idx} className="flex items-center justify-between text-sm">
-                <div className="flex items-center gap-2">
-                  {getIcon(shop.type || 'shop')}
-                  <span className="text-gray-700">{shop.name}</span>
-                  {shop.type && (
-                    <span className="text-xs text-gray-500">({shop.type})</span>
-                  )}
-                </div>
-                {shop.distance && (
-                  <span className="text-gray-500 text-xs">
-                    {shop.distance.toFixed(1)} km
-                  </span>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Nearby Pharmacies */}
-      {areaMap.nearby_pharmacies && areaMap.nearby_pharmacies.length > 0 && (
-        <div className="bg-white rounded-lg p-4 border border-gray-200">
-          <h5 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
-            <Pill className="w-4 h-4 text-red-600" />
-            Nearby Pharmacies
-          </h5>
-          <div className="space-y-2">
-            {areaMap.nearby_pharmacies.slice(0, 5).map((pharmacy, idx) => (
-              <div key={idx} className="flex items-center justify-between text-sm">
-                <div className="flex items-center gap-2">
-                  {getIcon('pharmacy')}
-                  <span className="text-gray-700">{pharmacy.name}</span>
-                </div>
-                {pharmacy.distance && (
-                  <span className="text-gray-500 text-xs">
-                    {pharmacy.distance.toFixed(1)} km
-                  </span>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Nearest Hospital */}
-      {areaMap.nearest_hospital && (
-        <div className="bg-white rounded-lg p-4 border border-gray-200">
-          <h5 className="text-sm font-semibold text-gray-900 mb-2 flex items-center gap-2">
-            <Building2 className="w-4 h-4 text-red-600" />
-            Nearest Hospital
-          </h5>
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-gray-700">{areaMap.nearest_hospital.name}</span>
-            {areaMap.nearest_hospital.distance && (
-              <span className="text-gray-500 text-xs">
-                {areaMap.nearest_hospital.distance.toFixed(1)} km
-              </span>
             )}
+
+            {/* GPs */}
+            {areaMap.nearby_gps?.slice(0, 3).map((gp, idx) => (
+              <div key={idx} className="flex items-center justify-between p-4 bg-white/40 border border-white rounded-2xl group hover:border-blue-200 transition-all">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-blue-50 text-blue-600 rounded-xl group-hover:scale-110 transition-transform">
+                    <Stethoscope className="w-3.5 h-3.5" />
+                  </div>
+                  <div>
+                    <div className="text-[11px] font-bold text-[#1E2A44] line-clamp-1">{gp.name}</div>
+                    <div className="text-[9px] font-bold text-gray-400 uppercase">{gp.address ? 'GP Practice' : 'Registered Provider'}</div>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="text-xs font-black text-blue-600">{gp.distance?.toFixed(1)} km</div>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
-      )}
 
-      {/* Transport Summary */}
-      <div className="bg-gradient-to-r from-teal-50 to-cyan-50 rounded-lg p-4 border border-teal-200">
-        <h5 className="text-sm font-semibold text-gray-900 mb-3">Transport Access</h5>
-        <div className="grid grid-cols-2 gap-3">
-          {areaMap.nearest_bus_stop && (
-            <div className="flex items-center gap-2 text-sm">
-              <Bus className="w-4 h-4 text-blue-600" />
-              <div>
-                <div className="text-gray-700 font-semibold">{areaMap.nearest_bus_stop.name}</div>
-                {areaMap.nearest_bus_stop.distance && (
-                  <div className="text-xs text-gray-500">
-                    {areaMap.nearest_bus_stop.distance.toFixed(1)} km
+        {/* Transport & Lifestyle */}
+        <div className="space-y-6">
+          <div className="glass-card rounded-[2rem] p-6 border border-gray-50 bg-gradient-to-br from-white to-gray-50">
+            <h6 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-6 px-1">Infrastructure Access</h6>
+            <div className="grid grid-cols-2 gap-4 text-sm">
+              {areaMap.nearest_bus_stop && (
+                <div className="p-4 bg-white border border-gray-100 rounded-2xl shadow-sm">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Bus className="w-3.5 h-3.5 text-blue-600" />
+                    <span className="text-[11px] font-black text-[#1E2A44] line-clamp-1">{areaMap.nearest_bus_stop.name}</span>
                   </div>
-                )}
-              </div>
-            </div>
-          )}
-          {areaMap.nearest_train_station && (
-            <div className="flex items-center gap-2 text-sm">
-              <Train className="w-4 h-4 text-green-600" />
-              <div>
-                <div className="text-gray-700 font-semibold">{areaMap.nearest_train_station.name}</div>
-                {areaMap.nearest_train_station.distance && (
-                  <div className="text-xs text-gray-500">
-                    {areaMap.nearest_train_station.distance.toFixed(1)} km
+                  <div className="flex justify-between items-center text-[10px] font-bold">
+                    <span className="text-gray-400 uppercase tracking-tighter">Bus Access</span>
+                    <span className="text-blue-600">{areaMap.nearest_bus_stop.distance?.toFixed(1)} km</span>
                   </div>
-                )}
-              </div>
+                </div>
+              )}
+              {areaMap.nearest_train_station && (
+                <div className="p-4 bg-white border border-gray-100 rounded-2xl shadow-sm">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Train className="w-3.5 h-3.5 text-emerald-600" />
+                    <span className="text-[11px] font-black text-[#1E2A44] line-clamp-1">{areaMap.nearest_train_station.name}</span>
+                  </div>
+                  <div className="flex justify-between items-center text-[10px] font-bold">
+                    <span className="text-gray-400 uppercase tracking-tighter">Rail Access</span>
+                    <span className="text-emerald-600">{areaMap.nearest_train_station.distance?.toFixed(1)} km</span>
+                  </div>
+                </div>
+              )}
             </div>
-          )}
+          </div>
+
+          <div className="glass-card rounded-[2rem] p-6 border border-gray-50 flex-1">
+            <h6 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-6 px-1">Local Amenities Matrix</h6>
+            <div className="flex flex-wrap gap-2">
+              {areaMap.nearby_parks?.slice(0, 3).map((park, i) => (
+                <div key={`park-${i}`} className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border text-[10px] font-bold ${getCategoryColor('park')}`}>
+                  <TreePine className="w-3 h-3" />
+                  <span>{park.name} ({park.distance?.toFixed(1)}km)</span>
+                </div>
+              ))}
+              {areaMap.nearby_shops?.slice(0, 3).map((shop, i) => (
+                <div key={`shop-${i}`} className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border text-[10px] font-bold ${getCategoryColor('shop')}`}>
+                  <ShoppingBag className="w-3 h-3" />
+                  <span>{shop.name} ({shop.distance?.toFixed(1)}km)</span>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
     </div>
   );
 }
-

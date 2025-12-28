@@ -483,13 +483,13 @@ async def calculate_funding_eligibility(request: PatientProfileRequest):
                     )
                 except Exception as e:
                     logger.warning(f"⚠️ Async insights failed: {e}, using fallback")
-                    llm_insights = insights_service._generate_fallback_insights(result_dict)
+                    llm_insights = insights_service._generate_hardcoded_fallback(result_dict)
             except Exception as e:
                 logger.warning(f"⚠️ Insights service error: {e}, using fallback")
                 try:
                     from services.funding_llm_insights_service import FundingLLMInsightsService
                     insights_service = FundingLLMInsightsService(openai_api_key=None)
-                    llm_insights = insights_service._generate_fallback_insights(result_dict)
+                    llm_insights = insights_service._generate_hardcoded_fallback(result_dict)
                 except Exception as fallback_error:
                     logger.warning(f"⚠️ Fallback service error: {fallback_error}, creating basic insights")
                     # Last resort: create basic insights directly

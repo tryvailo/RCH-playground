@@ -229,6 +229,70 @@ class FirecrawlAPIClient:
         except Exception as e:
             raise Exception(f"Firecrawl API error: {str(e)}")
     
+    async def agent(
+        self,
+        prompt: str,
+        schema: Optional[Dict[str, Any]] = None,
+        max_credits: Optional[int] = None
+    ) -> Dict[str, Any]:
+        """
+        Use Firecrawl Agent to automatically search and extract structured data.
+        
+        The Agent endpoint:
+        - Takes a natural language prompt describing what data to extract
+        - Automatically searches the web to find relevant sources
+        - Extracts structured data according to the schema
+        - Returns JSON with extracted data
+        
+        Args:
+            prompt: Natural language description of what data to extract
+            schema: Optional Pydantic model or JSON schema for structured output
+            max_credits: Optional limit on credits to use (for cost control)
+        
+        Returns:
+            Dict with extracted data and metadata
+        """
+        payload = {
+            "prompt": prompt
+        }
+        
+        if schema:
+            payload["schema"] = schema
+        
+        if max_credits:
+            payload["maxCredits"] = max_credits
+        
+        try:
+            # Agent endpoint - try v2 first, fallback to root
+            try:
+                response = await self.client.post(
+                    f"{self.base_url}/agent",
+                    json=payload
+                )
+            except Exception:
+                # Fallback to root level if v2 doesn't work
+                response = await self.client.post(
+                    "https://api.firecrawl.dev/agent",
+                    json=payload
+                )
+            response.raise_for_status()
+            result = response.json()
+            # API returns data in response.data or directly
+            if result.get("success") and "data" in result:
+                return result["data"]
+            return result
+        except httpx.HTTPStatusError as e:
+            error_detail = ""
+            try:
+                error_body = e.response.json()
+                error_msg = error_body.get('error') or error_body.get('message', str(e))
+                error_detail = f" - {error_msg}"
+            except:
+                error_detail = f" - {e.response.text[:200]}"
+            raise Exception(f"Firecrawl Agent API error: {e.response.status_code}{error_detail}")
+        except Exception as e:
+            raise Exception(f"Firecrawl Agent API error: {str(e)}")
+    
     async def search_website(
         self,
         query: str,

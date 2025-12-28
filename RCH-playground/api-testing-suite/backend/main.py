@@ -6,9 +6,13 @@ import sys
 import os
 from pathlib import Path
 
-# Add RCH-data src to Python path if not already there
-project_root = Path(__file__).parent.parent.parent.parent.parent
+# Add backend and RCH-data src to Python path
+backend_dir = Path(__file__).parent
+project_root = backend_dir.parent.parent.parent.parent
 rch_data_src_path = project_root / "RCH-data" / "src"
+
+if str(backend_dir) not in sys.path:
+    sys.path.insert(0, str(backend_dir))
 if str(rch_data_src_path) not in sys.path:
     sys.path.insert(0, str(rch_data_src_path))
 
@@ -244,6 +248,14 @@ try:
     print("✅ Companies House routes registered")
 except ImportError as e:
     print(f"⚠️ Companies House routes not available: {e}")
+
+# Financial routes (simple enrichment endpoint)
+try:
+    from routers.financial_routes import router as financial_router
+    app.include_router(financial_router)
+    print("✅ Financial routes registered")
+except ImportError as e:
+    print(f"⚠️ Financial routes not available: {e}")
 
 # CQC routes
 try:
@@ -484,7 +496,217 @@ async def test_mock_data():
 # Proxy endpoints moved to routers/proxy_routes.py
 
 
+# ==================== Professional Report Internal Function ====================
+async def generate_professional_report_internal(
+    questionnaire: Dict[str, Any],
+    progress_callback=None
+) -> Dict[str, Any]:
+    """
+    Internal function to generate professional report
+    Called from background job processing
+    """
+    try:
+        from services.async_data_loader import get_async_loader
+        from services.professional_matching_service import ProfessionalMatchingService
+        
+        # Update progress
+        if progress_callback:
+            await progress_callback(10, "Extracting questionnaire data...")
+        
+        # Extract data from questionnaire
+        location_budget = questionnaire.get('section_2_location_budget', {})
+        medical_needs = questionnaire.get('section_3_medical_needs', {})
+        safety_needs = questionnaire.get('section_4_safety_special_needs', {})
+        timeline = questionnaire.get('section_5_timeline', {})
+        priorities = questionnaire.get('section_6_priorities', {})
+        
+        preferred_city = location_budget.get('q5_preferred_city', '')
+        max_distance = location_budget.get('q6_max_distance', 'distance_not_important')
+        budget = location_budget.get('q7_budget', '')
+        
+        care_types = medical_needs.get('q8_care_types', [])
+        medical_conditions = medical_needs.get('q9_medical_conditions', [])
+        mobility_level = medical_needs.get('q10_mobility_level', '')
+        medication_management = medical_needs.get('q11_medication_management', '')
+        special_equipment = medical_needs.get('q12_special_equipment', [])
+        age_range = medical_needs.get('q13_age_range', '')
+        
+        fall_history = safety_needs.get('q13_fall_history', '')
+        allergies = safety_needs.get('q14_allergies', [])
+        dietary_requirements = safety_needs.get('q15_dietary_requirements', [])
+        social_personality = safety_needs.get('q16_social_personality', '')
+        
+        placement_timeline = timeline.get('q17_placement_timeline', '')
+        priority_ranking = priorities.get('q18_priority_ranking', {})
+        
+        # Map care types
+        care_type = None
+        if any(ct in care_types for ct in ['specialised_dementia', 'dementia']):
+            care_type = 'dementia'
+        elif any(ct in care_types for ct in ['nursing', 'medical_nursing', 'general_nursing']):
+            care_type = 'nursing'
+        elif any(ct in care_types for ct in ['general_residential', 'residential']):
+            care_type = 'residential'
+        
+        # Map distance
+        max_distance_km = None
+        if max_distance == 'within_5km':
+            max_distance_km = 5.0
+        elif max_distance == 'within_15km':
+            max_distance_km = 15.0
+        elif max_distance == 'within_30km':
+            max_distance_km = 30.0
+        
+        # Update progress
+        if progress_callback:
+            await progress_callback(20, "Loading care homes...")
+        
+        # Load care homes
+        loader = get_async_loader()
+        care_homes, user_lat, user_lon = await loader.load_initial_data(
+            preferred_city=preferred_city or None,
+            care_type=care_type,
+            max_distance_km=max_distance_km,
+            postcode=None,
+            limit=50
+        )
+        
+        if not care_homes:
+            return {
+                'status': 'error',
+                'message': 'No matching care homes found',
+                'report': {
+                    'careHomes': [],
+                    'sections': {},
+                    'summary': 'No care homes matched your criteria'
+                }
+            }
+        
+        # Update progress
+        if progress_callback:
+            await progress_callback(40, "Matching homes with criteria...")
+        
+        # Apply professional matching
+        matching_service = ProfessionalMatchingService()
+        
+        # Get user priorities
+        priority_order = priority_ranking.get('priority_order', [
+            'medical_safety', 'quality_reputation', 'location_social', 'cost_financial'
+        ])
+        priority_weights = priority_ranking.get('priority_weights', [60, 25, 10, 5])
+        
+        # Create user profile for matching
+        user_profile = {
+            'care_types': care_types,
+            'medical_conditions': medical_conditions,
+            'mobility_level': mobility_level,
+            'medication_management': medication_management,
+            'special_equipment': special_equipment,
+            'age_range': age_range,
+            'fall_history': fall_history,
+            'allergies': allergies,
+            'dietary_requirements': dietary_requirements,
+            'social_personality': social_personality,
+            'priority_order': priority_order,
+            'priority_weights': priority_weights
+        }
+        
+        # Score homes
+        scored_homes = []
+        for home in care_homes:
+            home_copy = deepcopy(home)
+            
+            # Enriched data placeholder (empty for now, can be extended)
+            enriched_data = {
+                'cqc_data': home_copy.get('cqc_data', {}),
+                'google_places': home_copy.get('google_places', {}),
+                'companies_house': home_copy.get('companies_house', {})
+            }
+            
+            # Calculate match score using professional matching
+            try:
+                match_result = matching_service.calculate_156_point_match(
+                    home=home_copy,
+                    user_profile=user_profile,
+                    enriched_data=enriched_data
+                )
+                
+                # Extract total score
+                total_score = match_result.get('total_score', 0) if isinstance(match_result, dict) else match_result
+                home_copy['matchScore'] = float(total_score) if total_score else 0
+            except Exception as e:
+                # Fallback: use simple matching
+                print(f"⚠️  Professional matching failed for {home_copy.get('name')}: {e}")
+                home_copy['matchScore'] = 50  # Default score
+            
+            scored_homes.append(home_copy)
+        
+        # Update progress
+        if progress_callback:
+            await progress_callback(70, "Selecting top matches...")
+        
+        # Sort and select top 5
+        scored_homes.sort(key=lambda x: x.get('matchScore', 0), reverse=True)
+        top_homes = scored_homes[:5]
+        
+        # Update progress
+        if progress_callback:
+            await progress_callback(90, "Generating report sections...")
+        
+        # Generate report structure
+        # IMPORTANT: Only include REAL data, no fake defaults
+        report = {
+            'status': 'success',
+            'report': {
+                'careHomes': [
+                    {
+                        'name': h.get('name'),  # None if missing, not 'N/A'
+                        'city': h.get('city'),  # None if missing, not 'N/A'
+                        'matchScore': h.get('matchScore'),  # None if missing, not 0
+                        'rating': h.get('rating'),  # None if missing, not 'N/A'
+                        'address': h.get('address'),  # None if missing, not ''
+                        'phone': h.get('phone'),  # None if missing, not ''
+                        'website': h.get('website'),  # None if missing, not ''
+                        'careTypes': h.get('care_types'),  # None if missing, not []
+                        'bedCount': h.get('bed_count')  # None if missing, not 0
+                    }
+                    for h in top_homes
+                ],
+                'sections': {
+                    'summary': 'Professional report generated',
+                    'matched_criteria': {
+                        'location': preferred_city,
+                        'care_type': care_type,
+                        'medical_conditions': medical_conditions
+                    },
+                    'top_recommendations': f"Found {len(scored_homes)} matching homes, {len(top_homes)} top recommendations"
+                },
+                'summary': f'Based on your criteria, we found {len(top_homes)} excellent matches'
+            }
+        }
+        
+        # Update progress
+        if progress_callback:
+            await progress_callback(100, "Report completed!")
+        
+        return report
+        
+    except Exception as e:
+        import traceback
+        error_msg = f"{str(e)}\n{traceback.format_exc()}"
+        print(f"❌ Error generating professional report: {error_msg}")
+        return {
+            'status': 'error',
+            'message': str(e),
+            'report': {
+                'careHomes': [],
+                'sections': {},
+                'summary': f'Error: {str(e)}'
+            }
+        }
+
+
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=3001)
 

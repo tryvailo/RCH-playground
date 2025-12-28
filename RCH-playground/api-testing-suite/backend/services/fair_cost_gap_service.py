@@ -9,6 +9,15 @@ from typing import Dict, Any
 class FairCostGapService:
     """Service for calculating Fair Cost Gap analysis"""
 
+    def __getattr__(self, name):
+        """Provide helpful error message for deprecated method names"""
+        if name == 'calculate_fair_cost_gap':
+            raise AttributeError(
+                f"'{self.__class__.__name__}' object has no attribute '{name}'. "
+                f"Did you mean 'calculate_gap'? Use calculate_gap() instead."
+            )
+        raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
+
     def calculate_gap(
         self,
         market_price: float,

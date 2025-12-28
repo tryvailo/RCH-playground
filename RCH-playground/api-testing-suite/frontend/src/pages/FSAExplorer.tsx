@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Search, Shield, TrendingUp, History, Star, AlertCircle, CheckCircle, Lock, Unlock, Bell, FileText } from 'lucide-react';
 import axios from 'axios';
 
@@ -160,18 +160,6 @@ export default function FSAExplorer() {
       setLoading(false);
     }
   };
-
-  // Auto-initialize search for testing "Meadows House Residential and Nursing Home"
-  useEffect(() => {
-    const testName = 'Meadows House Residential and Nursing Home';
-    setSearchName(testName);
-    // Small delay to ensure component is fully mounted and handleSearch is available
-    const timer = setTimeout(() => {
-      handleSearch(testName);
-    }, 500);
-    return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Run only on mount - handleSearch is stable
 
   const handleViewDetails = async (fhrsId: number) => {
     setLoading(true);

@@ -5,25 +5,28 @@ import path from 'path';
 export default defineConfig({
   plugins: [react()],
   test: {
-    environment: 'jsdom',
     globals: true,
-    setupFiles: ['./src/test/setup.ts'],
+    environment: 'jsdom',
+    setupFiles: ['./src/setupTests.ts'],
     coverage: {
       provider: 'v8',
-      reporter: ['text', 'json', 'html'],
+      reporter: ['text', 'json', 'html', 'lcov'],
       exclude: [
         'node_modules/',
-        'src/test/',
+        'src/setupTests.ts',
         '**/*.d.ts',
-        '**/*.config.*',
-        '**/mockData/**',
+        '**/*.test.{ts,tsx}',
+        '**/index.ts'
       ],
-    },
+      lines: 85,
+      functions: 85,
+      branches: 80,
+      statements: 85
+    }
   },
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, './src'),
-    },
-  },
+      '@': path.resolve(__dirname, './src')
+    }
+  }
 });
-

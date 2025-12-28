@@ -1,0 +1,31 @@
+{
+  "location": {
+    "name": "Meadows House Residential and Nursing Home",
+    "address": "Cullum Welch Court",
+    "city": "London",
+    "postcode": "SE3 0PW",
+    "county": "Greater London"
+  },
+  "api_key_status": "configured",
+  "search_test": {
+    "status": "error",
+    "companies_found": 0,
+    "error": "Companies House API authentication failed (401 Unauthorized).\nPlease check:\n1. API key is correct and active at https://developer.company-information.service.gov.uk/\n2. IP address is registered in application settings\n3. Application is in 'live' mode (not 'test')\n4. You're using REST API key (not Streaming API key)"
+  },
+  "company_details_test": {
+    "status": "error",
+    "error": "Companies House API authentication failed (401 Unauthorized).\nPlease check:\n1. API key is correct and active at https://developer.company-information.service.gov.uk/\n2. IP address is registered in application settings\n3. Application is in 'live' mode (not 'test')\n4. You're using REST API key (not Streaming API key)"
+  },
+  "financial_health_test": {
+    "status": "error",
+    "error": "Companies House API authentication failed (401 Unauthorized).\nPlease check:\n1. API key is correct and active at https://developer.company-information.service.gov.uk/\n2. IP address is registered in application settings\n3. Application is in 'live' mode (not 'test')\n4. You're using REST API key (not Streaming API key)"
+  },
+  "premium_data_test": {
+    "status": "not_run",
+    "error": null
+  },
+  "enrichment_test": {
+    "status": "error",
+    "error": "Companies House API authentication failed (401 Unauthorized).\nPlease check:\n1. API key is correct and active at https://developer.company-information.service.gov.uk/\n2. IP address is registered in application settings\n3. Application is in 'live' mode (not 'test')\n4. You're using REST API key (not Streaming API key)"
+  }
+}

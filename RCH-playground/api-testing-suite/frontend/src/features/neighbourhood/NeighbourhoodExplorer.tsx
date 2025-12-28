@@ -370,6 +370,16 @@ export default function NeighbourhoodExplorer() {
           setLoading(false);
           return;
         }
+        
+        // If a test location was selected, use its coordinates
+        if (selectedTestLocation) {
+          const testLocation = TEST_LOCATIONS.find(l => l.postcode === selectedTestLocation);
+          if (testLocation) {
+            lat = testLocation.lat;
+            lon = testLocation.lon;
+            addressName = testLocation.name;
+          }
+        }
       }
       
       // Build query parameters for selected data sources
@@ -380,13 +390,13 @@ export default function NeighbourhoodExplorer() {
       params.append('include_nhsbsa', formData.include_nhsbsa.toString());
       params.append('include_environmental', formData.include_environmental.toString());
       
-      // Add coordinates if available (from care home selection)
+      // Add coordinates if available (from care home or test location selection)
       if (lat !== undefined && lon !== undefined) {
         params.append('lat', lat.toString());
         params.append('lon', lon.toString());
       }
       
-      // Add address name if available (for care home mode)
+      // Add address name if available (for care home or test location mode)
       if (addressName) {
         params.append('address_name', addressName);
       }

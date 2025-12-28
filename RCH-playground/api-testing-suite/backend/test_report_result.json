@@ -8822,17 +8822,34 @@
         },
         {
           "name": "Google Places API",
-          "description": "Location data, reviews, ratings, and insights",
+          "description": "Location data, reviews, and ratings",
           "data_types": [
             "Ratings",
             "Reviews",
             "Popular times",
-            "Dwell time",
-            "Repeat visitor rates",
-            "Footfall trends"
+            "Location details",
+            "Photos"
           ],
           "update_frequency": "Real-time via API",
           "official_url": "https://developers.google.com/maps/documentation/places",
+          "last_update": {
+            "status": "Unknown",
+            "note": "Cache stats not available"
+          }
+        },
+        {
+          "name": "Google Places New API",
+          "description": "Advanced behavioral insights and visitor analytics",
+          "data_types": [
+            "Dwell time",
+            "Repeat visitor rates",
+            "Footfall trends",
+            "Family engagement scores",
+            "Visitor geography",
+            "Quality indicators"
+          ],
+          "update_frequency": "Real-time via API",
+          "official_url": "https://developers.google.com/maps/documentation/places/web-service/new",
           "last_update": {
             "status": "Unknown",
             "note": "Cache stats not available"
@@ -8980,7 +8997,7 @@
       "report_metadata": {
         "generated_at": "2025-12-12T18:35:01.706522",
         "report_id": "63fd2949-4f55-4b0b-aae2-5c52fd56110a",
-        "total_sources": 10,
+        "total_sources": 11,
         "data_quality_note": "Data is sourced from official UK government and regulatory bodies, supplemented with community-driven and commercial data sources where appropriate."
       }
     }

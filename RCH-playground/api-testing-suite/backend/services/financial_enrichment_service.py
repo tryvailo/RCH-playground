@@ -53,7 +53,7 @@ class FinancialEnrichmentService(BaseEnrichmentService):
             if api_key:
                 self.companies_house_client = CompaniesHouseAPIClient(api_key)
             else:
-                # Create a mock client that will return default data
+                # No API key available - will require error handling at enrichment call time
                 self.companies_house_client = None
     
     @property
@@ -136,14 +136,17 @@ class FinancialEnrichmentService(BaseEnrichmentService):
             - red_flags: List of detected red flags
         """
         if not self.companies_house_client:
-            logger.warning(f"No Companies House client available, returning default data for {company_number}")
-            return self._get_default_financial_data(company_number)
+            error_msg = "Cannot enrich financial data: No Companies House API client configured. Set COMPANIES_HOUSE_API_KEY environment variable."
+            logger.error(error_msg)
+            raise ValueError(error_msg)
         
         try:
             # Get company profile
             profile = await self.companies_house_client.get_company_profile(company_number)
             if not profile:
-                return self._get_default_financial_data(company_number)
+                error_msg = f"Company {company_number} not found in Companies House database"
+                logger.error(error_msg)
+                raise ValueError(error_msg)
             
             # Get filing history to find accounts
             filings = await self.companies_house_client.get_filing_history(
@@ -201,8 +204,8 @@ class FinancialEnrichmentService(BaseEnrichmentService):
             return enriched_data
             
         except Exception as e:
-            logger.error(f"Error enriching financial data for company {company_number}: {str(e)}")
-            return self._get_default_financial_data(company_number, error=str(e))
+            logger.error(f"Error enriching financial data for company {company_number}: {str(e)}", exc_info=True)
+            raise  # Re-raise error instead of returning fake default data
     
     def _extract_financial_data_from_filings(
         self,

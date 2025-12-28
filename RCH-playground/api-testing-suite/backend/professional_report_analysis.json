@@ -1,0 +1,108 @@
+{
+  "report_summary": {
+    "total_homes": 5,
+    "client_name": "Пожилой человек с деменцией, нужен специализированный уход"
+  },
+  "homes_analysis": [
+    {
+      "rank": 1,
+      "name": "Edgbaston Manor",
+      "factor_scores_count": 8,
+      "additional_services": {
+        "in_factor_scores": true,
+        "score": 0.0,
+        "max_score": 100.0,
+        "verified": false
+      },
+      "services_data": {
+        "services": null,
+        "amenities": null,
+        "additional_services": null
+      },
+      "financial_stability": {
+        "present": false,
+        "risk_score": null
+      }
+    },
+    {
+      "rank": 2,
+      "name": "Triple S Care & Support Services",
+      "factor_scores_count": 8,
+      "additional_services": {
+        "in_factor_scores": true,
+        "score": 0.0,
+        "max_score": 100.0,
+        "verified": false
+      },
+      "services_data": {
+        "services": null,
+        "amenities": null,
+        "additional_services": null
+      },
+      "financial_stability": {
+        "present": false,
+        "risk_score": null
+      }
+    },
+    {
+      "rank": 3,
+      "name": "Fern House",
+      "factor_scores_count": 8,
+      "additional_services": {
+        "in_factor_scores": true,
+        "score": 0.0,
+        "max_score": 100.0,
+        "verified": false
+      },
+      "services_data": {
+        "services": null,
+        "amenities": null,
+        "additional_services": null
+      },
+      "financial_stability": {
+        "present": false,
+        "risk_score": null
+      }
+    },
+    {
+      "rank": 4,
+      "name": "Apna House",
+      "factor_scores_count": 8,
+      "additional_services": {
+        "in_factor_scores": true,
+        "score": 0.0,
+        "max_score": 100.0,
+        "verified": false
+      },
+      "services_data": {
+        "services": null,
+        "amenities": null,
+        "additional_services": null
+      },
+      "financial_stability": {
+        "present": false,
+        "risk_score": null
+      }
+    },
+    {
+      "rank": 5,
+      "name": "Albion Court Care Centre",
+      "factor_scores_count": 8,
+      "additional_services": {
+        "in_factor_scores": true,
+        "score": 0.0,
+        "max_score": 100.0,
+        "verified": false
+      },
+      "services_data": {
+        "services": null,
+        "amenities": null,
+        "additional_services": null
+      },
+      "financial_stability": {
+        "present": false,
+        "risk_score": null
+      }
+    }
+  ]
+}

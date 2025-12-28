@@ -196,10 +196,12 @@ def _validate_medical_needs_section(section: Dict[str, Any]) -> List[str]:
         errors.append(f"q11_medication_management must be one of: {', '.join(valid_medication)}")
     
     valid_ages = ['65_74', '75_84', '85_94', '95_plus']
-    if 'q12_age_range' not in section:
-        errors.append("q12_age_range is required")
-    elif section.get('q12_age_range') not in valid_ages:
-        errors.append(f"q12_age_range must be one of: {', '.join(valid_ages)}")
+    # Accept both q12_age_range (old format) and q13_age_range (new format after q12_special_equipment was added)
+    age_range = section.get('q13_age_range') or section.get('q12_age_range')
+    if not age_range:
+        errors.append("q12_age_range or q13_age_range is required")
+    elif age_range not in valid_ages:
+        errors.append(f"q12_age_range/q13_age_range must be one of: {', '.join(valid_ages)}")
     
     return errors
 

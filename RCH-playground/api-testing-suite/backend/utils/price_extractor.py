@@ -118,6 +118,94 @@ def extract_weekly_price(
         if price > 0:
             return price
     
+    # Try data_json field (from SQLite database) - may contain staging CSV prices
+    data_json = home_data.get('data_json')
+    if data_json:
+        # If data_json is a string, parse it
+        if isinstance(data_json, str):
+            try:
+                import json
+                data_json = json.loads(data_json)
+            except (json.JSONDecodeError, TypeError):
+                data_json = None
+        
+        # If data_json is a dict, extract prices from it
+        if isinstance(data_json, dict):
+            # Try staging CSV fields first (parsed_fee_*)
+            staging_fields = {
+                'residential': 'parsed_fee_residential_from',
+                'nursing': 'parsed_fee_nursing_from',
+                'dementia': 'parsed_fee_dementia_from',
+                'respite': 'parsed_fee_respite_from',
+            }
+            
+            # Try preferred care type first
+            if preferred_care_type:
+                care_type_lower = preferred_care_type.lower()
+                staging_field = staging_fields.get(care_type_lower)
+                if staging_field and staging_field in data_json:
+                    value = data_json[staging_field]
+                    if value is not None and str(value) != 'nan' and str(value) != 'None':
+                        try:
+                            price = float(value)
+                            if price > 0:
+                                return price
+                        except (ValueError, TypeError):
+                            pass
+            
+            # Try all staging fields as fallback
+            for staging_field in staging_fields.values():
+                if staging_field in data_json:
+                    value = data_json[staging_field]
+                    if value is not None and str(value) != 'nan' and str(value) != 'None':
+                        try:
+                            price = float(value)
+                            if price > 0:
+                                return price
+                        except (ValueError, TypeError):
+                            continue
+            
+            # Also try standard fee fields in data_json (in case they're stored there)
+            fee_fields_in_json = [
+                'fee_residential_from',
+                'fee_nursing_from',
+                'fee_dementia_from',
+                'fee_respite_from',
+            ]
+            
+            if preferred_care_type:
+                care_type_lower = preferred_care_type.lower()
+                if care_type_lower == 'residential' and 'fee_residential_from' in data_json:
+                    value = data_json['fee_residential_from']
+                elif care_type_lower == 'nursing' and 'fee_nursing_from' in data_json:
+                    value = data_json['fee_nursing_from']
+                elif care_type_lower == 'dementia' and 'fee_dementia_from' in data_json:
+                    value = data_json['fee_dementia_from']
+                elif care_type_lower == 'respite' and 'fee_respite_from' in data_json:
+                    value = data_json['fee_respite_from']
+                else:
+                    value = None
+                
+                if value is not None and str(value) != 'nan' and str(value) != 'None':
+                    try:
+                        price = float(value)
+                        if price > 0:
+                            return price
+                    except (ValueError, TypeError):
+                        pass
+            
+            # Try all fee fields in data_json as fallback
+            for field in fee_fields_in_json:
+                if field in data_json:
+                    value = data_json[field]
+                    if value is not None and str(value) != 'nan' and str(value) != 'None':
+                        try:
+                            price = float(value)
+                            if price > 0:
+                                return price
+                        except (ValueError, TypeError):
+                            continue
+    
     return 0.0
 
 

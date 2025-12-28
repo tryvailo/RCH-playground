@@ -360,6 +360,9 @@ For {match_type}, focus on:
 - Best Value: Savings calculations, quality-to-price ratio, included amenities
 - Premium: Outstanding ratings, premium features, comprehensive care types
 
+IMPORTANT: If FSA food hygiene rating is 3 or below (amber/red), add this consideration:
+"⚠️ This home has a food hygiene rating that requires improvement. See detailed safety analysis in Professional Report."
+
 Return ONLY valid JSON:
 {{
   "why_selected": "1-2 paragraphs (max 2) explaining why this is {match_type}, using specific data from database",
@@ -500,6 +503,15 @@ Return ONLY valid JSON:
             considerations.append("CQC rating information not available - verify during visit")
         if not cqc_safe:
             considerations.append("CQC Safe rating not available - verify safeguarding protocols during visit")
+        
+        # Add FSA warning for poor food hygiene rating (FSA <= 3)
+        if fsa_rating is not None:
+            try:
+                fsa_int = int(fsa_rating) if isinstance(fsa_rating, (int, float, str)) else None
+                if fsa_int is not None and fsa_int <= 3:
+                    considerations.append("⚠️ This home has a food hygiene rating that requires improvement. See detailed safety analysis in Professional Report.")
+            except (ValueError, TypeError):
+                pass
         
         return {
             "home_name": name,

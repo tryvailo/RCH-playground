@@ -117,44 +117,30 @@ class ReportDataLoader:
         """
         care_homes = []
         
-        # Try CSV/hybrid first
+        # Use SQLite exclusively - no CSV fallback
         try:
-            from services.csv_care_homes_service import get_care_homes
+            from pathlib import Path as PathlibPath
+            from services.sqlite_care_homes_service import SQLiteCareHomesService
             
-            logger.info("Loading homes from CSV/hybrid...")
-            care_homes = await asyncio.to_thread(
-                get_care_homes,
+            logger.info("Loading homes from SQLite database...")
+            db_path = PathlibPath(__file__).parent.parent.parent / 'care_homes.db'
+            service = SQLiteCareHomesService(str(db_path))
+            care_homes = service.get_care_homes(
                 local_authority=normalized_city,
                 care_type=care_type,
                 max_distance_km=max_distance_km,
                 user_lat=user_lat,
                 user_lon=user_lon,
-                limit=50,
-                use_hybrid=True
+                limit=50
             )
-            logger.info(f"✅ Loaded {len(care_homes)} homes from CSV/hybrid")
+            service.close()
+            logger.info(f"✅ Loaded {len(care_homes)} homes from SQLite database")
         except Exception as e:
-            logger.warning(f"CSV loading failed: {e}")
-        
-        # Fallback to AsyncDataLoader
-        if not care_homes or len(care_homes) == 0:
-            try:
-                from services.async_data_loader import get_async_loader
-                
-                logger.info("Falling back to AsyncDataLoader...")
-                loader = get_async_loader()
-                
-                care_homes, loader_lat, loader_lon = await loader.load_initial_data(
-                    preferred_city=normalized_city,
-                    care_type=care_type,
-                    max_distance_km=max_distance_km,
-                    postcode=questionnaire.get('section_2_location_budget', {}).get('q4_postcode'),
-                    limit=20
-                )
-                
-                logger.info(f"✅ AsyncDataLoader returned {len(care_homes)} homes")
-            except Exception as e:
-                logger.warning(f"AsyncDataLoader failed: {e}")
+            logger.error(f"❌ SQLite loading failed: {e}")
+            import traceback
+            traceback.print_exc()
+            # SQLite is the only source - no fallback
+            care_homes = []
         
         # Final fallback to mock data
         if not care_homes or len(care_homes) == 0:

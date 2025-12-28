@@ -106,11 +106,14 @@ class SafetyCalculator(CategoryCalculator):
             score += rating_score * 1.5  # Weight overall rating
         
         # Trend analysis (improving = +2, declining = -1)
-        trend = self._extract_field(enriched_data, 'cqc_detailed', 'trend', default='stable')
-        if trend == 'improving':
-            score += 2.0
-        elif trend == 'declining':
-            score -= 1.0
+        # IMPORTANT: Only score if we have REAL trend data, not fake defaults
+        trend = self._extract_field(enriched_data, 'cqc_detailed', 'trend')
+        if trend:  # Only if we have real data
+            if trend == 'improving':
+                score += 2.0
+            elif trend == 'declining':
+                score -= 1.0
+        # If trend is None/missing: score += 0 (don't invent data)
         
         # Fall prevention specific (if high fall risk)
         if high_fall_risk:

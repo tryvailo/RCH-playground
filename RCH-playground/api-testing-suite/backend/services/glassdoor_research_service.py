@@ -94,8 +94,8 @@ class GlassdoorResearchService:
             return glassdoor_data
             
         except Exception as e:
-            logger.error(f"Error researching Glassdoor data for {home_name}: {str(e)}")
-            return self._get_default_glassdoor_data(home_name)
+            logger.error(f"Error researching Glassdoor data for {home_name}: {str(e)}", exc_info=True)
+            raise  # Re-raise error instead of returning fake default data
     
     def _build_glassdoor_query(
         self,

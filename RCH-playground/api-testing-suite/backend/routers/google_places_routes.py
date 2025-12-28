@@ -13,6 +13,85 @@ from utils.client_factory import get_google_places_client
 router = APIRouter(prefix="/api/google-places", tags=["Google Places"])
 
 
+@router.get("")
+@router.get("/")
+async def google_places_enrichment(
+    name: Optional[str] = Query(None),
+    postcode: Optional[str] = Query(None),
+    include_insights: bool = Query(False),
+    cache: Optional[bool] = Query(True)
+):
+    """
+    Simple Google Places enrichment endpoint for professional report
+    Accepts name and postcode, returns enriched Google Places data with optional insights
+    """
+    try:
+        if not name:
+            raise HTTPException(status_code=400, detail="Name is required")
+        
+        client = get_google_places_client()
+        
+        # Build search query
+        search_query = name
+        if postcode:
+            search_query += f" {postcode}"
+        
+        # Try find_place first
+        place = None
+        try:
+            place = await asyncio.wait_for(client.find_place(search_query), timeout=8)
+        except Exception:
+            # Fallback to text_search
+            try:
+                places = await asyncio.wait_for(client.text_search(f"{search_query} care home"), timeout=8)
+                if places and len(places) > 0:
+                    place = places[0]
+            except Exception:
+                pass
+        
+        if place and place.get("place_id"):
+            # Get detailed information
+            details = await client.get_place_details(
+                place["place_id"],
+                fields=[
+                    "name", "rating", "user_ratings_total", "reviews",
+                    "formatted_phone_number", "website", "opening_hours",
+                    "photos", "formatted_address", "geometry", "types",
+                    "business_status", "price_level", "vicinity"
+                ]
+            )
+            
+            # Ensure place_id is preserved
+            if not details.get("place_id"):
+                details["place_id"] = place["place_id"]
+            
+            result = {
+                "status": "success",
+                "data": details
+            }
+            
+            # Add insights if requested
+            if include_insights:
+                try:
+                    insights = await client.get_places_insights(place["place_id"])
+                    result["data"]["insights"] = insights
+                except Exception as e:
+                    # Insights are optional, don't fail if unavailable
+                    print(f"Warning: Could not fetch insights: {e}")
+            
+            return result
+        else:
+            return {
+                "status": "not_found",
+                "data": {},
+                "message": f"No place found matching '{name}'"
+            }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Google Places API error: {str(e)}")
+
+
 @router.get("/search")
 async def google_places_search(
     query: str,

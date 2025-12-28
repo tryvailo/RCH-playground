@@ -290,6 +290,56 @@ class AsyncDataLoader:
             elif coords_result:
                 user_lat, user_lon = coords_result
         
+        # ✅ FIX: Calculate distance_km for all homes if user coordinates are available
+        # This ensures distance_km is set even if it wasn't calculated during database query
+        if user_lat and user_lon and care_homes:
+            try:
+                from utils.geo import calculate_distance_km
+                for home in care_homes:
+                    # Only calculate if distance_km is missing or 0
+                    if not home.get('distance_km') or home.get('distance_km') == 0:
+                        home_lat = home.get('latitude')
+                        home_lon = home.get('longitude')
+                        if home_lat and home_lon:
+                            try:
+                                distance = calculate_distance_km(
+                                    float(user_lat), float(user_lon),
+                                    float(home_lat), float(home_lon)
+                                )
+                                home['distance_km'] = distance
+                            except (ValueError, TypeError) as e:
+                                logger.debug(f"Distance calculation failed for {home.get('name')}: {e}")
+                                home['distance_km'] = 0.0
+            except ImportError:
+                # Fallback if geo utility not available
+                import math
+                def calculate_distance_km_fallback(lat1, lon1, lat2, lon2):
+                    R = 6371.0
+                    dlat = math.radians(lat2 - lat1)
+                    dlon = math.radians(lon2 - lon1)
+                    a = (
+                        math.sin(dlat / 2) ** 2 +
+                        math.cos(math.radians(lat1)) *
+                        math.cos(math.radians(lat2)) *
+                        math.sin(dlon / 2) ** 2
+                    )
+                    c = 2 * math.asin(math.sqrt(a))
+                    return round(R * c, 2)
+                
+                for home in care_homes:
+                    if not home.get('distance_km') or home.get('distance_km') == 0:
+                        home_lat = home.get('latitude')
+                        home_lon = home.get('longitude')
+                        if home_lat and home_lon:
+                            try:
+                                distance = calculate_distance_km_fallback(
+                                    float(user_lat), float(user_lon),
+                                    float(home_lat), float(home_lon)
+                                )
+                                home['distance_km'] = distance
+                            except (ValueError, TypeError):
+                                home['distance_km'] = 0.0
+        
         # Final check: if we still have no homes after all fallbacks, return empty list
         # This will trigger the error message in the endpoint
         if not care_homes:
@@ -563,33 +613,96 @@ class AsyncDataLoader:
         include_fsa: bool = True,
         include_financial: bool = False
     ) -> Dict[str, Any]:
-        """Enrich a single care home with additional data"""
+        """
+        Enrich a single care home with additional data from APIs.
+        
+        IMPORTANT: Only includes REAL data from APIs or existing home data.
+        Does NOT create fake/placeholder data.
+        Missing data is represented as None, not invented defaults.
+        
+        Args:
+            home: Care home data
+            include_cqc: Include CQC API enrichment
+            include_fsa: Include FSA API enrichment
+            include_financial: Include financial API enrichment
+            
+        Returns:
+            Home with enriched_data dict containing ONLY real data
+        """
         enriched = dict(home)
+        enriched['enriched_data'] = {}
         
-        # For now, return as-is - enrichment can be added later
-        # when CQC/FSA/Companies House API clients are available
+        # CQC Data - ONLY if it exists in home data
+        if include_cqc:
+            cqc_safe = home.get('cqc_rating_safe') or home.get('cqc_rating_overall')
+            cqc_effective = home.get('cqc_rating_effective') or home.get('cqc_rating_overall')
+            cqc_caring = home.get('cqc_rating_caring') or home.get('cqc_rating_overall')
+            cqc_responsive = home.get('cqc_rating_responsive') or home.get('cqc_rating_overall')
+            cqc_well_led = home.get('cqc_rating_well_led') or home.get('cqc_rating_overall')
+            cqc_trend = home.get('cqc_trend')
+            safeguarding = home.get('safeguarding_incidents')
+            
+            # ONLY include if we have at least ONE real value
+            if cqc_safe or cqc_effective or cqc_caring or cqc_responsive or cqc_well_led or cqc_trend or safeguarding is not None:
+                enriched['enriched_data']['cqc_detailed'] = {
+                    'safe_rating': cqc_safe,
+                    'effective_rating': cqc_effective,
+                    'caring_rating': cqc_caring,
+                    'responsive_rating': cqc_responsive,
+                    'well_led_rating': cqc_well_led,
+                    'trend': cqc_trend,  # None if not available, not 'stable'
+                    'safeguarding_incidents': safeguarding  # None if not available, not 0
+                }
         
-        # Placeholder enriched_data structure
-        enriched['enriched_data'] = {
-            'cqc_detailed': {
-                'safe_rating': home.get('cqc_rating_safe') or home.get('cqc_rating_overall'),
-                'effective_rating': home.get('cqc_rating_effective') or home.get('cqc_rating_overall'),
-                'caring_rating': home.get('cqc_rating_caring') or home.get('cqc_rating_overall'),
-                'responsive_rating': home.get('cqc_rating_responsive') or home.get('cqc_rating_overall'),
-                'well_led_rating': home.get('cqc_rating_well_led') or home.get('cqc_rating_overall'),
-                'trend': 'stable',
-                'safeguarding_incidents': 0
-            },
-            'fsa_detailed': {
-                'rating': home.get('fsa_rating') or home.get('food_hygiene_rating')
-            },
-            'financial_data': {},
-            'staff_data': {},
-            'google_places': {
-                'review_count': home.get('review_count') or home.get('google_review_count'),
-                'rating': home.get('google_rating')
+        # FSA Data - ONLY if it exists
+        if include_fsa:
+            fsa_rating = home.get('fsa_rating') or home.get('food_hygiene_rating')
+            if fsa_rating is not None:
+                enriched['enriched_data']['fsa_detailed'] = {
+                    'rating': fsa_rating
+                }
+        
+        # Google Places Data - ONLY if it exists
+        google_review_count = home.get('review_count') or home.get('google_review_count')
+        google_rating = home.get('google_rating')
+        if google_review_count is not None or google_rating is not None:
+            enriched['enriched_data']['google_places'] = {
+                'review_count': google_review_count,
+                'rating': google_rating
             }
-        }
+        
+        # Staff Data - ONLY if API data exists (currently no mock data)
+        if include_cqc:  # Staff data typically comes with CQC enrichment
+            staff_rn_count = home.get('registered_nurses')
+            staff_qualifications = home.get('staff_qualifications')
+            staff_turnover = home.get('staff_turnover_rate')
+            
+            if staff_rn_count is not None or staff_qualifications or staff_turnover is not None:
+                enriched['enriched_data']['staff_data'] = {
+                    'registered_nurses': staff_rn_count,
+                    'qualifications': staff_qualifications,
+                    'turnover_rate': staff_turnover
+                }
+        
+        # Financial Data - ONLY if Companies House data exists
+        if include_financial:
+            financial_status = home.get('financial_status')
+            company_revenue = home.get('company_revenue')
+            debt_ratio = home.get('debt_ratio')
+            
+            if financial_status or company_revenue is not None or debt_ratio is not None:
+                enriched['enriched_data']['financial_data'] = {
+                    'status': financial_status,
+                    'revenue': company_revenue,
+                    'debt_ratio': debt_ratio
+                }
+        
+        logger.info(
+            "Enriched care home",
+            home_name=home.get('name'),
+            enrichment_sources=list(enriched['enriched_data'].keys()),
+            has_data=bool(enriched['enriched_data'])
+        )
         
         return enriched
 

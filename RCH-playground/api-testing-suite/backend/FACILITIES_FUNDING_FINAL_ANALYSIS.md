@@ -287,3 +287,6 @@ homes = get_care_homes_hybrid(...)  # Загружает CQC + Staging
 **Последнее обновление:** 2025-12-20
 
 
+
+
+

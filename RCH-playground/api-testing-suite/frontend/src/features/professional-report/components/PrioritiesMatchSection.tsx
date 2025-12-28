@@ -207,7 +207,9 @@ const calculateHomeMatches = (
     if (home.factorScores && Array.isArray(home.factorScores) && home.factorScores.length > 0) {
       home.factorScores.forEach(factor => {
         // Map display names back to algorithm category names
+        // Support both Simple Matching (100-point) and Professional Matching (156-point) formats
         const categoryNameMap: Record<string, string> = {
+          // Professional Matching (156-point)
           'Medical Capabilities': 'medical',
           'Safety & Quality': 'safety',
           'Location & Access': 'location',
@@ -215,15 +217,44 @@ const calculateHomeMatches = (
           'Financial Stability': 'financial',
           'Staff Quality': 'staff',
           'CQC Compliance': 'cqc',
-          'Additional Services': 'services'
+          'Additional Services': 'services',
+          // Simple Matching (100-point)
+          'Medical & Safety': 'medical_safety',
+          'Quality & Care': 'quality_care',
+          'Lifestyle': 'lifestyle',
+          // Enhanced MVP uses same display names as Professional Matching
+          // But algorithm categories are: medical, safety, location
+          // Additional categories are calculated from enriched data
         };
         
         const algoCategory = categoryNameMap[factor.category] || factor.category.toLowerCase();
         
         // Normalize score to 0-100: (points / maxPoints) * 100
-        const normalizedScore = factor.maxScore > 0 
-          ? (factor.score / factor.maxScore) * 100 
-          : 0;
+        // ✅ FIX: For Enhanced MVP, scores are already normalized to 0-100 in backend
+        // But for backward compatibility, handle both formats:
+        // - If maxScore is 100, score is already normalized (0-100)
+        // - If maxScore is < 100 (e.g., 30, 40, 25), normalize: (score / maxScore) * 100
+        let normalizedScore = 0;
+        if (factor.maxScore > 0) {
+          if (factor.maxScore === 100.0) {
+            // Already normalized to 0-100
+            normalizedScore = factor.score;
+          } else {
+            // Normalize from raw points to 0-100
+            normalizedScore = (factor.score / factor.maxScore) * 100;
+          }
+        }
+        
+        // ✅ FIX: Debug logging for zero scores
+        if (process.env.NODE_ENV === 'development' && normalizedScore === 0 && factor.score > 0) {
+          console.warn(`[PrioritiesMatch] Zero normalized score for ${factor.category}:`, {
+            score: factor.score,
+            maxScore: factor.maxScore,
+            calculated: normalizedScore,
+            algoCategory
+          });
+        }
+        
         categoryScoresMap[algoCategory] = normalizedScore;
       });
     }
@@ -249,13 +280,15 @@ const calculateHomeMatches = (
     }
 
     // Priority mapping to algorithm categories (same as backend)
+    // Support both Simple Matching (100-point) and Professional Matching (156-point) formats
     const priorityCategoryMapping: Record<string, string[]> = {
-      'quality_reputation': ['cqc', 'staff'],
+      // Professional Matching (156-point)
+      'quality_reputation': ['cqc', 'staff', 'quality_care'],  // Also map to simple matching
       'cost_financial': ['financial'],
       'location_social': ['location', 'social'],
-      'comfort_amenities': ['services'],
-      // OLD format support
-      'medical_safety': ['medical', 'safety']
+      'comfort_amenities': ['services', 'lifestyle'],  // Also map to simple matching
+      // Simple Matching (100-point) and OLD format support
+      'medical_safety': ['medical', 'safety', 'medical_safety']
     };
 
     priorities.forEach(priority => {

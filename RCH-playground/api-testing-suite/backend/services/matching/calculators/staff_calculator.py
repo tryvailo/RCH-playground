@@ -123,14 +123,16 @@ class StaffCalculator(CategoryCalculator):
         score = 0.0
         
         # Check certifications list
+        # IMPORTANT: Only score if we have REAL staff data, not empty defaults
         certifications = self._safe_list(
             self._extract_field(enriched_data, 'staff_data', 'combined_analysis',
-                              'certifications', default=[])
+                              'certifications')
         )
         
-        if certifications:
+        if certifications:  # Only if we have real data
             # Award points based on number of certifications
             score += min(len(certifications) * 0.5, 3.0)
+        # If certifications is None/empty: score += 0 (don't invent qualifications)
         
         # Management score from Glassdoor
         management_score = self._safe_float(

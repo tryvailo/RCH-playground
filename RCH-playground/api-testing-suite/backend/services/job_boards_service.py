@@ -97,8 +97,8 @@ class JobBoardsService:
             return analysis
             
         except Exception as e:
-            logger.error(f"Error analyzing job listings for {home_name}: {str(e)}")
-            return self._get_default_job_data(home_name)
+            logger.error(f"Error analyzing job listings for {home_name}: {str(e)}", exc_info=True)
+            raise  # Re-raise error instead of returning fake default data
     
     async def _search_indeed(
         self,

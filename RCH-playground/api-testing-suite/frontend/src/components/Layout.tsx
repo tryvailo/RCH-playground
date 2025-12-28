@@ -34,14 +34,16 @@ export default function Layout({ children }: LayoutProps) {
     { path: '/staff-quality', icon: Users, label: 'Staff Quality Data' },
     // Reports
     { path: '/free-report', icon: FileText, label: 'Free Report' },
+    { path: '/free-report-new', icon: FileText, label: 'Free Report New' },
     { path: '/professional-report', icon: Award, label: 'Professional Report' },
+    { path: '/professional-report-new', icon: Award, label: 'Professional Report New' },
   ];
 
   // Split nav items into rows
   const firstRow = navItems.slice(0, 6); // First 6 items
   const secondRow = navItems.slice(6, 12); // Next 6 items
   const thirdRow = navItems.slice(12, 18); // RCH-data modules (Data Admin, All Locations, Postcode Calculator, Price Calculator, Postcode Tester, Funding Calculator)
-  const fourthRow = navItems.slice(18); // Reports (Free Report, Professional Report)
+  const fourthRow = navItems.slice(18); // Reports (Free Report, Free Report New, Professional Report)
 
   return (
     <div className="min-h-screen bg-gray-50">

@@ -107,7 +107,7 @@ export default function Results() {
                 <DollarSign className="w-8 h-8 text-primary mr-3" />
                 <div>
                   <p className="text-sm text-gray-500">Total Cost</p>
-                  <p className="text-2xl font-bold">£{testResult.totalCost.toFixed(2)}</p>
+                  <p className="text-2xl font-bold">£{(testResult.totalCost ?? 0).toFixed(2)}</p>
                 </div>
               </div>
             </div>
@@ -209,7 +209,7 @@ function ApiResultCard({ apiName, result }: { apiName: string; result: ApiTestRe
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
             <div>
               <span className="text-gray-500">Response Time:</span>
-              <span className="ml-2 font-medium">{result.responseTime.toFixed(2)}s</span>
+              <span className="ml-2 font-medium">{(result.responseTime ?? 0).toFixed(2)}s</span>
             </div>
             <div>
               <span className="text-gray-500">Data Returned:</span>
@@ -219,11 +219,11 @@ function ApiResultCard({ apiName, result }: { apiName: string; result: ApiTestRe
             </div>
             <div>
               <span className="text-gray-500">Quality:</span>
-              <span className="ml-2 font-medium">{result.dataQuality.completeness}%</span>
+              <span className="ml-2 font-medium">{result.dataQuality?.completeness ?? 0}%</span>
             </div>
             <div>
               <span className="text-gray-500">Cost:</span>
-              <span className="ml-2 font-medium">£{result.costIncurred.toFixed(4)}</span>
+              <span className="ml-2 font-medium">£{(result.costIncurred ?? 0).toFixed(4)}</span>
             </div>
           </div>
           {result.errors.length > 0 && (

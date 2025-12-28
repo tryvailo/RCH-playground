@@ -17,6 +17,14 @@ interface Props {
 export default function EnvironmentalResults({ data }: Props) {
   const { noise, pollution, overall_environmental_score, overall_rating } = data;
 
+  if (!noise && !pollution) {
+    return (
+      <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+        <p className="text-sm text-yellow-700">Environmental data is not available.</p>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       {/* Overall Environmental Score */}
@@ -27,10 +35,16 @@ export default function EnvironmentalResults({ data }: Props) {
             <h3 className="text-lg font-semibold text-gray-800">Overall Environmental Quality</h3>
           </div>
           <div className="text-right">
-            <div className={`text-3xl font-bold ${getEnvironmentalScoreColor(overall_environmental_score)}`}>
-              {overall_environmental_score.toFixed(1)}
-            </div>
-            <div className="text-sm text-gray-600">{overall_rating}</div>
+            {overall_environmental_score != null ? (
+              <>
+                <div className={`text-3xl font-bold ${getEnvironmentalScoreColor(overall_environmental_score)}`}>
+                  {overall_environmental_score.toFixed(1)}
+                </div>
+                <div className="text-sm text-gray-600">{overall_rating || 'N/A'}</div>
+              </>
+            ) : (
+              <div className="text-sm text-gray-500">Score not available</div>
+            )}
           </div>
         </div>
         <p className="text-sm text-gray-700">
@@ -39,6 +53,7 @@ export default function EnvironmentalResults({ data }: Props) {
       </div>
 
       {/* Noise Section */}
+      {noise && (
       <div className="bg-white border border-gray-200 rounded-lg p-6">
         <div className="flex items-start justify-between mb-4">
           <div className="flex items-center gap-3">
@@ -53,13 +68,15 @@ export default function EnvironmentalResults({ data }: Props) {
               <AlertCircle className="w-4 h-4" />
               <span className="text-sm">Error</span>
             </div>
-          ) : (
+          ) : noise.noise_score != null ? (
             <div className="text-right">
               <div className={`text-2xl font-bold ${getEnvironmentalScoreColor(noise.noise_score)}`}>
                 {noise.noise_score.toFixed(1)}
               </div>
-              <div className="text-sm text-gray-600">{noise.rating}</div>
+              <div className="text-sm text-gray-600">{noise.rating || 'N/A'}</div>
             </div>
+          ) : (
+            <div className="text-sm text-gray-500">Score not available</div>
           )}
         </div>
 
@@ -69,41 +86,51 @@ export default function EnvironmentalResults({ data }: Props) {
           </div>
         ) : (
           <>
-            <p className="text-sm text-gray-700 mb-4">{noise.description}</p>
+            {noise.description && (
+              <p className="text-sm text-gray-700 mb-4">{noise.description}</p>
+            )}
             
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-              <div className="bg-gray-50 rounded-lg p-3">
-                <div className="text-xs text-gray-500 mb-1">Analysis Radius</div>
-                <div className="font-medium">{noise.radius_analyzed_m}m</div>
+            {(noise.radius_analyzed_m != null || noise.factors) && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                {noise.radius_analyzed_m != null && (
+                  <div className="bg-gray-50 rounded-lg p-3">
+                    <div className="text-xs text-gray-500 mb-1">Analysis Radius</div>
+                    <div className="font-medium">{noise.radius_analyzed_m}m</div>
+                  </div>
+                )}
+                {noise.factors?.estimated_traffic_density && (
+                  <div className="bg-gray-50 rounded-lg p-3">
+                    <div className="text-xs text-gray-500 mb-1">Traffic Density</div>
+                    <div className="font-medium capitalize">{noise.factors.estimated_traffic_density}</div>
+                  </div>
+                )}
               </div>
-              <div className="bg-gray-50 rounded-lg p-3">
-                <div className="text-xs text-gray-500 mb-1">Traffic Density</div>
-                <div className="font-medium capitalize">{noise.factors.estimated_traffic_density}</div>
-              </div>
-            </div>
+            )}
 
-            <div className="space-y-2">
-              <div className="flex items-center gap-2 text-sm">
-                {noise.factors.major_roads_nearby ? (
-                  <AlertCircle className="w-4 h-4 text-orange-600" />
-                ) : (
-                  <CheckCircle className="w-4 h-4 text-green-600" />
-                )}
-                <span className={noise.factors.major_roads_nearby ? 'text-orange-700' : 'text-green-700'}>
-                  {noise.factors.major_roads_nearby ? 'Major roads nearby' : 'No major roads nearby'}
-                </span>
+            {noise.factors && (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 text-sm">
+                  {noise.factors.major_roads_nearby ? (
+                    <AlertCircle className="w-4 h-4 text-orange-600" />
+                  ) : (
+                    <CheckCircle className="w-4 h-4 text-green-600" />
+                  )}
+                  <span className={noise.factors.major_roads_nearby ? 'text-orange-700' : 'text-green-700'}>
+                    {noise.factors.major_roads_nearby ? 'Major roads nearby' : 'No major roads nearby'}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 text-sm">
+                  {noise.factors.urban_area ? (
+                    <AlertCircle className="w-4 h-4 text-orange-600" />
+                  ) : (
+                    <CheckCircle className="w-4 h-4 text-green-600" />
+                  )}
+                  <span className={noise.factors.urban_area ? 'text-orange-700' : 'text-green-700'}>
+                    {noise.factors.urban_area ? 'Urban area' : 'Rural/suburban area'}
+                  </span>
+                </div>
               </div>
-              <div className="flex items-center gap-2 text-sm">
-                {noise.factors.urban_area ? (
-                  <AlertCircle className="w-4 h-4 text-orange-600" />
-                ) : (
-                  <CheckCircle className="w-4 h-4 text-green-600" />
-                )}
-                <span className={noise.factors.urban_area ? 'text-orange-700' : 'text-green-700'}>
-                  {noise.factors.urban_area ? 'Urban area' : 'Rural/suburban area'}
-                </span>
-              </div>
-            </div>
+            )}
 
             {noise.recommendations && noise.recommendations.length > 0 && (
               <div className="mt-4 pt-4 border-t border-gray-200">
@@ -121,8 +148,10 @@ export default function EnvironmentalResults({ data }: Props) {
           </>
         )}
       </div>
+      )}
 
       {/* Pollution Section */}
+      {pollution && (
       <div className="bg-white border border-gray-200 rounded-lg p-6">
         <div className="flex items-start justify-between mb-4">
           <div className="flex items-center gap-3">
@@ -137,13 +166,15 @@ export default function EnvironmentalResults({ data }: Props) {
               <AlertCircle className="w-4 h-4" />
               <span className="text-sm">Error</span>
             </div>
-          ) : (
+          ) : pollution.pollution_score != null ? (
             <div className="text-right">
               <div className={`text-2xl font-bold ${getEnvironmentalScoreColor(pollution.pollution_score)}`}>
                 {pollution.pollution_score.toFixed(1)}
               </div>
-              <div className="text-sm text-gray-600">{pollution.rating}</div>
+              <div className="text-sm text-gray-600">{pollution.rating || 'N/A'}</div>
             </div>
+          ) : (
+            <div className="text-sm text-gray-500">Score not available</div>
           )}
         </div>
 
@@ -153,41 +184,51 @@ export default function EnvironmentalResults({ data }: Props) {
           </div>
         ) : (
           <>
-            <p className="text-sm text-gray-700 mb-4">{pollution.description}</p>
+            {pollution.description && (
+              <p className="text-sm text-gray-700 mb-4">{pollution.description}</p>
+            )}
             
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-              <div className="bg-gray-50 rounded-lg p-3">
-                <div className="text-xs text-gray-500 mb-1">Analysis Radius</div>
-                <div className="font-medium">{pollution.radius_analyzed_m}m</div>
+            {(pollution.radius_analyzed_m != null || pollution.factors) && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                {pollution.radius_analyzed_m != null && (
+                  <div className="bg-gray-50 rounded-lg p-3">
+                    <div className="text-xs text-gray-500 mb-1">Analysis Radius</div>
+                    <div className="font-medium">{pollution.radius_analyzed_m}m</div>
+                  </div>
+                )}
+                {pollution.factors?.traffic_density && (
+                  <div className="bg-gray-50 rounded-lg p-3">
+                    <div className="text-xs text-gray-500 mb-1">Traffic Density</div>
+                    <div className="font-medium capitalize">{pollution.factors.traffic_density}</div>
+                  </div>
+                )}
               </div>
-              <div className="bg-gray-50 rounded-lg p-3">
-                <div className="text-xs text-gray-500 mb-1">Traffic Density</div>
-                <div className="font-medium capitalize">{pollution.factors.traffic_density}</div>
-              </div>
-            </div>
+            )}
 
-            <div className="space-y-2">
-              <div className="flex items-center gap-2 text-sm">
-                {pollution.factors.major_roads_nearby ? (
-                  <AlertCircle className="w-4 h-4 text-orange-600" />
-                ) : (
-                  <CheckCircle className="w-4 h-4 text-green-600" />
-                )}
-                <span className={pollution.factors.major_roads_nearby ? 'text-orange-700' : 'text-green-700'}>
-                  {pollution.factors.major_roads_nearby ? 'Major roads nearby' : 'No major roads nearby'}
-                </span>
+            {pollution.factors && (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 text-sm">
+                  {pollution.factors.major_roads_nearby ? (
+                    <AlertCircle className="w-4 h-4 text-orange-600" />
+                  ) : (
+                    <CheckCircle className="w-4 h-4 text-green-600" />
+                  )}
+                  <span className={pollution.factors.major_roads_nearby ? 'text-orange-700' : 'text-green-700'}>
+                    {pollution.factors.major_roads_nearby ? 'Major roads nearby' : 'No major roads nearby'}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 text-sm">
+                  {pollution.factors.urban_area ? (
+                    <AlertCircle className="w-4 h-4 text-orange-600" />
+                  ) : (
+                    <CheckCircle className="w-4 h-4 text-green-600" />
+                  )}
+                  <span className={pollution.factors.urban_area ? 'text-orange-700' : 'text-green-700'}>
+                    {pollution.factors.urban_area ? 'Urban area' : 'Rural/suburban area'}
+                  </span>
+                </div>
               </div>
-              <div className="flex items-center gap-2 text-sm">
-                {pollution.factors.urban_area ? (
-                  <AlertCircle className="w-4 h-4 text-orange-600" />
-                ) : (
-                  <CheckCircle className="w-4 h-4 text-green-600" />
-                )}
-                <span className={pollution.factors.urban_area ? 'text-orange-700' : 'text-green-700'}>
-                  {pollution.factors.urban_area ? 'Urban area' : 'Rural/suburban area'}
-                </span>
-              </div>
-            </div>
+            )}
 
             {pollution.recommendations && pollution.recommendations.length > 0 && (
               <div className="mt-4 pt-4 border-t border-gray-200">
@@ -205,6 +246,7 @@ export default function EnvironmentalResults({ data }: Props) {
           </>
         )}
       </div>
+      )}
     </div>
   );
 }

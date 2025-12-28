@@ -22,7 +22,9 @@ export default function FreeReportViewer() {
   useEffect(() => {
     if (generateReport.isPending) {
       setShowLoader(true);
-      setLoadingProgress(0);
+      if (loadingProgress === 0) {
+        setLoadingProgress(1);
+      }
       
       const interval = setInterval(() => {
         setLoadingProgress((prev) => {
@@ -35,13 +37,16 @@ export default function FreeReportViewer() {
       }, 500);
 
       return () => clearInterval(interval);
-    } else {
-      if (report) {
-        setLoadingProgress(100);
-        setTimeout(() => setShowLoader(false), 500);
-      }
+    } else if (report) {
+      // Report completed
+      setLoadingProgress(100);
+      setTimeout(() => setShowLoader(false), 500);
+    } else if (generateReport.isError) {
+      // Error occurred
+      setShowLoader(false);
+      setLoadingProgress(0);
     }
-  }, [generateReport.isPending, report]);
+  }, [generateReport.isPending, generateReport.isError, report, loadingProgress]);
 
   const handleLoadQuestionnaire = (data: QuestionnaireResponse) => {
     setQuestionnaire(data);
@@ -49,7 +54,15 @@ export default function FreeReportViewer() {
   };
 
   const handleGenerateReport = () => {
-    if (!questionnaire) return;
+    if (!questionnaire) {
+      console.warn('Cannot generate report: questionnaire is null');
+      return;
+    }
+    
+    // Show loader immediately when button is clicked
+    setShowLoader(true);
+    setLoadingProgress(0);
+    setReport(null);
     
     // Load scoring settings from localStorage (set in Scoring Settings tab)
     const savedWeights = localStorage.getItem('scoring_weights');
@@ -76,13 +89,21 @@ export default function FreeReportViewer() {
       requestData.scoring_thresholds = scoringThresholds;
     }
     
+    console.log('🚀 Starting free report generation (old version):', {
+      postcode: requestData.postcode,
+      care_type: requestData.care_type,
+      budget: requestData.budget,
+    });
+    
     generateReport.mutate(requestData as QuestionnaireResponse, {
       onSuccess: (data) => {
+        console.log('✅ Free report generated successfully:', data);
         setReport(data);
       },
       onError: (error) => {
-        console.error('Failed to generate report:', error);
+        console.error('❌ Failed to generate report:', error);
         setShowLoader(false);
+        setLoadingProgress(0);
       },
     });
   };

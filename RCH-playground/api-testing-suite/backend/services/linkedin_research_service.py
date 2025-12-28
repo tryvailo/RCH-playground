@@ -87,8 +87,8 @@ class LinkedInResearchService:
             return linkedin_data
             
         except Exception as e:
-            logger.error(f"Error researching LinkedIn data for {home_name}: {str(e)}")
-            return self._get_default_linkedin_data(home_name)
+            logger.error(f"Error researching LinkedIn data for {home_name}: {str(e)}", exc_info=True)
+            raise  # Re-raise error instead of returning fake default data
     
     def _build_linkedin_query(
         self,

@@ -60,13 +60,16 @@ class FreeReportMatchingService:
         # Score all homes
         scored_homes = self._score_homes(filtered_homes, budget, care_type)
 
+        # Limit to top 10 homes by score for efficiency
+        top_homes = scored_homes[:10] if len(scored_homes) > 10 else scored_homes
+
         # Find Safe Bet
-        safe_bet = self._find_safe_bet(scored_homes, budget, care_type)
+        safe_bet = self._find_safe_bet(top_homes, budget, care_type)
 
         # Find Best Value (excluding Safe Bet)
         remaining_homes = [
             h
-            for h in scored_homes
+            for h in top_homes
             if safe_bet is None or h["home"]["name"] != safe_bet["name"]
         ]
         best_value = self._find_best_value(remaining_homes, budget, care_type)
@@ -96,16 +99,17 @@ class FreeReportMatchingService:
         ]
 
     def _filter_by_price(
-        self, homes: List[Dict[str, Any]], budget: float, care_type: str
+        self, homes: List[Dict[str, Any]], budget: float, care_type: str, tolerance_pct: float = 30
     ) -> List[Dict[str, Any]]:
-        """Filter homes within budget + £200"""
+        """Filter homes within budget with tolerance percentage"""
         if budget <= 0:
             return homes
 
+        max_price = budget * (1 + tolerance_pct / 100)
         return [
             h
             for h in homes
-            if extract_weekly_price(h, care_type) <= (budget + 200)
+            if extract_weekly_price(h, care_type) <= max_price
         ]
 
     def _filter_by_location(
@@ -181,6 +185,22 @@ class FreeReportMatchingService:
         elif cqc_rating.lower() == "good":
             score += 20
 
+        # FSA Food Hygiene Rating penalty/bonus (per spec: FSA <= 3 gives -1 penalty)
+        fsa_rating = home.get("fsa_rating")
+        if fsa_rating is not None:
+            try:
+                fsa_int = int(fsa_rating) if isinstance(fsa_rating, (int, float, str)) else None
+                if fsa_int is not None:
+                    if fsa_int >= 5:
+                        score += 2  # Bonus for excellent food hygiene
+                    elif fsa_int <= 3:
+                        score -= 5  # Penalty for poor food hygiene (FSA 2 or 3 = red/amber)
+                        # Additional penalty for very poor (FSA 1-2)
+                        if fsa_int <= 2:
+                            score -= 3  # Extra penalty for red rating
+            except (ValueError, TypeError):
+                pass  # Ignore invalid FSA rating values
+
         # Price fit (1-3 points)
         if budget > 0:
             price_diff = abs(price - budget)
@@ -199,7 +219,7 @@ class FreeReportMatchingService:
             elif distance < 15:
                 score += 5
 
-        return score
+        return max(0, score)  # Ensure score doesn't go negative
 
     def _find_safe_bet(
         self,
@@ -207,7 +227,7 @@ class FreeReportMatchingService:
         budget: float,
         care_type: str,
     ) -> Optional[Dict[str, Any]]:
-        """Find best balance of quality, price, location"""
+        """Find best balance of quality, price, location (40-40-20 weighting)"""
         best = None
         best_score = -1
 
@@ -216,22 +236,54 @@ class FreeReportMatchingService:
             price = extract_weekly_price(home, care_type)
             cqc = self._get_cqc_rating_score(self._get_cqc_rating(home))
 
-            # Must have good quality
+            # Must have Good or Outstanding quality (CQC >= 3)
             if cqc < 3:
                 continue
 
-            # Calculate balance score
-            balance = cqc * 10
+            # FSA Rating check: Prefer homes with good FSA rating for "Safe Bet"
+            # Homes with FSA <= 2 (red) should be penalized or excluded
+            fsa_rating = home.get("fsa_rating")
+            fsa_penalty = 0
+            if fsa_rating is not None:
+                try:
+                    fsa_int = int(fsa_rating) if isinstance(fsa_rating, (int, float, str)) else None
+                    if fsa_int is not None:
+                        if fsa_int <= 2:
+                            fsa_penalty = -15  # Significant penalty for red FSA rating (unsafe for "Safe Bet")
+                        elif fsa_int == 3:
+                            fsa_penalty = -5  # Penalty for amber FSA rating
+                except (ValueError, TypeError):
+                    pass
+
+            # Quality score (40 points max)
+            quality_score = 40 if cqc == 4 else 30
+            
+            # Price score (40 points max)
+            price_score = 0
             if budget > 0:
                 price_diff = abs(price - budget)
                 if price_diff < 50:
-                    balance += 5
+                    price_score = 40
                 elif price_diff < 100:
-                    balance += 3
-
+                    price_score = 30
+                elif price_diff < 200:
+                    price_score = 20
+                else:
+                    price_score = 0
+            
+            # Distance score (20 points max)
             distance = home.get("distance_km", 999)
-            if isinstance(distance, (int, float)) and distance < 15:
-                balance += 2
+            if distance < 5:
+                distance_score = 20
+            elif distance < 10:
+                distance_score = 15
+            elif distance < 15:
+                distance_score = 10
+            else:
+                distance_score = 0
+            
+            # Total balance score (with FSA penalty)
+            balance = quality_score + price_score + distance_score + fsa_penalty
 
             if balance > best_score:
                 best_score = balance
@@ -254,9 +306,14 @@ class FreeReportMatchingService:
             price = extract_weekly_price(home, care_type)
             cqc = self._get_cqc_rating_score(self._get_cqc_rating(home))
 
-            # Must have at least requires improvement
-            if cqc < 2:
+            # Must have Good or Outstanding (CQC >= 3)
+            if cqc < 3:
                 continue
+
+            # Price bounds check: price should be 50-130% of budget
+            if budget > 0:
+                if price < (budget * 0.5) or price > (budget * 1.3):
+                    continue
 
             # Value score: quality/price ratio
             if price > 0:
@@ -276,19 +333,32 @@ class FreeReportMatchingService:
         budget: float,
         care_type: str,
     ) -> Optional[Dict[str, Any]]:
-        """Find highest quality home"""
-        best = None
-        best_cqc = -1
-
+        """Find highest quality home, selecting max price for same quality"""
+        # First, try to find Outstanding (CQC 4) homes
+        outstanding = []
+        good = []
+        
         for scored in scored_homes:
             home = scored["home"]
             cqc = self._get_cqc_rating_score(self._get_cqc_rating(home))
-
-            if cqc > best_cqc:
-                best_cqc = cqc
-                best = home
-
-        return best
+            
+            if cqc == 4:  # Outstanding
+                price = extract_weekly_price(home, care_type)
+                outstanding.append((home, price))
+            elif cqc == 3:  # Good
+                price = extract_weekly_price(home, care_type)
+                good.append((home, price))
+        
+        # If Outstanding homes exist, select the one with max price
+        if outstanding:
+            return max(outstanding, key=lambda x: x[1])[0]
+        
+        # Fallback to Good homes with max price
+        if good:
+            return max(good, key=lambda x: x[1])[0]
+        
+        # No candidates found
+        return None
 
     def _get_cqc_rating(self, home: Dict[str, Any]) -> str:
         """Extract CQC rating from home data"""

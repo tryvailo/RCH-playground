@@ -35,6 +35,7 @@ from routers import (
     perplexity_routes,
     firecrawl_routes,
     report_routes,
+    free_report_routes,
     analytics_routes,
     utility_routes,
     indeed_search_routes
@@ -146,6 +147,9 @@ app.include_router(firecrawl_routes.router)
 
 # Report routes
 app.include_router(report_routes.router)
+
+# Free Report routes
+app.include_router(free_report_routes.router)
 
 # Analytics routes
 app.include_router(analytics_routes.router)
