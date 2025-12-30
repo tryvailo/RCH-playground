@@ -1,90 +1,25 @@
 /**
  * Area Profile Block
- * Shows local area context: total homes, average costs, CQC distribution, demographics
+ * Shows local area context: area suitability, elderly population, quality of life
  * ТЗ Section 7: Local Area Context
- * 
- * REUSES: ScoreCard from shared components
  */
 import { 
   MapPin, 
-  Home, 
   TrendingUp, 
-  TrendingDown,
   Users,
   Heart,
   TreePine,
-  Building2
+  Building2,
+  Star,
+  AlertCircle,
+  ArrowRight,
+  Sparkles
 } from 'lucide-react';
-import { ScoreCard } from '../../../shared/components/ScoreCard';
 import type { AreaProfile } from '../types';
 
 interface AreaProfileBlockProps {
   areaProfile: AreaProfile;
   className?: string;
-}
-
-function CQCDistributionBar({ distribution }: { distribution: AreaProfile['cqc_distribution'] }) {
-  const total = distribution.outstanding + distribution.good + distribution.requires_improvement + distribution.inadequate;
-  
-  const getPercentage = (value: number) => total > 0 ? ((value / total) * 100).toFixed(0) : '0';
-  
-  return (
-    <div className="space-y-3">
-      <h4 className="text-sm font-semibold text-gray-700">CQC Rating Distribution</h4>
-      
-      {/* Visual Bar */}
-      <div className="h-4 rounded-full overflow-hidden flex bg-gray-200">
-        {distribution.outstanding > 0 && (
-          <div 
-            className="bg-emerald-500 transition-all duration-500"
-            style={{ width: `${getPercentage(distribution.outstanding)}%` }}
-            title={`Outstanding: ${getPercentage(distribution.outstanding)}%`}
-          />
-        )}
-        {distribution.good > 0 && (
-          <div 
-            className="bg-blue-500 transition-all duration-500"
-            style={{ width: `${getPercentage(distribution.good)}%` }}
-            title={`Good: ${getPercentage(distribution.good)}%`}
-          />
-        )}
-        {distribution.requires_improvement > 0 && (
-          <div 
-            className="bg-yellow-500 transition-all duration-500"
-            style={{ width: `${getPercentage(distribution.requires_improvement)}%` }}
-            title={`Requires Improvement: ${getPercentage(distribution.requires_improvement)}%`}
-          />
-        )}
-        {distribution.inadequate > 0 && (
-          <div 
-            className="bg-red-500 transition-all duration-500"
-            style={{ width: `${getPercentage(distribution.inadequate)}%` }}
-            title={`Inadequate: ${getPercentage(distribution.inadequate)}%`}
-          />
-        )}
-      </div>
-      
-      {/* Legend */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
-        <div className="flex items-center gap-1.5">
-          <div className="w-3 h-3 rounded-full bg-emerald-500" />
-          <span className="text-gray-600">Outstanding: {getPercentage(distribution.outstanding)}%</span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <div className="w-3 h-3 rounded-full bg-blue-500" />
-          <span className="text-gray-600">Good: {getPercentage(distribution.good)}%</span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <div className="w-3 h-3 rounded-full bg-yellow-500" />
-          <span className="text-gray-600">Requires Imp: {getPercentage(distribution.requires_improvement)}%</span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <div className="w-3 h-3 rounded-full bg-red-500" />
-          <span className="text-gray-600">Inadequate: {getPercentage(distribution.inadequate)}%</span>
-        </div>
-      </div>
-    </div>
-  );
 }
 
 function WellbeingGauge({ score }: { score: number }) {
@@ -137,67 +72,253 @@ function WellbeingGauge({ score }: { score: number }) {
 }
 
 export function AreaProfileBlock({ areaProfile, className = '' }: AreaProfileBlockProps) {
-  const costTrend = areaProfile.cost_vs_national;
-  const isAboveAverage = costTrend > 0;
+  // Debug logging - FULL structure
+  console.log('🔍 ========== AreaProfileBlock DEBUG ==========');
+  console.log('🔍 Full areaProfile object:', areaProfile);
+  console.log('🔍 areaProfile keys:', Object.keys(areaProfile));
+  console.log('🔍 area_suitability_score:', areaProfile.area_suitability_score);
+  console.log('🔍 area_suitability_rating:', areaProfile.area_suitability_rating);
+  console.log('🔍 elderly_population:', areaProfile.elderly_population);
+  console.log('🔍 wellbeing_details:', areaProfile.wellbeing_details);
+  console.log('🔍 economic:', areaProfile.economic);
+  console.log('🔍 top_highlights:', areaProfile.top_highlights);
+  console.log('🔍 Full areaProfile JSON:', JSON.stringify(areaProfile, null, 2));
+  console.log('🔍 ============================================');
   
   return (
     <div className={`bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden ${className}`}>
-      {/* Header */}
-      <div className="bg-gradient-to-r from-[#1E2A44] to-[#2D3E5F] px-6 py-5">
-        <div className="flex items-center gap-3">
-          <div className="p-2 bg-white/10 rounded-lg">
-            <MapPin className="w-6 h-6 text-white" />
-          </div>
-          <div>
-            <h2 className="text-xl md:text-2xl font-bold text-white">
-              Care Homes in {areaProfile.area_name}
-            </h2>
-            <p className="text-gray-300 text-sm">Local Area Analysis</p>
-          </div>
-        </div>
-      </div>
-      
-      <div className="p-6">
-        {/* Key Stats Grid - Using ScoreCard from shared components */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-          <ScoreCard
-            title="Care Homes in Area"
-            score={areaProfile.total_homes}
-            color="blue"
-            icon={<Home className="w-4 h-4" />}
-            size="md"
-          />
-          
-          <ScoreCard
-            title="Average Cost/Week"
-            score={`£${areaProfile.average_weekly_cost.toLocaleString()}`}
-            color="green"
-            icon={<Building2 className="w-4 h-4" />}
-            size="md"
-          />
-          
-          <ScoreCard
-            title="vs UK Average"
-            score={`${isAboveAverage ? '+' : ''}${costTrend}%`}
-            color={isAboveAverage ? 'red' : 'green'}
-            icon={isAboveAverage ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
-            size="md"
-          />
-          
-          {/* Wellbeing Index */}
-          {areaProfile.wellbeing_index !== undefined && (
-            <div className="bg-gray-50 rounded-xl p-4 flex items-center justify-center">
-              <WellbeingGauge score={areaProfile.wellbeing_index} />
+      <div className="p-6 space-y-6">
+        {/* 1. Area Overview Card */}
+        {areaProfile.area_suitability_score !== undefined && (
+          <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl p-6 border-2 border-blue-100">
+            <div className="flex items-start justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-blue-100 rounded-lg">
+                  <MapPin className="w-5 h-5 text-blue-600" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-gray-900">
+                    {areaProfile.area_name} Area Overview
+                  </h3>
+                  <p className="text-sm text-gray-600">Area Suitability Assessment</p>
+                </div>
+              </div>
+              <div className="text-right">
+                <div className="text-3xl font-bold text-blue-600">
+                  {areaProfile.area_suitability_score}/100
+                </div>
+                <div className="flex items-center gap-1 mt-1">
+                  {Array.from({ length: 5 }).map((_, i) => {
+                    const rating = areaProfile.area_suitability_rating || 'Average';
+                    const stars = rating === 'Excellent' ? 5 : rating === 'Good' ? 4 : rating === 'Average' ? 3 : 2;
+                    return (
+                      <Star
+                        key={i}
+                        className={`w-4 h-4 ${
+                          i < stars ? 'fill-yellow-400 text-yellow-400' : 'text-gray-300'
+                        }`}
+                      />
+                    );
+                  })}
+                </div>
+              </div>
             </div>
-          )}
-        </div>
+            
+            <div className="mb-4">
+              <p className="text-base font-semibold text-gray-900 mb-2">
+                Rating: {areaProfile.area_suitability_rating || 'Average'} Area for Elderly Care
+              </p>
+            </div>
+            
+            {/* Highlights */}
+            {areaProfile.top_highlights && areaProfile.top_highlights.length > 0 && (
+              <div className="space-y-2 mb-4">
+                {areaProfile.top_highlights.map((highlight, idx) => (
+                  <div key={idx} className="flex items-start gap-2">
+                    <span className="text-green-500 mt-0.5">✅</span>
+                    <span className="text-sm text-gray-700">{highlight}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            
+            {/* Considerations */}
+            {areaProfile.considerations && areaProfile.considerations.length > 0 && (
+              <div className="space-y-2 mb-4">
+                {areaProfile.considerations.map((consideration, idx) => (
+                  <div key={idx} className="flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 text-yellow-500 mt-0.5 flex-shrink-0" />
+                    <span className="text-sm text-gray-700">{consideration}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            
+            {/* Call-to-action */}
+            <div className="mt-4 pt-4 border-t border-blue-200">
+              <button
+                onClick={() => {
+                  // Scroll to upgrade section or trigger upgrade modal
+                  window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+                }}
+                className="flex items-center gap-2 text-sm font-semibold text-blue-600 hover:text-blue-700 transition-colors"
+              >
+                <span>💡 Want detailed analysis?</span>
+                <span>See Professional Report</span>
+                <ArrowRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        )}
         
-        {/* CQC Distribution */}
-        <div className="bg-gray-50 rounded-xl p-4 mb-6">
-          <CQCDistributionBar distribution={areaProfile.cqc_distribution} />
-        </div>
+        {/* 2. Elderly Population & Demand */}
+        {areaProfile.elderly_population && (
+          <div className="bg-white rounded-xl border border-gray-200 p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-2 bg-blue-100 rounded-lg">
+                <Users className="w-5 h-5 text-blue-600" />
+              </div>
+              <h3 className="text-lg font-bold text-gray-900">Elderly Population in Area</h3>
+            </div>
+            
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+              <div>
+                <p className="text-2xl font-bold text-gray-900">
+                  {areaProfile.elderly_population.over_65_percent?.toFixed(1)}%
+                </p>
+                <p className="text-xs text-gray-600">Over 65</p>
+                {areaProfile.elderly_population.vs_national_average !== undefined && (
+                  <p className={`text-xs mt-1 ${
+                    areaProfile.elderly_population.vs_national_average > 0 ? 'text-green-600' : 'text-gray-600'
+                  }`}>
+                    {areaProfile.elderly_population.vs_national_average > 0 ? '+' : ''}
+                    {areaProfile.elderly_population.vs_national_average.toFixed(1)}% vs average
+                  </p>
+                )}
+              </div>
+              
+              {areaProfile.elderly_population.over_80_percent !== undefined && (
+                <div>
+                  <p className="text-2xl font-bold text-gray-900">
+                    {areaProfile.elderly_population.over_80_percent.toFixed(1)}%
+                  </p>
+                  <p className="text-xs text-gray-600">Over 80</p>
+                </div>
+              )}
+              
+              {areaProfile.elderly_population.elderly_population_trend && (
+                <div>
+                  <p className="text-lg font-semibold text-gray-900 capitalize">
+                    {areaProfile.elderly_population.elderly_population_trend === 'Growing' ? '↗ Growing' :
+                     areaProfile.elderly_population.elderly_population_trend === 'Stable' ? '→ Stable' :
+                     '↘ Declining'}
+                  </p>
+                  <p className="text-xs text-gray-600">Trend</p>
+                </div>
+              )}
+              
+              {areaProfile.elderly_population.care_home_demand_indicator && (
+                <div>
+                  <p className="text-lg font-semibold text-gray-900 capitalize">
+                    {areaProfile.elderly_population.care_home_demand_indicator}
+                  </p>
+                  <p className="text-xs text-gray-600">Demand</p>
+                </div>
+              )}
+            </div>
+            
+            {areaProfile.elderly_population.projected_over_65_2030 !== undefined && (
+              <div className="bg-blue-50 rounded-lg p-3 mb-4">
+                <div className="flex items-center gap-2">
+                  <TrendingUp className="w-4 h-4 text-blue-600" />
+                  <p className="text-sm text-gray-700">
+                    <span className="font-semibold">Projected 2030:</span>{' '}
+                    {areaProfile.elderly_population.projected_over_65_2030.toFixed(1)}%
+                  </p>
+                </div>
+              </div>
+            )}
+            
+            <button
+              onClick={() => window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' })}
+              className="flex items-center gap-2 text-xs text-blue-600 hover:text-blue-700 transition-colors"
+            >
+              <span>💡 See detailed health needs analysis in Professional Report</span>
+              <ArrowRight className="w-3 h-3" />
+            </button>
+          </div>
+        )}
         
-        {/* Demographics */}
+        {/* 3. Quality of Life */}
+        {areaProfile.wellbeing_details && (
+          <div className="bg-white rounded-xl border border-gray-200 p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-2 bg-purple-100 rounded-lg">
+                <Sparkles className="w-5 h-5 text-purple-600" />
+              </div>
+              <h3 className="text-lg font-bold text-gray-900">Quality of Life in Area</h3>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+              {areaProfile.wellbeing_index !== undefined && (
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <WellbeingGauge score={areaProfile.wellbeing_index} />
+                </div>
+              )}
+              
+              <div>
+                <p className="text-sm text-gray-600 mb-1">Life Satisfaction</p>
+                <p className="text-lg font-semibold text-gray-900">
+                  {areaProfile.wellbeing_details.life_satisfaction !== undefined
+                    ? areaProfile.wellbeing_details.life_satisfaction >= 7.5 ? 'High' :
+                      areaProfile.wellbeing_details.life_satisfaction >= 6.5 ? 'Medium' : 'Low'
+                    : 'N/A'}
+                </p>
+                {areaProfile.wellbeing_details.life_satisfaction !== undefined && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    {areaProfile.wellbeing_details.life_satisfaction.toFixed(1)}/10
+                  </p>
+                )}
+              </div>
+              
+              <div>
+                <p className="text-sm text-gray-600 mb-1">Anxiety Level</p>
+                <p className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                  {areaProfile.wellbeing_details.anxiety_level !== undefined
+                    ? areaProfile.wellbeing_details.anxiety_level <= 3.0 ? 'Low ✅' :
+                      areaProfile.wellbeing_details.anxiety_level <= 4.0 ? 'Medium' : 'High'
+                    : 'N/A'}
+                </p>
+                {areaProfile.wellbeing_details.anxiety_level !== undefined && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    {areaProfile.wellbeing_details.anxiety_level.toFixed(1)}/10 (lower is better)
+                  </p>
+                )}
+              </div>
+            </div>
+            
+            {areaProfile.wellbeing_details.wellbeing_highlights && areaProfile.wellbeing_details.wellbeing_highlights.length > 0 && (
+              <div className="space-y-2 mb-4">
+                {areaProfile.wellbeing_details.wellbeing_highlights.map((highlight, idx) => (
+                  <div key={idx} className="flex items-start gap-2">
+                    <span className="text-green-500 mt-0.5">✅</span>
+                    <span className="text-sm text-gray-700">{highlight}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            
+            <button
+              onClick={() => window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' })}
+              className="flex items-center gap-2 text-xs text-blue-600 hover:text-blue-700 transition-colors"
+            >
+              <span>💡 See detailed wellbeing analysis in Professional Report</span>
+              <ArrowRight className="w-3 h-3" />
+            </button>
+          </div>
+        )}
+        
+        {/* Demographics Snapshot (existing, enhanced) */}
         {areaProfile.demographics && (
           <div className="border-t border-gray-200 pt-6">
             <h4 className="text-sm font-semibold text-gray-700 mb-4">Demographics Snapshot</h4>
